@@ -1,0 +1,5 @@
+# Copy to local.properties (project root, next to settings.gradle). Android Studio usually creates this.
+# For Firebase "Configuration_not_found" with empty oauth_client, use scripts/CONFIG_NOT_FOUND_FIX.txt
+# (copy firebase_secrets.xml.example to app/src/main/res/values/firebase_secrets.xml), not this file.
+
+sdk.dir=/path/to/Android/sdk

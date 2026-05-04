@@ -1,0 +1,64 @@
+%% Level 1 DFD — Three child processes (decomposition of process 0)
+%% Coffee Farm Management System — aligns with Android app modules
+%%
+%% For the same core plus **6.0 cloud sync** (6.1–6.3, Room, XAMPP) see:
+%%   level1_child_processes_with_sync_dfd.mmd
+%% Level 2 detail for 6.0 only: level2_process_6_cloud_sync_dfd.mmd
+%%
+%% CHILDREN OF 0:
+%%   1.0 Authentication & User Management  → Login, Firebase Auth, roles (Settings / users)
+%%   2.0 Coffee Cherry Operations          → CoffeeCherryScreen: Trees, Harvest, Batches, Sorting, Capture/CNN
+%%   3.0 Farm Resources & Business         → Equipment + Sales Management + Employees & Operations + dashboard data
+%%
+%% Notation: (( )) = process; [( )] = data store; [ ] = external entity
+
+flowchart TB
+  subgraph entities["External entities"]
+    W[Worker]
+    A[Admin]
+  end
+
+  subgraph processes["Processes — Level 1 decomposition of 0"]
+    P1(("1.0<br/>Authentication &<br/>User Management"))
+    P2(("2.0<br/>Coffee Cherry<br/>Operations"))
+    P3(("3.0<br/>Farm Resources &<br/>Business"))
+  end
+
+  subgraph stores["Data stores"]
+    D1[("D1<br/>User Accounts")]
+    D2[("D2<br/>Classification &<br/>AI Results")]
+    D3[("D3<br/>Cherry / Harvest /<br/>Batch Records")]
+    D4[("D4<br/>Equipment &<br/>Maintenance Logs")]
+    D5[("D5<br/>Sales / Finance /<br/>Inventory")]
+    D6[("D6<br/>Personnel &<br/>Farm Operations")]
+  end
+
+  %% --- 1.0 Authentication ---
+  W -->|"Login credentials"| P1
+  A -->|"Login credentials"| P1
+  A -->|"User accounts & roles"| P1
+  P1 <-->|"Users information"| D1
+  P1 -->|"Session / role to app"| P2
+  P1 -->|"Session / role to app"| P3
+
+  %% --- 2.0 Coffee Cherry ---
+  W -->|"Scan & CNN capture / views"| P2
+  A -->|"Manage cherry master data"| P2
+  P2 <-->|"Scan & grade results"| D2
+  P2 <-->|"Harvest, batches, history"| D3
+  P2 -->|"Classification & history views"| W
+  P2 -->|"Cherry summaries / reports"| A
+  D6 -->|"Worker names for harvest"| P2
+
+  %% --- 3.0 Farm resources & business ---
+  W -->|"Equipment inventory & usage"| P3
+  A -->|"Equipment, maintenance, sales, payroll, HR, farm ops"| P3
+  P3 <-->|"Equipment, usage, maintenance"| D4
+  P3 <-->|"Sales, expenses, inventory"| D5
+  P3 <-->|"Workers, attendance, trees, tasks"| D6
+  P3 -->|"Equipment & ops views"| W
+  P3 -->|"Sales, finance, dashboards"| A
+
+  %% Cross-process (operational coupling in the app)
+  D3 -->|"Batch / quantity context"| P3
+  P3 -->|"Sales-linked batch / inventory updates"| D3

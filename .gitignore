@@ -1,0 +1,25 @@
+# Android / Gradle
+local.properties
+# Optional Firebase Web OAuth id (copy from scripts/firebase_secrets.xml.example)
+app/src/main/res/values/firebase_secrets.xml
+.gradle/
+build/
+**/build/
+captures/
+*.iml
+.idea/
+.DS_Store
+
+# CNN training — raw images are huge (~GB); clone locally or use Git LFS elsewhere
+Cnn Training/Data/
+Cnn Training/.mplconfig/
+Cnn Training/ImageClassification/.venv/
+Cnn Training/ImageClassification/.mplconfig/
+Cnn Training/ImageClassification/outputs/
+# Symlink to local Data/ folder; recreate after cloning (see README)
+Cnn Training/ImageClassification/data
+
+# Root / other Python virtual environments (do not commit)
+.venv_tf/
+.venv/
+venv/

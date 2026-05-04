@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // App snapshot: legacy per-uid docs OR shared farm doc `farm` (admin + workers).
+    match /app_state/{docId} {
+      allow read, write: if request.auth != null && (
+        request.auth.uid == docId || docId == 'farm'
+      );
+    }
+
+    // Mirrored list JSON: legacy per-uid OR shared `farm` subtree.
+    match /user_data/{ownerId}/{subCollection}/{docId} {
+      allow read, write: if request.auth != null && (
+        request.auth.uid == ownerId || ownerId == 'farm'
+      );
+    }
+
+    // Profile and metadata.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /users/{userId}/login_history/{entryId} {
+      allow read, create: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,13 @@
+If you still get [Configuration_not_found] after SHA fingerprints, read scripts/CONFIG_NOT_FOUND_FIX.txt (OAuth / Web client id).
+
+Add these in Firebase Console → Project settings → Your apps → Android (com.melodypenero.coffeefarm) → App fingerprints.
+
+SHA-1:
+10:13:4E:65:87:FE:49:9E:DD:F2:7C:DD:9A:BD:F5:35:66:10:8F:7C
+
+SHA-256:
+29:29:5A:DB:F5:F1:B1:A3:8B:B3:1B:5B:0B:EB:4F:AD:2F:6E:5F:C4:67:E0:8C:7C:16:4F:69:18:12:90:B7:76
+
+Then: Save → Download google-services.json → replace app/google-services.json → Clean + rebuild.
+
+Regenerate anytime with: bash scripts/print-debug-sha.sh

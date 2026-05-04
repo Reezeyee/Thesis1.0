@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "293650785052",
+    "project_id": "thesis-bbcde",
+    "storage_bucket": "thesis-bbcde.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:293650785052:android:523f14d7c8c1899e8610d9",
+        "android_client_info": {
+          "package_name": "com.melodypenero.coffeefarm"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "293650785052-5p7uh27qj1315v065bk03qdvvq8t2937.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.melodypenero.coffeefarm",
+            "certificate_hash": "10134e6587fe499eddf27cdd9abdf53566108f7c"
+          }
+        },
+        {
+          "client_id": "293650785052-seg43aoekqhavnv0jia2jqnqn31s0buf.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAeBRiMJ4tT8IalXFkPFzmuujBaQrQcUT4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "293650785052-seg43aoekqhavnv0jia2jqnqn31s0buf.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

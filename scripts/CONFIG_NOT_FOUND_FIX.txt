@@ -1,0 +1,45 @@
+Why you still see: "An internal error has occurred [Configuration_not_found]"
+================================================================================
+
+Your app needs a valid Web OAuth client id. In this project, app/google-services.json
+still has "oauth_client": [] — that is not enough for Firebase Authentication on Android.
+
+Do ONE of these (A is usually fastest):
+
+(A) Force OAuth to appear in google-services.json
+   1. Firebase Console → Authentication → Sign-in method.
+   2. Turn ON "Google" (set a support email if asked) and Save.
+   3. Turn ON "Email/Password" if not already.
+   4. Project settings (gear) → Your apps → Android app → Download google-services.json.
+   5. Replace app/google-services.json in this project.
+   6. Open the file and confirm "oauth_client" is NOT empty (should list client_id entries).
+   7. Sync Gradle, Clean + Rebuild, run again.
+
+(B) Add Web client id via a values XML file (use if oauth_client in google-services.json stays empty)
+   1. Open Google Cloud Console (same project as Firebase):
+      https://console.cloud.google.com/apis/credentials?project=thesis-bbcde
+   2. Under "OAuth 2.0 Client IDs", find type "Web client" (often auto-created for Firebase).
+      If none exists: Create credentials → OAuth client ID → Application type: Web application → Create.
+   3. Copy the "Client ID" (ends with .apps.googleusercontent.com).
+   4. Copy scripts/firebase_secrets.xml.example to:
+        app/src/main/res/values/firebase_secrets.xml
+      Replace PASTE_WEB_CLIENT_ID with your id. (This file is gitignored; do not use Gradle
+      resValue for default_web_client_id — it conflicts with the google-services plugin.)
+   5. Sync Gradle, Clean + Rebuild, run again.
+
+(C) Enable required APIs (if sign-in still fails)
+   - Identity Toolkit API:
+     https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com?project=thesis-bbcde
+     → Enable
+   - Firebase Management / related: ensure project is not suspended.
+
+(D) API key restrictions
+   - Google Cloud → APIs & Services → Credentials → your Browser key / API key used in the app.
+   - If "Application restrictions" is set incorrectly, lift restrictions for development or add
+     your Android app with correct package + SHA-1.
+
+(E) Support email
+   - Firebase → Project settings → General → ensure "Project support email" is set.
+
+After (A) or (B), the Configuration_not_found error should stop for email/password sign-in.
+Note: Do not define default_web_client_id in both build.gradle and google-services — merge will fail.

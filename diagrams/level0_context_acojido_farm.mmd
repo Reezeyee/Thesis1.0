@@ -1,0 +1,28 @@
+%% Level 0 (Context) Data Flow Diagram
+%% Guide: thesis context diagram — Acojido Farm, CNN cherry ripeness & bean classification
+%% External entities: FARM STAFF, ADMINISTRATOR
+
+flowchart TB
+  subgraph external["External entities"]
+    FS[FARM STAFF]
+    ADM[ADMINISTRATOR]
+  end
+
+  SYS(("0<br/>Coffee Production Management System with<br/>Cherry Ripeness Grading and Bean Classification<br/>for Acojido Farm using a Convolutional<br/>Neural Network (CNN)"))
+
+  %% FARM STAFF → System
+  FS -->|"Login Credentials"| SYS
+  FS -->|"Raw Cherry Images"| SYS
+  FS -->|"Tool & Equipment Details"| SYS
+
+  %% System → FARM STAFF
+  SYS -->|"Action Schedules"| FS
+  SYS -->|"Ripeness Classification"| FS
+
+  %% ADMINISTRATOR → System
+  ADM -->|"Sales & Expense Data"| SYS
+  ADM -->|"Worker Profiles"| SYS
+
+  %% System → ADMINISTRATOR
+  SYS -->|"Analytics Dashboard"| ADM
+  SYS -->|"Profit Margin Reports"| ADM

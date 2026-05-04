@@ -1,0 +1,81 @@
+%% Level 1 DFD — Children of process 0 + process 6.0 (sync) per thesis guide
+%% Coffee Farm Management / Acojido — core modules 1.0–3.0 and cloud sync 6.1–6.3
+%%
+%% Text prompt (sync chain — same as reference diagram):
+%%   SYSTEM TIMER → 6.1: Sync Trigger
+%%   6.1 → 6.2: Network Active
+%%   Local Room DBs → 6.2: Unsynced Logs
+%%   6.2 → 6.3: JSON Payload
+%%   6.3 → XAMPP MySQL SERVER: SQL Insert Request
+
+flowchart TB
+  subgraph entities["External entities"]
+    W[Worker]
+    A[Admin]
+    TIMER[SYSTEM TIMER]
+    MYSQL[XAMPP MySQL SERVER]
+  end
+
+  subgraph processes["Core processes — Level 1"]
+    P1(("1.0<br/>Authentication &<br/>User Management"))
+    P2(("2.0<br/>Coffee Cherry<br/>Operations"))
+    P3(("3.0<br/>Farm Resources &<br/>Business"))
+  end
+
+  subgraph sync["6.0 Cloud data synchronization — Level 2 shown here"]
+    P61(("6.1<br/>Check Wi-Fi"))
+    P62(("6.2<br/>Package Data"))
+    P63(("6.3<br/>Push to Cloud"))
+  end
+
+  subgraph stores["Data stores"]
+    D1[("D1<br/>User Accounts")]
+    D2[("D2<br/>Classification &<br/>AI Results")]
+    D3[("D3<br/>Cherry / Harvest /<br/>Batch Records")]
+    D4[("D4<br/>Equipment &<br/>Maintenance Logs")]
+    D5[("D5<br/>Sales / Finance /<br/>Inventory")]
+    D6[("D6<br/>Personnel &<br/>Farm Operations")]
+    LDB[("Local<br/>Room DBs")]
+  end
+
+  %% --- 1.0 / 2.0 / 3.0 (unchanged core) ---
+  W -->|"Login credentials"| P1
+  A -->|"Login credentials"| P1
+  A -->|"User accounts & roles"| P1
+  P1 <-->|"Users information"| D1
+  P1 -->|"Session / role"| P2
+  P1 -->|"Session / role"| P3
+
+  W -->|"Scan & CNN / views"| P2
+  A -->|"Manage cherry master data"| P2
+  P2 <-->|"Scan & grade results"| D2
+  P2 <-->|"Harvest, batches, history"| D3
+  P2 -->|"Classification & history"| W
+  P2 -->|"Cherry summaries"| A
+  D6 -->|"Worker names"| P2
+
+  W -->|"Equipment inventory & usage"| P3
+  A -->|"Equipment, sales, payroll, HR, farm ops"| P3
+  P3 <-->|"Equipment, usage, maintenance"| D4
+  P3 <-->|"Sales, expenses, inventory"| D5
+  P3 <-->|"Workers, attendance, trees, tasks"| D6
+  P3 -->|"Equipment & ops views"| W
+  P3 -->|"Sales, finance, dashboards"| A
+
+  D3 <-->|"Batch / sales context"| P3
+
+  %% Local persistence → unsynced queue (implementation path to Room)
+  P1 -->|"Local persist / cache"| LDB
+  P2 -->|"Local persist"| LDB
+  P3 -->|"Local persist"| LDB
+
+  %% --- 6.0 sync chain (guide diagram) ---
+  TIMER -->|"Sync Trigger"| P61
+  P61 -->|"Network Active"| P62
+  LDB -->|"Unsynced Logs"| P62
+  P62 -->|"JSON Payload"| P63
+  P63 -->|"SQL Insert Request"| MYSQL
+
+%% Implementation note: your current Android build uses Firebase/Firestore for cloud data;
+%% this diagram follows the thesis reference (Room + XAMPP MySQL). Swap the server entity
+%% if you document Firebase instead.

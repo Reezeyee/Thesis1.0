@@ -1,0 +1,34 @@
+%% Level 0 (Context) Data Flow Diagram
+%% Coffee Farm Management System — Android app (Jetpack Compose + Firebase Auth/Firestore)
+%% One process (0) = entire system. Rectangles = external entities. Arrows = data flows only.
+
+flowchart TB
+  subgraph external["External entities"]
+    W[Worker]
+    A[Admin]
+  end
+
+  SYS(("0<br/>Coffee Farm<br/>Management System"))
+
+  %% Worker → system (matches Worker navigation: Dashboard, Coffee Cherry, Equipment, Settings)
+  W -->|"Login credentials"| SYS
+  W -->|"Cherry scan input & CNN capture"| SYS
+  W -->|"Equipment inventory & usage logs"| SYS
+  W -->|"Cherry data requests / views"| SYS
+
+  %% System → Worker (responses & displayed data)
+  SYS -->|"Auth session & access to Worker modules"| W
+  SYS -->|"Classification results & cherry history / sorting views"| W
+  SYS -->|"Equipment status, inventory, usage, cost views"| W
+
+  %% Admin → system (full module set including Employees & Operations, Sales Management)
+  A -->|"Login credentials"| SYS
+  A -->|"User accounts & roles"| SYS
+  A -->|"Coffee cherry master data"| SYS
+  A -->|"Equipment & maintenance"| SYS
+  A -->|"Sales, expenses, payroll, inventory"| SYS
+  A -->|"Employees, farm operations, trees, harvest schedule"| SYS
+
+  %% System → Admin
+  SYS -->|"Sales, finance, profit & inventory summaries"| A
+  SYS -->|"Operational & HR dashboards"| A

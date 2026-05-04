@@ -1,0 +1,16 @@
+%% Level 2 DFD — Decomposition of process 6.0 (Cloud / server synchronization)
+%% Guide: SYSTEM TIMER → Wi-Fi check → package from Room → push → MySQL server
+
+flowchart LR
+  TIMER[SYSTEM TIMER]
+  P61(("6.1<br/>Check Wi-Fi"))
+  P62(("6.2<br/>Package Data"))
+  P63(("6.3<br/>Push to Cloud"))
+  LDB[("Local<br/>Room DBs")]
+  MYSQL[XAMPP<br/>MySQL SERVER]
+
+  TIMER -->|"Sync Trigger"| P61
+  P61 -->|"Network Active"| P62
+  LDB -->|"Unsynced Logs"| P62
+  P62 -->|"JSON Payload"| P63
+  P63 -->|"SQL Insert Request"| MYSQL
