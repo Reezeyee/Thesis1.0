@@ -22,14 +22,13 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,84 +41,92 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import com.melodypenero.coffeefarm.ui.components.FarmTabRow
+import com.melodypenero.coffeefarm.ui.components.farmPalette
 import androidx.compose.ui.unit.dp
 import com.melodypenero.coffeefarm.auth.LocalUserRole
 import com.melodypenero.coffeefarm.auth.UserRole
+import com.melodypenero.coffeefarm.data.store.EquipmentConditionReport
 import com.melodypenero.coffeefarm.data.store.EquipmentRecord
 import com.melodypenero.coffeefarm.data.store.LocalAppStore
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
-fun EquipmentScreen() {
+fun EquipmentScreen(reporterDisplayName: String = "") {
     val store = LocalAppStore.current
+    val context = LocalContext.current
     val isAdmin = LocalUserRole.current == UserRole.ADMINISTRATOR
     val state by store.appState
-    val tabs = listOf("Inventory", "Usage", "Maintenance", "Costs")
-    var activeTab by remember { mutableStateOf("Inventory") }
+    val tabs = remember(isAdmin) {
+        if (isAdmin) {
+            listOf("Usage", "Maintenance", "Costs")
+        } else {
+            listOf("Maintenance")
+        }
+    }
+    var activeTab by remember(isAdmin) { mutableStateOf(if (isAdmin) "Usage" else "Maintenance") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
+    var reportEquipmentPreset by remember { mutableStateOf<String?>(null) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
-    val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val pageBackground = if (isDarkPalette) Color(0xFF1A120D) else Color(0xFFF5F5F5)
-    val tabContainer = if (isDarkPalette) Color(0xFF1F140F) else Color(0xFFFFFFFF)
-    val tabContent = if (isDarkPalette) Color(0xFFF4EDE6) else Color(0xFF3E2723)
-    val tabDivider = if (isDarkPalette) Color(0xFF5A463A) else Color(0xFFD9CEC3)
-    val tabUnselected = if (isDarkPalette) Color(0xFFB8A99E) else Color(0xFF7A6A5F)
+    val palette = farmPalette()
+    val myReports = remember(state.equipmentReports, reporterDisplayName) {
+        val name = reporterDisplayName.trim()
+        state.equipmentReports
+            .filter { name.isBlank() || (it.reportedBy?.equals(name, ignoreCase = true) == true) }
+            .asReversed()
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(pageBackground)
+            .background(palette.pageGradient)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ScrollableTabRow(
-                selectedTabIndex = tabs.indexOf(activeTab).coerceAtLeast(0),
-                edgePadding = 12.dp,
-                containerColor = tabContainer,
-                contentColor = tabContent,
-                divider = {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(tabDivider)
-                    )
-                }
-            ) {
-                tabs.forEach { tab ->
-                    Tab(
-                        selected = tab == activeTab,
-                        onClick = { activeTab = tab },
-                        text = {
-                            Text(
-                                tab,
-                                color = if (tab == activeTab) Color(0xFF84B626) else tabUnselected,
-                                fontWeight = if (tab == activeTab) FontWeight.SemiBold else FontWeight.Medium
-                            )
+            FarmTabRow(
+                tabs = tabs,
+                selectedTab = activeTab,
+                onTabSelected = { activeTab = it }
+            )
+
+            when (activeTab) {
+                "Usage" -> UsageTab(state.usageLogs.map { Triple(it.equipmentName, it.details, it.hoursText) }) { editingIndex = it }
+                "Maintenance" -> if (isAdmin) {
+                    MaintenanceTab(
+                        state.maintenanceLogs.map {
+                            val subtitle = if (it.date.isNullOrBlank()) it.details else "${it.details} • ${it.date}"
+                            Triple(it.equipmentName, subtitle, it.costText)
+                        }
+                    ) { editingIndex = it }
+                } else {
+                    EquipmentReportTab(
+                        reports = myReports,
+                        onNewReport = {
+                            reportEquipmentPreset = null
+                            showReportDialog = true
                         }
                     )
                 }
-            }
-
-            when (activeTab) {
-                "Inventory" -> InventoryTab(state.equipment) { if (isAdmin) editingIndex = it }
-                "Usage" -> UsageTab(state.usageLogs.map { Triple(it.equipmentName, it.details, it.hoursText) }) { editingIndex = it }
-                "Maintenance" -> MaintenanceTab(
-                    state.maintenanceLogs.map {
-                        val subtitle = if (it.date.isNullOrBlank()) it.details else "${it.details} • ${it.date}"
-                        Triple(it.equipmentName, subtitle, it.costText)
-                    }
-                ) { if (isAdmin) editingIndex = it }
                 "Costs" -> CostsTab(state.equipment, state.maintenanceLogs.map { Triple(it.equipmentName, it.details, it.costText) })
             }
         }
 
         val showEquipmentFab = when (activeTab) {
-            "Inventory" -> true
-            "Usage" -> true
-            "Maintenance" -> isAdmin
+            "Usage" -> isAdmin
+            "Maintenance" -> true
             else -> false
         }
         if (showEquipmentFab) {
             FloatingActionButton(
-                onClick = { showAddDialog = true },
+                onClick = {
+                    if (!isAdmin && activeTab == "Maintenance") {
+                        reportEquipmentPreset = null
+                        showReportDialog = true
+                    } else {
+                        showAddDialog = true
+                    }
+                },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(18.dp),
@@ -131,23 +138,36 @@ fun EquipmentScreen() {
         }
     }
 
+    if (showReportDialog) {
+        EquipmentConditionReportDialog(
+            equipmentOptions = state.equipment.map { it.name },
+            preselectedEquipment = reportEquipmentPreset,
+            onDismiss = {
+                showReportDialog = false
+                reportEquipmentPreset = null
+            },
+            onSubmit = { equipmentName, choice, notes ->
+                store.reportEquipmentIssue(
+                    equipmentName = equipmentName,
+                    details = notes,
+                    isWrecked = choice == EquipmentReportChoice.BROKEN,
+                    reportedBy = reporterDisplayName,
+                    isFixedReport = false
+                )
+                showReportDialog = false
+                reportEquipmentPreset = null
+                Toast.makeText(
+                    context,
+                    "Report sent to admin. Thank you.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+    }
+
     if (showAddDialog) {
-        val workerOptions = listOf("Unassigned") + state.workers.map { it.name }
         val equipmentOptions = state.equipment.map { it.name }
         val fields = when (activeTab) {
-            "Inventory" -> listOf(
-                RecordField("Equipment Name"),
-                RecordField(
-                    "Category",
-                    options = listOf(
-                        "Processing", "Spraying", "Cutting", "Drying",
-                        "Harvest", "Quality", "Transport", "Power"
-                    )
-                ),
-                RecordField("Status", options = listOf("available", "in-use", "maintenance", "broken")),
-                RecordField("Assigned Worker", options = workerOptions),
-                RecordField("Current Value")
-            )
             "Usage" -> listOf(
                 RecordField("Equipment Name", options = equipmentOptions),
                 RecordField("Usage Details"),
@@ -166,41 +186,31 @@ fun EquipmentScreen() {
             onDismiss = { showAddDialog = false },
             onSave = { values ->
                 when (activeTab) {
-                    "Inventory" -> {
-                        val parsed = values.getOrNull(4)?.filter { it.isDigit() }?.toIntOrNull() ?: 0
-                        store.addEquipment(
-                                name = values[0],
-                                category = values[1],
-                                status = values[2].lowercase(),
-                                assignedTo = values[3].takeUnless { it.equals("Unassigned", true) || it.isBlank() },
-                                currentValue = parsed
-                        )
-                    }
                     "Usage" -> store.addUsageLog(values[0], values[1], values[2])
-                    "Maintenance" -> store.addMaintenance(values[0], values[1], values[2], values.getOrElse(3) { "" })
+                    "Maintenance" -> if (isAdmin) {
+                        store.addMaintenance(
+                            equipmentName = values[0],
+                            details = values[1],
+                            costText = values[2],
+                            date = values.getOrElse(3) { "" },
+                            reportedBy = reporterDisplayName.ifBlank { null },
+                            isWrecked = true
+                        )
+                    } else {
+                        Unit
+                    }
                 }
             }
         )
     }
 
     editingIndex?.let { index ->
-        val workerOptions = listOf("Unassigned") + state.workers.map { it.name }
         val equipmentOptions = state.equipment.map { it.name }
         val fields = when (activeTab) {
-            "Inventory" -> listOf(
-                RecordField("Equipment Name"),
-                RecordField("Category", listOf("Processing", "Spraying", "Cutting", "Drying", "Harvest", "Quality", "Transport", "Power")),
-                RecordField("Status", listOf("available", "in-use", "maintenance", "broken")),
-                RecordField("Assigned Worker", workerOptions),
-                RecordField("Current Value")
-            )
             "Usage" -> listOf(RecordField("Equipment Name", equipmentOptions), RecordField("Usage Details"), RecordField("Hours (e.g. 3.5h)"))
             else -> listOf(RecordField("Equipment Name", equipmentOptions), RecordField("Maintenance/Repair Details"), RecordField("Cost (e.g. ₱120)"), RecordField("Date"))
         }
         val initial = when (activeTab) {
-            "Inventory" -> state.equipment.getOrNull(index)?.let {
-                listOf(it.name, it.category, it.status, it.assignedTo ?: "Unassigned", it.currentValue.toString())
-            } ?: emptyList()
             "Usage" -> state.usageLogs.getOrNull(index)?.let { listOf(it.equipmentName, it.details, it.hoursText) } ?: emptyList()
             else -> state.maintenanceLogs.getOrNull(index)?.let { listOf(it.equipmentName, it.details, it.costText, it.date.orEmpty()) } ?: emptyList()
         }
@@ -211,18 +221,11 @@ fun EquipmentScreen() {
             onDismiss = { editingIndex = null },
             onSave = { values ->
                 when (activeTab) {
-                    "Inventory" -> {
-                        val parsed = values.getOrNull(4)?.filter { it.isDigit() }?.toIntOrNull() ?: 0
-                        store.updateEquipment(index, values[0], values[1], values[2].lowercase(), values[3].takeUnless { it.equals("Unassigned", true) || it.isBlank() }, parsed)
-                    }
                     "Usage" -> store.updateUsageLog(index, values[0], values[1], values[2])
                     else -> store.updateMaintenance(index, values[0], values[1], values[2], values.getOrElse(3) { "" })
                 }
             },
             onDelete = when (activeTab) {
-                "Inventory" -> if (isAdmin) {
-                    { store.deleteEquipment(index) }
-                } else null
                 "Usage" -> if (isAdmin) {
                     { store.deleteUsageLog(index) }
                 } else null
@@ -235,54 +238,82 @@ fun EquipmentScreen() {
 }
 
 @Composable
-private fun InventoryTab(inventory: List<EquipmentRecord>, onEdit: (Int) -> Unit) {
+private fun EquipmentReportTab(
+    reports: List<EquipmentConditionReport>,
+    onNewReport: () -> Unit
+) {
     val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val cardColor = if (isDarkPalette) Color(0xFF2D211A) else Color(0xFFFFFFFF)
-    val borderColor = if (isDarkPalette) Color(0xFF5A463A) else Color(0xFFD9CEC3)
     val titleColor = if (isDarkPalette) Color(0xFFF4EDE6) else Color(0xFF3E2723)
     val subtitleColor = if (isDarkPalette) Color(0xFFB8A99E) else Color(0xFF7A6A5F)
+    val cardColor = if (isDarkPalette) Color(0xFF2D211A) else Color(0xFFFFFFFF)
+    val borderColor = if (isDarkPalette) Color(0xFF5A463A) else Color(0xFFD9CEC3)
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        itemsIndexed(inventory) { index, item ->
-            Card(
-                modifier = Modifier.clickable { onEdit(index) },
-                colors = CardDefaults.cardColors(containerColor = cardColor),
-                border = BorderStroke(1.dp, borderColor)
+        item {
+            Text(
+                "Report what's wrong with equipment. Pick a machine the admin added on the website. Inventory is managed on the web admin portal only.",
+                color = subtitleColor,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Button(
+                onClick = onNewReport,
+                modifier = Modifier.padding(top = 12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF84B626),
+                    contentColor = Color(0xFF111111)
+                )
             ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                Text("Report issue", fontWeight = FontWeight.SemiBold)
+            }
+        }
+        if (reports.isEmpty()) {
+            item {
+                Text("No reports submitted yet.", color = subtitleColor)
+            }
+        } else {
+            items(reports, key = { it.reportId.ifBlank { "${it.equipmentName}-${it.reportedAt}" } }) { report ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = cardColor),
+                    border = BorderStroke(1.dp, borderColor)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(report.equipmentName, color = titleColor, fontWeight = FontWeight.SemiBold)
+                        val isFixed = report.isFixedReport || !report.fixedAt.isNullOrBlank()
+                        val conditionLabel = when {
+                            isFixed -> "Fixed / repaired"
+                            report.isWrecked -> "Wrecked / broken"
+                            else -> "Working OK"
+                        }
+                        val conditionColor = when {
+                            isFixed -> Color(0xFF2D5016)
+                            report.isWrecked -> Color(0xFFD4183D)
+                            else -> Color(0xFF4A2C2A)
+                        }
+                        Text(
+                            conditionLabel,
+                            color = conditionColor,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (report.notes.isNotBlank()) {
+                            Text(report.notes, color = subtitleColor)
+                        }
+                        Text(
+                            "${report.reportedAt}${report.reportedBy?.let { " · $it" } ?: ""}",
+                            color = subtitleColor,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        if (!report.fixedAt.isNullOrBlank()) {
                             Text(
-                                text = item.name,
-                                color = titleColor,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
+                                "Fixed on ${report.fixedAt}${report.fixedBy?.let { " · $it" } ?: ""}",
+                                color = Color(0xFF2D5016),
+                                style = MaterialTheme.typography.labelSmall
                             )
-                            Text(text = item.category, color = subtitleColor)
-                        }
-                        StatusPill(item.status)
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text("Assigned", color = subtitleColor)
-                            Text(item.assignedTo ?: "Unassigned", color = titleColor, fontWeight = FontWeight.SemiBold)
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("Current value", color = subtitleColor)
-                            Text("₱${"%,d".format(item.currentValue)}", color = Color(0xFF84B626), fontWeight = FontWeight.Bold)
+                        } else if (report.reviewed) {
+                            Text("Reviewed by admin", color = Color(0xFF2D5016), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -441,26 +472,6 @@ private fun EquipmentSimpleCard(
 }
 
 @Composable
-private fun StatusPill(status: String) {
-    val (bg, fg, label) = when (status) {
-        "available" -> Triple(Color(0xFF234917), Color(0xFF9AD45E), "Available")
-        "in-use" -> Triple(Color(0xFF133A5E), Color(0xFF6AB0FF), "In-Use")
-        "maintenance" -> Triple(Color(0xFF4D2F0E), Color(0xFFF3B562), "Maintenance")
-        "broken" -> Triple(Color(0xFF4B1F1F), Color(0xFFFF7A70), "Broken")
-        else -> Triple(Color(0xFF3B3B3B), Color(0xFFDADADA), status)
-    }
-    Surface(color = bg, shape = MaterialTheme.shapes.extraLarge) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-            color = fg,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
-@Composable
 private fun CostStatCard(
     label: String,
     value: String,
@@ -487,4 +498,3 @@ private fun CostStatCard(
         }
     }
 }
-

@@ -56,9 +56,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
+import com.melodypenero.coffeefarm.ui.components.FarmTabRow
+import com.melodypenero.coffeefarm.ui.components.farmPalette
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -79,12 +79,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.melodypenero.coffeefarm.auth.LocalUserRole
-import com.melodypenero.coffeefarm.auth.UserRole
 import com.melodypenero.coffeefarm.data.store.LocalAppStore
 import com.melodypenero.coffeefarm.data.store.TreeRecord
 import com.melodypenero.coffeefarm.data.store.TreeRipenessScanRecord
 import com.melodypenero.coffeefarm.data.store.isDeviceOnline
+import com.melodypenero.coffeefarm.auth.AuthSession
 import com.melodypenero.coffeefarm.domain.TreeRipeness
 import com.melodypenero.coffeefarm.ml.BitmapExifUtils
 import com.melodypenero.coffeefarm.ml.CherryGradeTfliteClassifier
@@ -105,24 +104,22 @@ private object CaptureScanStages {
 
 @Composable
 fun CoffeeCherryScreen(
+    session: AuthSession,
     initialTab: String? = null,
     onInitialTabHandled: () -> Unit = {}
 ) {
     val store = LocalAppStore.current
     val context = LocalContext.current
-    val isAdmin = LocalUserRole.current == UserRole.ADMINISTRATOR
     val state by store.appState
-    val validCherryTabs = setOf("Trees", "Harvest", "Batches", "Sorting", "Capture")
+    val validCherryTabs = setOf("Capture", "Recent")
     fun resolveCherryTab(t: String?): String = when {
-        t.isNullOrBlank() -> "Trees"
-        t == "Flowering" -> "Trees"
+        t.isNullOrBlank() -> "Capture"
+        t == "Sorting" -> "Recent"
         t in validCherryTabs -> t
-        else -> "Trees"
+        else -> "Capture"
     }
-    val tabs = listOf("Trees", "Harvest", "Batches", "Sorting", "Capture")
+    val tabs = listOf("Capture", "Recent")
     var activeTab by remember { mutableStateOf(resolveCherryTab(initialTab)) }
-    var showAddDialog by remember { mutableStateOf(false) }
-    var editingIndex by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(initialTab) {
         if (!initialTab.isNullOrBlank()) {
             activeTab = resolveCherryTab(initialTab)
@@ -130,30 +127,6 @@ fun CoffeeCherryScreen(
         }
     }
 
-    val treeListRows = state.trees.map { tree ->
-        val scans = store.treeRipenessScansForTree(tree.treeId)
-        val n = scans.size
-        val avg = store.treeRipenessAverage(tree.treeId)
-        val decision = TreeRipeness.decisionText(avg, n)
-        val scoreLine = if (n >= TreeRipeness.MIN_SCANS_FOR_STATUS && avg != null) {
-            "${TreeRipeness.percentFromAverage(avg)}% score · $decision"
-        } else {
-            decision
-        }
-        Triple(
-            tree.details.ifBlank { "Tree" },
-            "ID ${tree.treeId} · ${tree.sectionName} · $n / ${TreeRipeness.MIN_SCANS_FOR_STATUS} scans · $scoreLine",
-            tree.stage
-        )
-    }
-    val batchIds = state.batches.map { it.batchId }.distinct().sorted()
-    val workerNames = state.workers.map { it.name }.distinct()
-    val blockOptions = if (state.sections.isNotEmpty()) {
-        state.sections.map { it.name }
-    } else {
-        listOf("(add Sections in Farm Operations)")
-    }
-    val harvestPrerequisitesMet = batchIds.isNotEmpty() && workerNames.isNotEmpty()
     val batchById = state.batches.associateBy { it.batchId }
     val harvestStatsByBatch = state.cherryHarvests.groupBy { it.batchId }.mapValues { (_, records) ->
         records.sumOf { parseWeightKg(it.weightText) }
@@ -201,93 +174,30 @@ fun CoffeeCherryScreen(
             .distinct()
     )
     val fruitingTrees = state.trees.filter { TreeRipeness.isFruitingStage(it.stage) }
-    val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val pageBackground = if (isDarkPalette) Color(0xFF1A120D) else Color(0xFFF5F5F5)
-    val tabContainer = if (isDarkPalette) Color(0xFF1F140F) else Color(0xFFFFFFFF)
-    val tabContent = if (isDarkPalette) Color(0xFFF4EDE6) else Color(0xFF3E2723)
-    val tabDivider = if (isDarkPalette) Color(0xFF5A463A) else Color(0xFFD9CEC3)
-    val tabUnselected = if (isDarkPalette) Color(0xFFB8A99E) else Color(0xFF7A6A5F)
+    val currentWorker = remember(state.workers, session.userId, session.email) {
+        state.workers.firstOrNull { worker ->
+            val wUid = worker.authUid ?: ""
+            val wEmail = worker.accountEmail ?: ""
+            wUid.equals(session.userId, ignoreCase = true) ||
+                wEmail.equals(session.email, ignoreCase = true)
+        }
+    }
+    val palette = farmPalette()
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(pageBackground)
+            .background(palette.pageGradient)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ScrollableTabRow(
-                selectedTabIndex = tabs.indexOf(activeTab).coerceAtLeast(0),
-                edgePadding = 12.dp,
-                containerColor = tabContainer,
-                contentColor = tabContent,
-                divider = {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(tabDivider)
-                    )
-                }
-            ) {
-                tabs.forEach { tab ->
-                    Tab(
-                        selected = tab == activeTab,
-                        onClick = { activeTab = tab },
-                        text = {
-                            Text(
-                                tab,
-                                color = if (tab == activeTab) Color(0xFF84B626) else tabUnselected,
-                                fontWeight = if (tab == activeTab) FontWeight.SemiBold else FontWeight.Medium
-                            )
-                        }
-                    )
-                }
-            }
+            FarmTabRow(
+                tabs = tabs,
+                selectedTab = activeTab,
+                onTabSelected = { activeTab = it }
+            )
 
             when (activeTab) {
-                "Trees" -> TreesTab(treeListRows)
-                "Harvest" -> HarvestTab(
-                    state.cherryHarvests.mapIndexed { index, harvest ->
-                        val linkedBatch = batchById[harvest.batchId]
-                        val linkedText = linkedBatch?.let { "Linked: ${it.status}" } ?: "Linked: no batch record"
-                        val datedDetails = if (harvest.date.isNullOrBlank()) harvest.details else "${harvest.details} • ${harvest.date}"
-                        val workerText = if (harvest.pickerWorkerName.isNullOrBlank()) "Worker: unassigned" else "Worker: ${harvest.pickerWorkerName}"
-                        val disambiguator = harvest.date?.trim()?.takeIf { it.isNotEmpty() }
-                            ?: harvest.pickerWorkerName?.trim()?.takeIf { it.isNotEmpty() }
-                            ?: "record ${index + 1}"
-                        val idLine = harvest.harvestId.ifBlank { harvest.batchId }
-                        val blockLine = if (harvest.farmBlock.isNotBlank()) "Block: ${harvest.farmBlock}" else ""
-                        val qLine = if (harvest.qualityNotes.isNotBlank()) "Quality: ${harvest.qualityNotes}" else ""
-                        val title = "$idLine · $disambiguator"
-                        val sub = listOf(
-                            if (blockLine.isNotBlank()) blockLine else null,
-                            if (qLine.isNotBlank()) qLine else null,
-                            datedDetails,
-                            workerText,
-                            linkedText
-                        ).mapNotNull { it }.joinToString(" • ")
-                        Triple(title, sub, harvest.weightText)
-                    }
-                ) { if (isAdmin) editingIndex = it }
-                "Batches" -> BatchesTab(
-                    state.batches.map { batch ->
-                        val harvestCount = state.cherryHarvests.count { it.batchId == batch.batchId }
-                        val totalHarvestKg = harvestStatsByBatch[batch.batchId] ?: 0.0
-                        val gradedSamples = gradingCountByBatch[batch.batchId] ?: 0
-                        val stats =
-                            "Harvests: $harvestCount • ${"%.1f".format(totalHarvestKg)} kg • Grades: $gradedSamples"
-                        val label = batch.label.trim()
-                        val batchId = batch.batchId.trim()
-                        val connectedSummary = when {
-                            label.isEmpty() || label.equals(batchId, ignoreCase = true) -> stats
-                            else -> "$label • $stats"
-                        }
-                        val treeNote = batch.treeId?.let { tid ->
-                            val p = (batch.ripenessScore ?: 0.0) * 100.0
-                            "Tree $tid — ripeness ${"%.0f".format(p)}%"
-                        } ?: "No tree link"
-                        Triple(batchId, "$connectedSummary · $treeNote", batch.status)
-                    }
-                ) { if (isAdmin) editingIndex = it }
-                "Sorting" -> SortingTab(sortingSummary)
+                "Recent" -> SortingTab(sortingSummary)
                 "Capture" -> AiGradingTab(
                     trees = fruitingTrees,
                     allScans = state.treeRipenessScans,
@@ -334,7 +244,10 @@ fun CoffeeCherryScreen(
                             grade = grade,
                             confidence = confidence,
                             species = species,
-                            speciesConfidence = speciesConfidence
+                            speciesConfidence = speciesConfidence,
+                            scannedByWorkerName = currentWorker?.name ?: session.displayName,
+                            scannedByEmail = session.email,
+                            scannedByAuthUid = session.userId,
                         )
                         if (!ok) {
                             Toast.makeText(
@@ -346,268 +259,11 @@ fun CoffeeCherryScreen(
                         // Tree-level harvest is decided from averaged scans in Trees / Batches, not a single cherry.
                         false
                     },
-                    allowDeleteRecent = isAdmin,
-                    onDeleteRecent = { key -> store.deleteCherryGradeByKey(key) }
+                    allowDeleteRecent = false,
+                    onDeleteRecent = {}
                 )
             }
         }
-
-        if (isAdmin &&
-            activeTab in listOf("Harvest", "Batches") &&
-            (activeTab != "Harvest" || harvestPrerequisitesMet)
-        ) {
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(18.dp),
-                containerColor = Color(0xFF84B626),
-                contentColor = Color(0xFF111111)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
-            }
-        }
-    }
-
-    if (activeTab == "Harvest" && !harvestPrerequisitesMet) {
-        Surface(
-            color = Color(0xFF4B1F1F),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Color(0xFFFF7A70)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Text(
-                text = "To add Harvest records, add at least one Worker and one Batch first.",
-                color = Color(0xFFFFD2CE),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-            )
-        }
-    }
-
-    if (showAddDialog) {
-        val batchTreeOptions = buildList {
-            add("(No tree link)")
-            fruitingTrees.forEach { t ->
-                add("tree:${t.treeId}|${t.sectionName} · ${t.details.ifBlank { "Tree" }}")
-            }
-        }
-        val fields = when (activeTab) {
-            "Harvest" -> listOf(
-                RecordField("Harvest ID (auto if blank)"),
-                RecordField("Farm block", options = blockOptions),
-                RecordField("Batch ID", options = batchIds),
-                RecordField("Worker Name", options = workerNames),
-                RecordField("Harvest details"),
-                RecordField("Quality notes"),
-                RecordField("Weight (kg)"),
-                RecordField("Date")
-            )
-            "Batches" -> listOf(
-                RecordField("Batch ID"),
-                RecordField("Label"),
-                RecordField("Processing Status", options = listOf("harvesting", "fermenting", "drying", "milled", "shipped")),
-                RecordField(
-                    "Link tree (Fruiting trees only: 10+ scans & ≥80% score, or No link)",
-                    options = batchTreeOptions
-                )
-            )
-            else -> listOf(
-                RecordField("Batch ID"),
-                RecordField("Label"),
-                RecordField("Processing Status", options = listOf("harvesting", "fermenting", "drying", "milled", "shipped"))
-            )
-        }
-        val addInitialValues = when (activeTab) {
-            "Harvest" -> listOf(
-                "",
-                blockOptions.firstOrNull().orEmpty(),
-                suggestedCaptureBatchId,
-                workerNames.firstOrNull().orEmpty(),
-                "",
-                "",
-                "",
-                ""
-            )
-            "Batches" -> listOf(suggestedCaptureBatchId, "", "harvesting", "(No tree link)")
-            else -> emptyList()
-        }
-        SimpleRecordDialog(
-            title = "Add $activeTab",
-            fields = fields,
-            initialValues = addInitialValues,
-            onDismiss = { showAddDialog = false },
-            onSave = { values ->
-                when (activeTab) {
-                    "Harvest" -> store.addCherryHarvest(
-                        batchId = values[2],
-                        pickerWorkerName = values[3],
-                        details = values[4],
-                        weightText = values[6],
-                        date = values.getOrElse(7) { "" },
-                        harvestId = values[0].trim(),
-                        farmBlock = values[1].trim(),
-                        qualityNotes = values[5].trim()
-                    )
-                    "Batches" -> {
-                        val tid = parseBatchTreeOption(values.getOrNull(3).orEmpty())
-                        val ok = store.addBatch(
-                            batchId = values[0],
-                            label = values[1],
-                            status = values[2],
-                            treeId = tid
-                        )
-                        if (!ok) {
-                            Toast.makeText(
-                                context,
-                                "Cannot link: tree must be Fruiting, with ${TreeRipeness.MIN_SCANS_FOR_STATUS}+ scans and average ≥ 80%. Choose “No tree link” for a general batch.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
-                }
-            }
-        )
-    }
-
-    editingIndex?.let { index ->
-        val batchTreeOptionsEdit = buildList {
-            add("(No tree link)")
-            fruitingTrees.forEach { t ->
-                add("tree:${t.treeId}|${t.sectionName} · ${t.details.ifBlank { "Tree" }}")
-            }
-        }
-        val fields = when (activeTab) {
-            "Harvest" -> listOf(
-                RecordField("Harvest ID"),
-                RecordField("Farm block", blockOptions),
-                RecordField("Batch ID", batchIds),
-                RecordField("Worker Name", workerNames),
-                RecordField("Harvest details"),
-                RecordField("Quality notes"),
-                RecordField("Weight (kg)"),
-                RecordField("Date")
-            )
-            "Batches" -> listOf(
-                RecordField("Batch ID"),
-                RecordField("Label"),
-                RecordField("Processing Status", listOf("harvesting", "fermenting", "drying", "milled", "shipped")),
-                RecordField("Link tree", batchTreeOptionsEdit)
-            )
-            else -> listOf(
-                RecordField("Batch ID"),
-                RecordField("Label"),
-                RecordField("Processing Status", listOf("harvesting", "fermenting", "drying", "milled", "shipped"))
-            )
-        }
-        val initial = when (activeTab) {
-            "Harvest" -> state.cherryHarvests.getOrNull(index)?.let {
-                listOf(
-                    it.harvestId,
-                    it.farmBlock,
-                    it.batchId,
-                    it.pickerWorkerName.orEmpty(),
-                    it.details,
-                    it.qualityNotes,
-                    it.weightText,
-                    it.date.orEmpty()
-                )
-            } ?: emptyList()
-            "Batches" -> state.batches.getOrNull(index)?.let { b ->
-                val treeLine = b.treeId?.let { tid ->
-                    val tr = state.trees.find { it.treeId == tid }
-                    "tree:$tid|${tr?.sectionName} · ${tr?.details?.ifBlank { "Tree" }}"
-                } ?: "(No tree link)"
-                listOf(b.batchId, b.label, b.status, treeLine)
-            } ?: emptyList()
-            else -> emptyList()
-        }
-        SimpleRecordDialog(
-            title = "Edit $activeTab",
-            fields = fields,
-            initialValues = initial,
-            onDismiss = { editingIndex = null },
-            onSave = { values ->
-                when (activeTab) {
-                    "Harvest" -> store.updateCherryHarvest(
-                        index = index,
-                        batchId = values[2],
-                        pickerWorkerName = values[3],
-                        details = values[4],
-                        weightText = values[6],
-                        date = values.getOrElse(7) { "" },
-                        harvestId = values[0].trim(),
-                        farmBlock = values[1].trim(),
-                        qualityNotes = values[5].trim()
-                    )
-                    "Batches" -> {
-                        val tid = parseBatchTreeOption(values.getOrNull(3).orEmpty())
-                        if (tid != null) {
-                            val trec = state.trees.find { it.treeId == tid }
-                            if (trec == null || !TreeRipeness.isFruitingStage(trec.stage)) {
-                                Toast.makeText(
-                                    context,
-                                    TreeRipeness.CHERRY_AND_HARVEST_ONLY_FOR_FRUITING,
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } else {
-                                val scans = store.treeRipenessScansForTree(tid)
-                                val avg = store.treeRipenessAverage(tid)
-                                if (!TreeRipeness.canCreateHarvestBatch(avg, scans.size)) {
-                                    Toast.makeText(
-                                        context,
-                                        "Cannot link tree: need ${TreeRipeness.MIN_SCANS_FOR_STATUS}+ scans and average ≥ 80%, or use No tree link.",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } else {
-                                    val uOk = store.updateBatch(
-                                        index = index,
-                                        batchId = values[0],
-                                        label = values[1],
-                                        status = values[2],
-                                        treeId = tid,
-                                        ripenessScore = avg
-                                    )
-                                    if (!uOk) {
-                                        Toast.makeText(
-                                            context,
-                                            "Cannot link this batch to the tree. Check that the tree is Fruiting and meets scan requirements.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                                }
-                            }
-                        } else {
-                            val uOk = store.updateBatch(
-                                index = index,
-                                batchId = values[0],
-                                label = values[1],
-                                status = values[2],
-                                treeId = null,
-                                ripenessScore = null
-                            )
-                            if (!uOk) {
-                                Toast.makeText(
-                                    context,
-                                    "Could not update batch. If removing the tree link is not working, try again.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-                    }
-                }
-            },
-            onDelete = if (isAdmin) {
-                {
-                    when (activeTab) {
-                        "Harvest" -> store.deleteCherryHarvest(index)
-                        "Batches" -> store.deleteBatch(index)
-                    }
-                }
-            } else null
-        )
     }
 }
 

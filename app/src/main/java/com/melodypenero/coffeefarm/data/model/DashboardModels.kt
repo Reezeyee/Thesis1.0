@@ -20,7 +20,6 @@ data class ActivityLogItem(
 )
 
 data class FarmSnapshot(
-    val weather: String,
     val activeTasks: Int,
     val sectionsHealthy: Int,
     val sectionsAtRisk: Int

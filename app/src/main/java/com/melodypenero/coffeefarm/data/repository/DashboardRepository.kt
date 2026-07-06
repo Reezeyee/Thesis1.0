@@ -32,7 +32,6 @@ class EmptyDashboardRepository : DashboardRepository {
 
     override suspend fun loadFarmSnapshot(): FarmSnapshot {
         return FarmSnapshot(
-            weather = "",
             activeTasks = 0,
             sectionsHealthy = 0,
             sectionsAtRisk = 0

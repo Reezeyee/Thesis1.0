@@ -46,6 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.melodypenero.coffeefarm.ui.components.FarmCard
+import com.melodypenero.coffeefarm.ui.components.farmPalette
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -100,22 +102,19 @@ fun SettingsScreen(
     fun saveBoolean(key: String, value: Boolean) {
         prefs.edit().putBoolean(key, value).apply()
     }
-    val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val pageBackground = if (isDarkPalette) Color(0xFF1A120D) else Color(0xFFF5F5F5)
-    val primaryText = if (isDarkPalette) Color(0xFFF4EDE6) else Color(0xFF3E2723)
-    val secondaryText = if (isDarkPalette) Color(0xFFB8A99E) else Color(0xFF7A6A5F)
+    val palette = farmPalette()
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(pageBackground)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .background(palette.pageGradient)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
             Text(
                 text = "Settings",
-                color = primaryText,
+                color = palette.textPrimary,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -123,7 +122,7 @@ fun SettingsScreen(
         item {
             Text(
                 text = "Customize appearance, notifications, security, and sync behavior.",
-                color = secondaryText,
+                color = palette.textSecondary,
                 style = MaterialTheme.typography.bodyMedium
             )
         }
@@ -135,7 +134,7 @@ fun SettingsScreen(
             ) {
                 Text(
                     text = "Manage your active session.",
-                    color = secondaryText,
+                    color = palette.textSecondary,
                     style = MaterialTheme.typography.bodySmall
                 )
                 Button(
@@ -156,12 +155,12 @@ fun SettingsScreen(
         if (isAdmin) {
             item {
                 SettingsSectionCard(
-                    title = "User accounts (DFD 1.1)",
+                    title = "Web admin portal",
                     icon = Icons.Default.Security
                 ) {
                     Text(
-                        text = "Admin accounts unlock Sales (Profit) and Workers & Operations. Worker accounts can use Dashboard, Coffee Cherry, Equipment, and Settings only—no sales or HR. Roles are stored in Firestore (`role`: ADMINISTRATOR or FARM_STAFF); known worker and admin emails always use the app’s fixed role.",
-                        color = secondaryText,
+                        text = "Workers, payroll, sales, profit, farm fields, and tasks are managed on the Acojido Farm website—not in this app. This app is for field work: cherry scanning, equipment logs, and (for workers) attendance.",
+                        color = palette.textSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -295,7 +294,7 @@ fun SettingsScreen(
                     Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF84B626))
                     Text(
                         text = "Settings are saved locally on this device.",
-                        color = secondaryText,
+                        color = palette.textSecondary,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = 8.dp)
                     )
@@ -362,6 +361,11 @@ private fun FirebaseSyncCard(
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
+                    text = "Shared farm database: app_state/farm (same as web admin portal, project thesis-bbcde)",
+                    color = subtitleColor,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
                     text = syncedText,
                     color = subtitleColor,
                     style = MaterialTheme.typography.bodySmall
@@ -383,33 +387,19 @@ private fun SettingsSectionCard(
     icon: ImageVector,
     content: @Composable () -> Unit
 ) {
-    val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val cardColor = if (isDarkPalette) Color(0xFF2D211A) else Color(0xFFFFFFFF)
-    val borderColor = if (isDarkPalette) Color(0xFF5A463A) else Color(0xFFD9CEC3)
-    val titleColor = if (isDarkPalette) Color(0xFFF4EDE6) else Color(0xFF3E2723)
-    Card(
-        colors = CardDefaults.cardColors(containerColor = cardColor),
-        border = BorderStroke(1.dp, borderColor),
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = Color(0xFF84B626))
-                Text(
-                    text = title,
-                    color = titleColor,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-            }
-            content()
+    val palette = farmPalette()
+    FarmCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = palette.accent)
+            Text(
+                text = title,
+                color = palette.textPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 8.dp)
+            )
         }
+        content()
     }
 }
 

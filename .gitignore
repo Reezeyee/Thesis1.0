@@ -8,6 +8,7 @@ build/
 captures/
 *.iml
 .idea/
+.vscode/
 .DS_Store
 
 # CNN training — raw images are huge (~GB); clone locally or use Git LFS elsewhere
@@ -23,3 +24,19 @@ Cnn Training/ImageClassification/data
 .venv_tf/
 .venv/
 venv/
+
+# Web dependencies and generated output
+node_modules/
+**/node_modules/
+.vite/
+**/.vite/
+dist/
+**/dist/
+
+# Local recovery/backups and duplicate exported workspaces
+_recovered_from_cursor_history/
+_pre_recovery_backup/
+Website_simple/
+
+# Accidental root npm lockfile; the website lockfile is tracked in Website/
+/package-lock.json

@@ -48,7 +48,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -978,7 +980,11 @@ private fun ChartContainer(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun MiniBarChart(months: List<String>, values: List<Float>) {
+private fun MiniBarChart(
+    months: List<String>,
+    values: List<Float>,
+    barColor: Color = Color(0xFF84B626)
+) {
     val max = (values.maxOrNull() ?: 1f).coerceAtLeast(1f)
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
         Row(
@@ -999,21 +1005,35 @@ private fun MiniBarChart(months: List<String>, values: List<Float>) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height((120f * (v / max)).dp)
-                            .background(Color(0xFF6B9620), MaterialTheme.shapes.small)
+                            .background(barColor, MaterialTheme.shapes.small)
                     )
                 }
             }
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(modifier = Modifier.fillMaxWidth()) {
             months.forEach { m ->
-                Text(m, color = Color(0xFFB8A99E), style = MaterialTheme.typography.bodySmall)
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = m,
+                        color = Color(0xFFB8A99E),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun MiniLineChart(months: List<String>, values: List<Float>) {
+private fun MiniLineChart(
+    months: List<String>,
+    values: List<Float>,
+    lineColor: Color = Color(0xFF84B626)
+) {
     val minV = values.minOrNull() ?: 0f
     val maxV = values.maxOrNull() ?: 1f
     val span = (maxV - minV).coerceAtLeast(1f)
@@ -1022,6 +1042,7 @@ private fun MiniLineChart(months: List<String>, values: List<Float>) {
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .padding(horizontal = 12.dp)
         ) {
             val stepX = if (values.size > 1) size.width / (values.size - 1) else size.width
             val points = values.mapIndexed { index, value ->
@@ -1029,21 +1050,45 @@ private fun MiniLineChart(months: List<String>, values: List<Float>) {
                 val y = size.height - (size.height * ((value - minV) / span))
                 Offset(x, y)
             }
-            for (i in 0 until points.lastIndex) {
-                drawLine(
-                    color = Color(0xFFFF6D57),
-                    start = points[i],
-                    end = points[i + 1],
-                    strokeWidth = 6f,
-                    cap = StrokeCap.Round
+            if (points.isNotEmpty()) {
+                val path = Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    for (i in 1 until points.size) {
+                        val p0 = points[i - 1]
+                        val p1 = points[i]
+                        val controlX1 = (p0.x + p1.x) / 2f
+                        val controlY1 = p0.y
+                        val controlX2 = (p0.x + p1.x) / 2f
+                        val controlY2 = p1.y
+                        cubicTo(controlX1, controlY1, controlX2, controlY2, p1.x, p1.y)
+                    }
+                }
+                drawPath(
+                    path = path,
+                    color = lineColor,
+                    style = Stroke(
+                        width = 5f,
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round
+                    )
                 )
             }
             points.forEach { p ->
-                drawCircle(Color(0xFF2D211A), radius = 9f, center = p)
-                drawCircle(Color(0xFFFF6D57), radius = 6f, center = p, style = Stroke(width = 4f))
+                drawCircle(color = Color.White, radius = 5f, center = p)
+                drawCircle(
+                    color = lineColor,
+                    radius = 6f,
+                    center = p,
+                    style = Stroke(width = 3.5f)
+                )
             }
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             months.forEach { m ->
                 Text(m, color = Color(0xFFB8A99E), style = MaterialTheme.typography.bodySmall)
             }

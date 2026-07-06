@@ -32,9 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -54,15 +52,17 @@ import com.melodypenero.coffeefarm.data.store.AppStore
 import com.melodypenero.coffeefarm.data.store.LocalAppStore
 import com.melodypenero.coffeefarm.ui.dashboard.DashboardScreen
 import com.melodypenero.coffeefarm.ui.navigation.AppDestination
-import com.melodypenero.coffeefarm.ui.navigation.appDestinations
+import com.melodypenero.coffeefarm.ui.navigation.administratorMobileDestinations
+import com.melodypenero.coffeefarm.ui.navigation.farmStaffMobileDestinations
 import com.melodypenero.coffeefarm.ui.screens.CoffeeCherryScreen
 import com.melodypenero.coffeefarm.ui.screens.EquipmentScreen
-import com.melodypenero.coffeefarm.ui.screens.FarmOperationsScreen
+import com.melodypenero.coffeefarm.ui.screens.HarvestReadinessScreen
+import com.melodypenero.coffeefarm.ui.screens.IrrigationScreen
 import com.melodypenero.coffeefarm.ui.screens.LoginScreen
-import com.melodypenero.coffeefarm.ui.screens.ProfitScreen
 import com.melodypenero.coffeefarm.ui.screens.SettingsScreen
 import com.melodypenero.coffeefarm.ui.screens.StaffAttendanceScreen
-import com.melodypenero.coffeefarm.ui.theme.Leaf700
+import com.melodypenero.coffeefarm.ui.screens.SuppliesScreen
+import com.melodypenero.coffeefarm.ui.components.farmPalette
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -100,17 +100,16 @@ fun CoffeeFarmApp() {
     }
 
     if (!authReady) {
+        val palette = farmPalette()
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(colors = listOf(Color(0xFF241710), Color(0xFF140C08)))
-                ),
+                .background(palette.pageGradient),
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(
                 modifier = Modifier.size(48.dp),
-                color = Leaf700
+                color = palette.accent
             )
         }
         return
@@ -155,16 +154,7 @@ fun CoffeeFarmApp() {
             ).show()
         }
     }
-    val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val titleColor = if (isDarkPalette) Color(0xFFF1E9E1) else Color(0xFF3E2723)
-    val shellBackground = if (isDarkPalette) {
-        Brush.verticalGradient(colors = listOf(Color(0xFF241710), Color(0xFF140C08)))
-    } else {
-        Brush.verticalGradient(colors = listOf(Color(0xFFF5F5F5), Color(0xFFF5F5F5)))
-    }
-    val drawerContainer = if (isDarkPalette) Color(0xFF2B1E16) else Color(0xFFF5F5F5)
-    val drawerText = if (isDarkPalette) Color(0xFFF1E9E1) else Color(0xFF3E2723)
-    val dateColor = if (isDarkPalette) Color(0xFFBFAF9F) else Color(0xFF5D4037)
+    val palette = farmPalette()
 
     LaunchedEffect(currentRoute, currentSession.role) {
         if (currentRoute != null && allowedDestinations.none { it.route == currentRoute }) {
@@ -185,22 +175,31 @@ fun CoffeeFarmApp() {
             drawerState = drawerState,
             drawerContent = {
                 ModalDrawerSheet(
-                    drawerContainerColor = drawerContainer
+                    drawerContainerColor = palette.drawerSurface
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 20.dp)
+                            .background(palette.accentContainer)
+                            .padding(horizontal = 20.dp, vertical = 24.dp)
                     ) {
                         Text(
-                            text = "Coffee Farm",
-                            color = Leaf700,
+                            text = "Acojido Farm",
+                            color = palette.accent,
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
+                            text = "Field app",
+                            color = palette.textSecondary,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                        Text(
                             text = "${currentSession.displayName} · ${roleLabel(currentSession.role)}",
-                            color = dateColor,
-                            style = MaterialTheme.typography.bodySmall
+                            color = palette.textSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp)
                         )
                     }
                     allowedDestinations.forEach { destination ->
@@ -212,7 +211,7 @@ fun CoffeeFarmApp() {
                             label = {
                                 Text(
                                     destination.title,
-                                    color = if (selected) Leaf700 else drawerText,
+                                    color = if (selected) palette.accent else palette.textPrimary,
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
                                 )
                             },
@@ -225,12 +224,12 @@ fun CoffeeFarmApp() {
                                 Icon(
                                     destination.icon,
                                     contentDescription = destination.title,
-                                    tint = if (selected) Leaf700 else drawerText
+                                    tint = if (selected) palette.accent else palette.textSecondary
                                 )
                             },
                             modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                             colors = NavigationDrawerItemDefaults.colors(
-                                selectedContainerColor = if (isDarkPalette) Color(0xFF4A372B) else Color(0xFFE7DED7),
+                                selectedContainerColor = palette.drawerSelected,
                                 unselectedContainerColor = Color.Transparent
                             )
                         )
@@ -241,7 +240,7 @@ fun CoffeeFarmApp() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(shellBackground)
+                    .background(palette.pageGradient)
             ) {
                 Scaffold(
                     containerColor = Color.Transparent,
@@ -255,7 +254,7 @@ fun CoffeeFarmApp() {
                                 Text(
                                     text = allowedDestinations.firstOrNull { it.route == currentRoute }?.title
                                         ?: "Dashboard",
-                                    color = titleColor,
+                                    color = palette.textPrimary,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             },
@@ -264,7 +263,7 @@ fun CoffeeFarmApp() {
                                     Icon(
                                         Icons.Default.Menu,
                                         contentDescription = "Open navigation",
-                                        tint = titleColor
+                                        tint = palette.textPrimary
                                     )
                                 }
                             },
@@ -272,7 +271,7 @@ fun CoffeeFarmApp() {
                                 Text(
                                     text = dateLabel,
                                     modifier = Modifier.padding(end = 12.dp),
-                                    color = dateColor
+                                    color = palette.textSecondary
                                 )
                             }
                         )
@@ -290,11 +289,22 @@ fun CoffeeFarmApp() {
                                 onNavigateToModule = navigateToDestination
                             )
                         }
-                        composable(AppDestination.StaffAttendance.route) { StaffAttendanceScreen() }
-                        composable(AppDestination.FarmOps.route) { FarmOperationsScreen() }
-                        composable(AppDestination.Cherry.route) { CoffeeCherryScreen() }
-                        composable(AppDestination.Equipment.route) { EquipmentScreen() }
-                        composable(AppDestination.Profit.route) { ProfitScreen() }
+                        composable(AppDestination.StaffAttendance.route) {
+                            StaffAttendanceScreen(session = currentSession)
+                        }
+                        composable(AppDestination.Cherry.route) {
+                            CoffeeCherryScreen(session = currentSession)
+                        }
+                        composable(AppDestination.HarvestReadiness.route) {
+                            HarvestReadinessScreen(reporterDisplayName = currentSession.displayName)
+                        }
+                        composable(AppDestination.Equipment.route) {
+                            EquipmentScreen(reporterDisplayName = currentSession.displayName)
+                        }
+                        composable(AppDestination.Supplies.route) {
+                            SuppliesScreen(reporterDisplayName = currentSession.displayName)
+                        }
+                        composable(AppDestination.Irrigation.route) { IrrigationScreen() }
                         composable(AppDestination.Settings.route) {
                             SettingsScreen(
                                 onLogout = {
@@ -312,18 +322,12 @@ fun CoffeeFarmApp() {
 }
 
 /**
- * DFD alignment: **Admin** — auth, user accounts, cherry management, equipment, sales (5.0), employees (6.0).
- * **Worker** — auth, scan cherry (2.0), view/store results (3.0), equipment info (4.0); no sales or HR modules.
+ * Mobile app focuses on CNN cherry scanning and worker field tools (attendance, irrigation, equipment, settings).
+ * Workers & operations HR and sales/finance screens live on the `Website/` React admin portal for administrators.
  */
 private fun destinationsForRole(role: UserRole): List<AppDestination> = when (role) {
-    UserRole.ADMINISTRATOR -> appDestinations
-    UserRole.FARM_STAFF -> listOf(
-        AppDestination.Dashboard,
-        AppDestination.StaffAttendance,
-        AppDestination.Cherry,
-        AppDestination.Equipment,
-        AppDestination.Settings
-    )
+    UserRole.ADMINISTRATOR -> administratorMobileDestinations
+    UserRole.FARM_STAFF -> farmStaffMobileDestinations
 }
 
 private fun roleLabel(role: UserRole): String = when (role) {

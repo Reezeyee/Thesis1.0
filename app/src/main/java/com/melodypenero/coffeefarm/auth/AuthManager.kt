@@ -23,6 +23,11 @@ data class AuthSession(
     val role: UserRole
 )
 
+data class PasswordResetRequestResult(
+    val email: String,
+    val adminNotified: Boolean
+)
+
 object AuthManager {
     private const val AuthPrefs = "coffee_farm_auth"
     private const val SessionUserIdKey = "session_user_id"
@@ -203,6 +208,32 @@ object AuthManager {
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun requestPasswordReset(context: Context, username: String): Result<PasswordResetRequestResult> {
+        if (FirebaseApp.getApps(context).isEmpty()) {
+            return Result.failure(IllegalStateException("Firebase is not configured (add google-services.json)."))
+        }
+        val email = usernameToEmail(username)
+            ?: return Result.failure(IllegalArgumentException("Enter a valid username or email."))
+
+        return runCatching {
+            FirebaseAuth.getInstance().sendPasswordResetEmail(email).await()
+            val adminNotified = runCatching {
+                FirebaseFirestore.getInstance()
+                    .collection(FirebaseCollections.PASSWORD_RESET_REQUESTS)
+                    .add(
+                        mapOf(
+                            "email" to email,
+                            "requestedAt" to FieldValue.serverTimestamp(),
+                            "source" to "android",
+                            "status" to "email_sent"
+                        )
+                    )
+                    .await()
+            }.isSuccess
+            PasswordResetRequestResult(email = email, adminNotified = adminNotified)
         }
     }
 
