@@ -7,6 +7,7 @@ import {
   type EquipmentConditionReport,
   type HarvestReadinessReportRecord,
   type TreeRipenessScanRecord,
+  type SmsMessageRecord,
 } from '../types/appState';
 
 function mergeByKey<T>(local: T[], remote: T[], keyFor: (item: T) => string): T[] {
@@ -143,6 +144,7 @@ export function mergeRemoteStatePreservingLocalGrades(
       s.supplyId.trim() || [s.name, s.category, s.unit].join('\u0001'),
     ),
     consumableReports: mergeByKey(local.consumableReports, remote.consumableReports, consumableReportKey),
+    smsMessages: mergeByKey(local.smsMessages, remote.smsMessages, (m) => m.messageId || [m.senderName, m.recipientPhoneNumber, String(m.timestamp)].join('\u0001')),
   });
 }
 
@@ -171,5 +173,6 @@ export function mergeStateForCloudUpload(local: AppState, remote: AppState): App
     equipment: local.equipment,
     consumableSupplies: local.consumableSupplies,
     consumableReports: mergeByKey(remote.consumableReports, local.consumableReports, consumableReportKey),
+    smsMessages: mergeByKey(remote.smsMessages, local.smsMessages, (m) => m.messageId || [m.senderName, m.recipientPhoneNumber, String(m.timestamp)].join('\u0001')),
   });
 }

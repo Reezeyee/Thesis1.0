@@ -7,11 +7,12 @@ import { CherryManagement } from './components/CherryManagement';
 import { ProfitManagement } from './components/ProfitManagement';
 import { MaintenanceManagement } from './components/MaintenanceManagement';
 import { WebsiteSettingsPanel } from './components/WebsiteSettingsPanel';
+import { SmsManagement } from './components/SmsManagement';
 import { AuthProvider, useRequireAdmin } from './auth/AuthProvider';
 import { LoginScreen } from './auth/LoginScreen';
 import { FarmDataProvider, useFarmData } from './store/FarmDataProvider';
 
-export type AppModuleId = 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'settings';
+export type AppModuleId = 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings';
 
 function SaveStatusBanner() {
   const { saving, error } = useFarmData();
@@ -48,6 +49,8 @@ function AdminAppShell() {
         return <ProfitManagement />;
       case 'maintenance':
         return <MaintenanceManagement />;
+      case 'sms':
+        return <SmsManagement />;
       case 'settings':
         return <WebsiteSettingsPanel />;
       default:

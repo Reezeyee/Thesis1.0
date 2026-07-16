@@ -62,6 +62,7 @@ import com.melodypenero.coffeefarm.ui.screens.LoginScreen
 import com.melodypenero.coffeefarm.ui.screens.SettingsScreen
 import com.melodypenero.coffeefarm.ui.screens.StaffAttendanceScreen
 import com.melodypenero.coffeefarm.ui.screens.SuppliesScreen
+import com.melodypenero.coffeefarm.ui.screens.SmsScreen
 import com.melodypenero.coffeefarm.ui.components.farmPalette
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -305,6 +306,9 @@ fun CoffeeFarmApp() {
                             SuppliesScreen(reporterDisplayName = currentSession.displayName)
                         }
                         composable(AppDestination.Irrigation.route) { IrrigationScreen() }
+                        composable(AppDestination.Sms.route) {
+                            SmsScreen(session = currentSession)
+                        }
                         composable(AppDestination.Settings.route) {
                             SettingsScreen(
                                 onLogout = {

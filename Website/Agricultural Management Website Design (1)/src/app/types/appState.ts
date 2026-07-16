@@ -15,6 +15,17 @@ export interface WorkerRecord {
   authUid?: string;
 }
 
+export interface SmsMessageRecord {
+  messageId: string;
+  senderName: string;
+  senderRole: string; // "Admin" | "Worker"
+  recipientName: string;
+  recipientPhoneNumber: string;
+  messageBody: string;
+  timestamp: number;
+  sentViaCellularSms: boolean;
+}
+
 export interface AttendanceRecord {
   workerName: string;
   details: string;
@@ -285,6 +296,7 @@ export interface AppState {
   pestControlLogs: PestControlRecord[];
   consumableSupplies: ConsumableSupplyRecord[];
   consumableReports: ConsumableSupplyReportRecord[];
+  smsMessages: SmsMessageRecord[];
 }
 
 export const defaultConsumableSupplies = (): ConsumableSupplyRecord[] => [
@@ -321,6 +333,7 @@ export const emptyAppState = (): AppState => ({
   pestControlLogs: [],
   consumableSupplies: [],
   consumableReports: [],
+  smsMessages: [],
 });
 
 export function normalizeAppState(raw: Partial<AppState> | null | undefined): AppState {
@@ -407,6 +420,16 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
       reviewedAt: r.reviewedAt ?? '',
       reviewedBy: r.reviewedBy ?? '',
     })),
+    smsMessages: (raw.smsMessages ?? base.smsMessages).map((m) => ({
+      messageId: m.messageId ?? '',
+      senderName: m.senderName ?? '',
+      senderRole: m.senderRole ?? '',
+      recipientName: m.recipientName ?? '',
+      recipientPhoneNumber: m.recipientPhoneNumber ?? '',
+      messageBody: m.messageBody ?? '',
+      timestamp: Number(m.timestamp) || Date.now(),
+      sentViaCellularSms: Boolean(m.sentViaCellularSms),
+    })),
   };
 }
 
@@ -436,6 +459,7 @@ export function totalItemCount(state: AppState): number {
     state.irrigationDamageReports.length +
     state.pestControlLogs.length +
     state.consumableSupplies.length +
-    state.consumableReports.length
+    state.consumableReports.length +
+    state.smsMessages.length
   );
 }

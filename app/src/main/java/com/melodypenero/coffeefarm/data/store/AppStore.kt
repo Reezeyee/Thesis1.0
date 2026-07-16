@@ -52,7 +52,19 @@ data class AppState(
     val irrigationDamageReports: List<IrrigationDamageReportRecord> = emptyList(),
     val pestControlLogs: List<PestControlRecord> = emptyList(),
     val consumableSupplies: List<ConsumableSupplyRecord> = emptyList(),
-    val consumableReports: List<ConsumableSupplyReportRecord> = emptyList()
+    val consumableReports: List<ConsumableSupplyReportRecord> = emptyList(),
+    val smsMessages: List<SmsMessageRecord> = emptyList()
+)
+
+data class SmsMessageRecord(
+    val messageId: String = "",
+    val senderName: String = "",
+    val senderRole: String = "", // "Admin" or "Worker"
+    val recipientName: String = "",
+    val recipientPhoneNumber: String = "",
+    val messageBody: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val sentViaCellularSms: Boolean = false
 )
 
 data class WorkerRecord(
@@ -433,7 +445,8 @@ class AppStore(context: Context) {
             harvestReadinessReports = state.harvestReadinessReports ?: emptyList(),
             irrigationDamageReports = state.irrigationDamageReports ?: emptyList(),
             consumableSupplies = state.consumableSupplies ?: emptyList(),
-            consumableReports = state.consumableReports ?: emptyList()
+            consumableReports = state.consumableReports ?: emptyList(),
+            smsMessages = state.smsMessages ?: emptyList()
         )
         // First: trim hand-edited Firestore/JSON so section/stage/treeId line up for migration, fruiting, and links.
         s = s.copy(
@@ -464,8 +477,24 @@ class AppStore(context: Context) {
         s = normalizePayrollRecords(s)
         s = normalizeIrrigationDamageReports(s)
         s = normalizeConsumableReports(s)
+        s = normalizeSmsMessages(s)
         return s
     }
+
+    private fun normalizeSmsMessages(state: AppState): AppState = state.copy(
+        smsMessages = state.smsMessages.map { m ->
+            SmsMessageRecord(
+                messageId = (m.messageId ?: "").trim(),
+                senderName = (m.senderName ?: "").trim(),
+                senderRole = (m.senderRole ?: "").trim(),
+                recipientName = (m.recipientName ?: "").trim(),
+                recipientPhoneNumber = (m.recipientPhoneNumber ?: "").trim(),
+                messageBody = (m.messageBody ?: "").trim(),
+                timestamp = m.timestamp,
+                sentViaCellularSms = m.sentViaCellularSms ?: false
+            )
+        }
+    )
 
     private fun normalizeConsumableReports(state: AppState): AppState = state.copy(
         consumableReports = state.consumableReports.map { r ->
@@ -847,6 +876,9 @@ class AppStore(context: Context) {
     private fun consumableReportKey(r: ConsumableSupplyReportRecord): String =
         r.reportId.trim().ifBlank { listOf(r.supplyId, r.supplyName, r.reportedAt, r.reportedBy).joinToString("\u0001") }
 
+    private fun smsMessageKey(m: SmsMessageRecord): String =
+        m.messageId.trim().ifBlank { listOf(m.senderName, m.recipientPhoneNumber, m.timestamp.toString()).joinToString("\u0001") }
+
     private fun mergeRemoteStatePreservingLocalGrades(local: AppState, remoteState: AppState): AppState =
         normalizeAppState(remoteState.copy(
             workers = mergeByKey(local.workers, remoteState.workers, ::workerKey),
@@ -873,7 +905,8 @@ class AppStore(context: Context) {
             irrigationDamageReports = mergeByKey(local.irrigationDamageReports, remoteState.irrigationDamageReports, ::irrigationDamageReportKey),
             pestControlLogs = mergeByKey(local.pestControlLogs, remoteState.pestControlLogs, ::pestControlKey),
             consumableSupplies = mergeByKey(local.consumableSupplies, remoteState.consumableSupplies, ::consumableSupplyKey),
-            consumableReports = mergeByKey(local.consumableReports, remoteState.consumableReports, ::consumableReportKey)
+            consumableReports = mergeByKey(local.consumableReports, remoteState.consumableReports, ::consumableReportKey),
+            smsMessages = mergeByKey(local.smsMessages, remoteState.smsMessages, ::smsMessageKey)
         ))
 
     private fun mergeStateForCloudUpload(local: AppState, remote: AppState): AppState {
@@ -888,7 +921,7 @@ class AppStore(context: Context) {
             treeRipenessScans.size +
             equipment.size + usageLogs.size + maintenanceLogs.size + equipmentReports.size + sales.size + expenses.size + payroll.size +
             coffeeFields.size + irrigationSystems.size + irrigationDamageReports.size + pestControlLogs.size + consumableSupplies.size +
-            consumableReports.size
+            consumableReports.size + smsMessages.size
 
     private fun isEffectivelyEmpty(state: AppState): Boolean = state.totalItemCount() == 0
 
@@ -958,6 +991,28 @@ class AppStore(context: Context) {
                 accountEmail = accountEmail.trim(),
                 accountPassword = accountPassword.trim(),
                 authUid = authUid.trim()
+            )
+        )
+    )
+
+    fun addSmsMessage(
+        senderName: String,
+        senderRole: String,
+        recipientName: String,
+        recipientPhoneNumber: String,
+        messageBody: String,
+        sentViaCellularSms: Boolean
+    ) = persist(
+        state.copy(
+            smsMessages = state.smsMessages + SmsMessageRecord(
+                messageId = "MSG-${UUID.randomUUID().toString().take(8).uppercase()}",
+                senderName = senderName.trim(),
+                senderRole = senderRole.trim(),
+                recipientName = recipientName.trim(),
+                recipientPhoneNumber = recipientPhoneNumber.trim(),
+                messageBody = messageBody.trim(),
+                timestamp = System.currentTimeMillis(),
+                sentViaCellularSms = sentViaCellularSms
             )
         )
     )
@@ -2231,6 +2286,7 @@ class AppStore(context: Context) {
         mirrorList(FirebaseCollections.PEST_CONTROL_LOGS, gson.toJson(next.pestControlLogs), next.pestControlLogs.size)
         mirrorList(FirebaseCollections.CONSUMABLE_SUPPLIES, gson.toJson(next.consumableSupplies), next.consumableSupplies.size)
         mirrorList(FirebaseCollections.CONSUMABLE_REPORTS, gson.toJson(next.consumableReports), next.consumableReports.size)
+        mirrorList(FirebaseCollections.SMS_MESSAGES, gson.toJson(next.smsMessages), next.smsMessages.size)
 
         batch
             .commit()

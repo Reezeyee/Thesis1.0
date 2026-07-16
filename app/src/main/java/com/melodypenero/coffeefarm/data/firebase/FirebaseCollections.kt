@@ -62,4 +62,5 @@ object FirebaseCollections {
     const val CONSUMABLE_REPORTS = "consumable_reports"
     const val ACTIVITY_LOGS = "activity_logs"
     const val PROFIT_SNAPSHOTS = "profit_snapshots"
+    const val SMS_MESSAGES = "sms_messages"
 }

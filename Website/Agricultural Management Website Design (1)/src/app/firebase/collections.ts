@@ -31,6 +31,7 @@ export const COLLECTIONS = {
   PEST_CONTROL_LOGS: 'pest_control_logs',
   CONSUMABLE_SUPPLIES: 'consumable_supplies',
   CONSUMABLE_REPORTS: 'consumable_reports',
+  SMS_MESSAGES: 'sms_messages',
 } as const;
 
 export const MIRROR_COLLECTIONS: { key: string; name: string }[] = [
@@ -58,4 +59,5 @@ export const MIRROR_COLLECTIONS: { key: string; name: string }[] = [
   { key: 'pestControlLogs', name: COLLECTIONS.PEST_CONTROL_LOGS },
   { key: 'consumableSupplies', name: COLLECTIONS.CONSUMABLE_SUPPLIES },
   { key: 'consumableReports', name: COLLECTIONS.CONSUMABLE_REPORTS },
+  { key: 'smsMessages', name: COLLECTIONS.SMS_MESSAGES },
 ];

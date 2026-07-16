@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /** Mobile app routes — field tools only. Farm management and sales live on the web admin portal. */
@@ -25,6 +26,7 @@ sealed class AppDestination(
     data object Irrigation : AppDestination("irrigation", "Irrigation", Icons.Default.WaterDrop)
     /** Worker-only: clock in/out. HR and payroll are managed on the website. */
     data object StaffAttendance : AppDestination("staff_attendance", "My Attendance", Icons.Default.Schedule)
+    data object Sms : AppDestination("sms", "SMS Communication", Icons.Default.Forum)
     data object Settings : AppDestination("settings", "Settings", Icons.Default.Settings)
 }
 
@@ -37,6 +39,7 @@ val farmStaffMobileDestinations = listOf(
     AppDestination.Equipment,
     AppDestination.Supplies,
     AppDestination.Irrigation,
+    AppDestination.Sms,
     AppDestination.Settings
 )
 
@@ -47,5 +50,6 @@ val administratorMobileDestinations = listOf(
     AppDestination.Equipment,
     AppDestination.Supplies,
     AppDestination.Irrigation,
+    AppDestination.Sms,
     AppDestination.Settings
 )
