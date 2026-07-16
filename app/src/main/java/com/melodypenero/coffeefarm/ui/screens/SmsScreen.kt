@@ -90,7 +90,6 @@ fun SmsScreen(session: AuthSession) {
     var adminPhoneNumber by remember { mutableStateOf("+639171234567") }
     var selectedWorker by remember { mutableStateOf<String?>(null) }
     var messageText by remember { mutableStateOf("") }
-    var sendDirectSms by remember { mutableStateOf(false) } // False = Use Intent; True = Direct SmsManager
 
     val isWorker = session.role == UserRole.FARM_STAFF
     val linkedWorker = remember(state.workers, session.userId, session.email) {
@@ -139,43 +138,34 @@ fun SmsScreen(session: AuthSession) {
         }.sortedBy { it.timestamp }
     }
 
-    // SMS sending logic
-    val sendSmsAction = {
+    val handleSyncInAppOnly = {
+        val text = messageText.trim()
+        val phone = partnerPhone.trim()
+        if (text.isBlank()) {
+            Toast.makeText(context, "Cannot sync: Message is empty.", Toast.LENGTH_SHORT).show()
+        } else {
+            store.addSmsMessage(
+                senderName = if (isWorker) myName else "Admin",
+                senderRole = if (isWorker) "Worker" else "Admin",
+                recipientName = partnerName,
+                recipientPhoneNumber = phone,
+                messageBody = text,
+                sentViaCellularSms = false
+            )
+            messageText = ""
+            Toast.makeText(context, "Synced in-app", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val handleSendViaSmsLink = {
         val phone = partnerPhone.trim()
         val text = messageText.trim()
-
         if (phone.isBlank()) {
             Toast.makeText(context, "Cannot send: No phone number specified.", Toast.LENGTH_LONG).show()
         } else if (text.isBlank()) {
             Toast.makeText(context, "Cannot send: Message is empty.", Toast.LENGTH_SHORT).show()
         } else {
-            if (sendDirectSms) {
-                // Direct SmsManager
-                try {
-                    val smsManager: SmsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        context.getSystemService(SmsManager::class.java)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        SmsManager.getDefault()
-                    }
-                    smsManager.sendTextMessage(phone, null, text, null, null)
-                    
-                    // Log in Firestore
-                    store.addSmsMessage(
-                        senderName = if (isWorker) myName else "Admin",
-                        senderRole = if (isWorker) "Worker" else "Admin",
-                        recipientName = partnerName,
-                        recipientPhoneNumber = phone,
-                        messageBody = text,
-                        sentViaCellularSms = true
-                    )
-                    messageText = ""
-                    Toast.makeText(context, "SMS Sent directly via cellular", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(context, "SmsManager failed: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            } else {
-                // Intent trigger
+            try {
                 val intent = Intent(Intent.ACTION_SENDTO).apply {
                     data = Uri.parse("smsto:$phone")
                     putExtra("sms_body", text)
@@ -193,32 +183,9 @@ fun SmsScreen(session: AuthSession) {
                 )
                 messageText = ""
                 Toast.makeText(context, "Opened in SMS App", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to open SMS app: ${e.message}", Toast.LENGTH_LONG).show()
             }
-        }
-    }
-
-    // Permission launcher for SEND_SMS
-    val smsPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { isGranted ->
-            if (isGranted) {
-                sendSmsAction()
-            } else {
-                Toast.makeText(context, "Permission denied. Please enable SMS permissions.", Toast.LENGTH_LONG).show()
-            }
-        }
-    )
-
-    val onSendClick = {
-        if (sendDirectSms) {
-            val permissionCheck = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS)
-            if (permissionCheck == PackageManager.PERMISSION_GRANTED) {
-                sendSmsAction()
-            } else {
-                smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
-            }
-        } else {
-            sendSmsAction()
         }
     }
 
@@ -425,47 +392,25 @@ fun SmsScreen(session: AuthSession) {
                         }
                     }
 
-                    // Radio controls for send type
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = !sendDirectSms,
-                                onClick = { sendDirectSms = false },
-                                colors = RadioButtonDefaults.colors(selectedColor = palette.accent)
-                            )
-                            Text(
-                                text = "SMS App (Intent)",
-                                fontSize = 13.sp,
-                                color = palette.textPrimary,
-                                modifier = Modifier.clickable { sendDirectSms = false }
+                        Box(modifier = Modifier.weight(1f)) {
+                            FarmPrimaryButton(
+                                text = "Sync In-App Only",
+                                onClick = { handleSyncInAppOnly() },
+                                enabled = messageText.isNotBlank()
                             )
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = sendDirectSms,
-                                onClick = { sendDirectSms = true },
-                                colors = RadioButtonDefaults.colors(selectedColor = palette.accent)
-                            )
-                            Text(
-                                text = "Direct SMS (In-App)",
-                                fontSize = 13.sp,
-                                color = palette.textPrimary,
-                                modifier = Modifier.clickable { sendDirectSms = true }
+                        Box(modifier = Modifier.weight(1f)) {
+                            FarmPrimaryButton(
+                                text = "Send via SMS Link",
+                                onClick = { handleSendViaSmsLink() },
+                                enabled = partnerPhone.isNotBlank() && messageText.isNotBlank()
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    FarmPrimaryButton(
-                        text = if (sendDirectSms) "Send Cellular SMS directly" else "Open in default SMS App",
-                        onClick = onSendClick,
-                        enabled = partnerPhone.isNotBlank() && messageText.isNotBlank()
-                    )
                 }
             }
         }
