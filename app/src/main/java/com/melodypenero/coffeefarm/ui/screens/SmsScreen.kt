@@ -93,7 +93,15 @@ fun SmsScreen(session: AuthSession) {
     var sendDirectSms by remember { mutableStateOf(false) } // False = Use Intent; True = Direct SmsManager
 
     val isWorker = session.role == UserRole.FARM_STAFF
-    val myName = session.displayName
+    val linkedWorker = remember(state.workers, session.userId, session.email) {
+        state.workers.firstOrNull { worker ->
+            val wUid = worker.authUid ?: ""
+            val wEmail = worker.accountEmail ?: ""
+            wUid.equals(session.userId, ignoreCase = true) ||
+                wEmail.equals(session.email, ignoreCase = true)
+        }
+    }
+    val myName = if (isWorker) (linkedWorker?.name ?: session.displayName) else session.displayName
 
     // Load available workers
     val workers = state.workers
@@ -116,17 +124,17 @@ fun SmsScreen(session: AuthSession) {
     }
 
     // Filter messages for active chat thread
-    val threadMessages = remember(state.smsMessages, selectedWorker, session.displayName, isWorker) {
+    val threadMessages = remember(state.smsMessages, selectedWorker, myName, isWorker) {
         state.smsMessages.filter { msg ->
             if (isWorker) {
                 // Worker sees their own messages with admin
-                (msg.senderName == myName && msg.recipientName == "Admin") ||
-                (msg.senderName == "Admin" && msg.recipientName == myName)
+                (msg.senderName.equals(myName, ignoreCase = true) && msg.recipientName.equals("Admin", ignoreCase = true)) ||
+                (msg.senderName.equals("Admin", ignoreCase = true) && msg.recipientName.equals(myName, ignoreCase = true))
             } else {
                 // Admin sees messages with the selected worker
                 val wName = selectedWorker ?: ""
-                (msg.senderName == "Admin" && msg.recipientName == wName) ||
-                (msg.senderName == wName && msg.recipientName == "Admin")
+                (msg.senderName.equals("Admin", ignoreCase = true) && msg.recipientName.equals(wName, ignoreCase = true)) ||
+                (msg.senderName.equals(wName, ignoreCase = true) && msg.recipientName.equals("Admin", ignoreCase = true))
             }
         }.sortedBy { it.timestamp }
     }

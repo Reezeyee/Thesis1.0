@@ -47,10 +47,12 @@ export function SmsManagement() {
   const activeThread = useMemo(() => {
     if (!activeWorker) return [];
     return messages.filter(msg => {
-      const wName = activeWorker.name;
+      const wName = (activeWorker.name || '').toLowerCase();
+      const sender = (msg.senderName || '').toLowerCase();
+      const recipient = (msg.recipientName || '').toLowerCase();
       return (
-        (msg.senderName === 'Admin' && msg.recipientName === wName) ||
-        (msg.senderName === wName && msg.recipientName === 'Admin')
+        (sender === 'admin' && recipient === wName) ||
+        (sender === wName && recipient === 'admin')
       );
     }).sort((a, b) => a.timestamp - b.timestamp);
   }, [messages, activeWorker]);
@@ -187,10 +189,15 @@ export function SmsManagement() {
                 const isActive = activeWorker?.workerId === w.workerId;
                 
                 // Get preview of last message
-                const workerMsgs = messages.filter(m => 
-                  (m.senderName === 'Admin' && m.recipientName === w.name) ||
-                  (m.senderName === w.name && m.recipientName === 'Admin')
-                ).sort((a,b) => b.timestamp - a.timestamp);
+                const workerMsgs = messages.filter(m => {
+                  const wName = (w.name || '').toLowerCase();
+                  const sender = (m.senderName || '').toLowerCase();
+                  const recipient = (m.recipientName || '').toLowerCase();
+                  return (
+                    (sender === 'admin' && recipient === wName) ||
+                    (sender === wName && recipient === 'admin')
+                  );
+                }).sort((a,b) => b.timestamp - a.timestamp);
                 const lastMsg = workerMsgs[0];
 
                 return (
