@@ -20,7 +20,8 @@ data class AuthSession(
     val userId: String,
     val email: String,
     val displayName: String,
-    val role: UserRole
+    val role: UserRole,
+    val mustChangePassword: Boolean = false
 )
 
 data class PasswordResetRequestResult(
@@ -34,6 +35,7 @@ object AuthManager {
     private const val SessionEmailKey = "session_email"
     private const val SessionDisplayNameKey = "session_display_name"
     private const val SessionRoleKey = "session_role"
+    private const val SessionMustChangePassKey = "session_must_change_pass"
 
     private const val AdminEmail = "farmacojido@gmail.com"
     private const val AdminPassword = "Farm012345"
@@ -147,11 +149,13 @@ object AuthManager {
         val display = if (fromPrefsName.isNotBlank()) fromPrefsName else displayNameForEmail(
             if (fromPrefsEmail.isNotBlank()) fromPrefsEmail else email
         )
+        val mustChange = checkMustChangePassword(uid)
         val session = AuthSession(
             userId = uid,
             email = if (fromPrefsEmail.isNotBlank()) fromPrefsEmail else email,
             displayName = display,
-            role = role
+            role = role,
+            mustChangePassword = mustChange
         )
         saveSession(context, session)
         return session
@@ -168,6 +172,17 @@ object AuthManager {
             val name = snap.getString("role") ?: return@runCatching null
             UserRole.valueOf(name)
         }.getOrNull()
+    }
+
+    suspend fun checkMustChangePassword(uid: String): Boolean {
+        return runCatching {
+            val snap = FirebaseFirestore.getInstance()
+                .collection(FirebaseCollections.USERS)
+                .document(uid)
+                .get()
+                .await()
+            snap.getBoolean("mustChangePassword") == true || snap.getBoolean("isTemporaryPassword") == true
+        }.getOrDefault(false)
     }
 
     private fun inferRoleFromEmail(email: String): UserRole = roleForEmail(email)
@@ -195,7 +210,8 @@ object AuthManager {
             val result = auth.signInWithEmailAndPassword(email, pass).await()
             val u = result.user!!
             afterSuccessfulAuthWriteProfileAndHistory(u.uid, email, display, role)
-            val session = AuthSession(u.uid, email, display, role)
+            val mustChange = checkMustChangePassword(u.uid)
+            val session = AuthSession(u.uid, email, display, role, mustChangePassword = mustChange)
             saveSession(context, session)
             Result.success(session)
         } catch (e: FirebaseAuthInvalidUserException) {
@@ -208,6 +224,32 @@ object AuthManager {
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun updateUserPassword(context: Context, newPassword: String): Result<Unit> {
+        val authUser = FirebaseAuth.getInstance().currentUser
+            ?: return Result.failure(IllegalStateException("No active signed-in user."))
+        val uid = authUser.uid
+        return runCatching {
+            authUser.updatePassword(newPassword).await()
+            FirebaseFirestore.getInstance()
+                .collection(FirebaseCollections.USERS)
+                .document(uid)
+                .set(
+                    mapOf(
+                        "mustChangePassword" to false,
+                        "isTemporaryPassword" to false,
+                        "passwordUpdatedAt" to FieldValue.serverTimestamp()
+                    ),
+                    SetOptions.merge()
+                )
+                .await()
+            val currentSession = loadSession(context)
+            if (currentSession != null) {
+                saveSession(context, currentSession.copy(mustChangePassword = false))
+            }
+            Unit
         }
     }
 
@@ -266,7 +308,8 @@ object AuthManager {
                 .set(initial, SetOptions.merge())
                 .await()
             afterSuccessfulAuthWriteProfileAndHistory(created.uid, email, display, role)
-            val session = AuthSession(created.uid, email, display, role)
+            val mustChange = checkMustChangePassword(created.uid)
+            val session = AuthSession(created.uid, email, display, role, mustChangePassword = mustChange)
             saveSession(context, session)
             session
         }.fold(
@@ -310,6 +353,7 @@ object AuthManager {
             .putString(SessionEmailKey, session.email)
             .putString(SessionDisplayNameKey, session.displayName)
             .putString(SessionRoleKey, session.role.name)
+            .putBoolean(SessionMustChangePassKey, session.mustChangePassword)
             .apply()
     }
 
@@ -320,11 +364,13 @@ object AuthManager {
         val displayName = p.getString(SessionDisplayNameKey, null) ?: return null
         val roleName = p.getString(SessionRoleKey, null) ?: return null
         val role = runCatching { UserRole.valueOf(roleName) }.getOrNull() ?: return null
+        val mustChange = p.getBoolean(SessionMustChangePassKey, false)
         return AuthSession(
             userId = userId,
             email = email,
             displayName = displayName,
-            role = role
+            role = role,
+            mustChangePassword = mustChange
         )
     }
 
@@ -336,6 +382,7 @@ object AuthManager {
             .remove(SessionEmailKey)
             .remove(SessionDisplayNameKey)
             .remove(SessionRoleKey)
+            .remove(SessionMustChangePassKey)
             .apply()
     }
 }

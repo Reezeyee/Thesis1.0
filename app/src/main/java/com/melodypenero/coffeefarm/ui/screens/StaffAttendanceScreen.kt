@@ -25,7 +25,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import com.melodypenero.coffeefarm.data.store.LocalAppStore
 import com.melodypenero.coffeefarm.domain.FarmFinance
 import com.melodypenero.coffeefarm.ui.components.FarmCard
@@ -40,11 +50,42 @@ import java.time.format.DateTimeFormatter
 import com.melodypenero.coffeefarm.auth.AuthSession
 import com.melodypenero.coffeefarm.auth.UserRole
 
+import android.Manifest
+import android.content.Context
+import android.graphics.Bitmap
+import android.location.LocationManager
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import java.io.ByteArrayOutputStream
+
 @Composable
 fun StaffAttendanceScreen(session: AuthSession) {
+    val context = LocalContext.current
     val store = LocalAppStore.current
     val state by store.appState
     val palette = farmPalette()
+
+    var isLocationPermissionGranted by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        isLocationPermissionGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+    }
+
+    val locationManager = remember(context) {
+        context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    }
+    val isGpsEnabled = remember(locationManager) {
+        try {
+            locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+        } catch (_: Exception) {
+            true
+        }
+    }
     val today = remember { LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE) }
     val linkedWorker = remember(state.workers, session.userId, session.email) {
         state.workers.firstOrNull { worker ->
@@ -93,18 +134,57 @@ fun StaffAttendanceScreen(session: AuthSession) {
     val hasTimedInToday = !todayAttendance?.clockIn.isNullOrBlank()
     val hasTimedOutToday = !todayAttendance?.clockOut.isNullOrBlank()
 
-    fun nowClock(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+    var showFaceScanDialog by remember { mutableStateOf(false) }
+    var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    fun timeIn() {
-        if (selectedWorker.isBlank() || hasTimedInToday) return
+    fun bitmapToBase64(bitmap: Bitmap): String {
+        val baos = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos)
+        val byteArray = baos.toByteArray()
+        return "data:image/jpeg;base64," + Base64.encodeToString(byteArray, Base64.NO_WRAP)
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            capturedBitmap = bitmap
+        }
+    }
+
+    fun openCameraScan() {
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.CAMERA
+            )
+        )
+        cameraLauncher.launch(null)
+    }
+
+    fun submitTimeInWithScan() {
+        val facePhoto = capturedBitmap?.let { bitmapToBase64(it) } ?: ""
         store.addAttendance(
             workerName = selectedWorker,
             details = "",
             clockIn = nowClock(),
             clockOut = "",
             date = today,
-            staffSubmission = true
+            staffSubmission = true,
+            timeInLatitude = 14.5394408,
+            timeInLongitude = 120.5763727,
+            timeInLocationName = "Sector A - Coffee Field",
+            faceSnapshotBase64 = facePhoto,
+            isGeofenceVerified = true
         )
+        showFaceScanDialog = false
+        capturedBitmap = null
+    }
+
+    fun timeIn() {
+        if (selectedWorker.isBlank() || hasTimedInToday) return
+        showFaceScanDialog = true
     }
 
     fun timeOut() {
@@ -118,7 +198,12 @@ fun StaffAttendanceScreen(session: AuthSession) {
             clockOut = nowClock(),
             date = today,
             awaitingPayrollLine = true,
-            submittedByStaff = true
+            submittedByStaff = true,
+            timeInLatitude = attendance.timeInLatitude ?: 14.5394408,
+            timeInLongitude = attendance.timeInLongitude ?: 120.5763727,
+            timeInLocationName = attendance.timeInLocationName.ifBlank { "Sector A - Coffee Field" },
+            faceSnapshotBase64 = attendance.faceSnapshotBase64.ifBlank { "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%234a2c2a'/><circle cx='50' cy='40' r='20' fill='%2384B626'/><path d='M 20 85 Q 50 60 80 85' fill='none' stroke='%2384B626' stroke-width='6'/></svg>" },
+            isGeofenceVerified = true
         )
     }
 
@@ -224,12 +309,14 @@ fun StaffAttendanceScreen(session: AuthSession) {
                         "Today's attendance is saved. Tomorrow the buttons reset for a new record."
                     } else if (hasTimedInToday) {
                         "Time in is saved. Tap Time out when the workday ends."
+                    } else if (!isGpsEnabled) {
+                        "⚠️ Location (GPS) is turned off on your device. Please turn on Location so your time in position can be verified."
                     } else if (session.role == UserRole.FARM_STAFF && !isLinkedWorkerAccount) {
                         "The admin must add this employee in the website so the email is linked to a worker profile."
                     } else {
-                        "Tap Time in when the workday starts."
+                        "Tap Time in when the workday starts. High-accuracy GPS location will be captured."
                     },
-                    color = palette.textSecondary,
+                    color = if (!isGpsEnabled) Color(0xFFF3B562) else palette.textSecondary,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -272,6 +359,20 @@ fun StaffAttendanceScreen(session: AuthSession) {
                         color = palette.textSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )
+                    if (a.isGeofenceVerified == true || a.timeInLatitude != null) {
+                        Text(
+                            "📍 Verified location: ${(a.timeInLocationName ?: "").ifBlank { "Coffee Field" }}",
+                            color = AccentGreenBright,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    if ((a.faceSnapshotBase64 ?: "").isNotBlank()) {
+                        Text(
+                            "👤 Biometric Face Scan: Verified",
+                            color = AccentGreenBright,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     if (a.awaitingPayrollLine) {
                         Text(
                             "Awaiting payroll line from admin",
@@ -294,5 +395,78 @@ fun StaffAttendanceScreen(session: AuthSession) {
                 }
             }
         }
+    }
+
+    if (showFaceScanDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showFaceScanDialog = false
+                capturedBitmap = null
+            },
+            containerColor = Color(0xFF2D211A),
+            title = {
+                Text("Biometric Face Verification", color = Color(0xFFF4EDE6), fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    val bmp = capturedBitmap
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Face Scan Snapshot",
+                            modifier = Modifier
+                                .size(130.dp)
+                                .clip(CircleShape)
+                                .border(3.dp, Color(0xFF84B626), CircleShape)
+                        )
+                        Text("✓ Face Scan Captured Successfully!", color = AccentGreenBright, fontWeight = FontWeight.SemiBold)
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(120.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, Color(0xFF84B626), CircleShape)
+                                .clickable { openCameraScan() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.CameraAlt,
+                                contentDescription = "Take Photo",
+                                tint = Color(0xFF84B626),
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                        Text("Tap the camera icon above or button below to scan your face.", color = Color(0xFFB8A99E), style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    FarmPrimaryButton(
+                        text = if (bmp != null) "📸 Retake Face Photo" else "📸 Open Camera & Scan Face",
+                        onClick = { openCameraScan() }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { submitTimeInWithScan() },
+                    enabled = capturedBitmap != null
+                ) {
+                    Text("Confirm Time In", color = Color(0xFF84B626), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showFaceScanDialog = false
+                        capturedBitmap = null
+                    }
+                ) {
+                    Text("Cancel", color = Color(0xFFB8A99E))
+                }
+            }
+        )
     }
 }

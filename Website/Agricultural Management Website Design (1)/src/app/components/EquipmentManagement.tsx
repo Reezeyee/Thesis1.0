@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { SelectWithOther } from './ui/SelectWithOther';
 import { Wrench, CheckCircle, AlertTriangle, Calendar, Edit2, Plus, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import {
@@ -127,6 +128,18 @@ export function EquipmentManagement() {
   const [activeInventoryTab, setActiveInventoryTab] = useState<'fleet' | 'consumables'>('fleet');
   const [supplyFormOpen, setSupplyFormOpen] = useState(false);
   const [supplyForm, setSupplyForm] = useState<SupplyForm>(() => emptySupplyForm());
+
+  useEffect(() => {
+    const handleScrollTarget = () => {
+      const hash = window.location.hash;
+      if (hash.includes('consumable') || hash.includes('supply')) {
+        setActiveInventoryTab('consumables');
+      }
+    };
+    handleScrollTarget();
+    window.addEventListener('hashchange', handleScrollTarget);
+    return () => window.removeEventListener('hashchange', handleScrollTarget);
+  }, []);
 
   const consumables = state.consumableSupplies;
   const consumableReports = state.consumableReports ?? [];
@@ -289,10 +302,11 @@ export function EquipmentManagement() {
   const markReportReviewed = async (index: number, applyBrokenStatus: boolean) => {
     const report = state.equipmentReports[index];
     if (!report) return;
+    const targetId = report.reportId;
     const ok = await runSave('Equipment report', () =>
       updateState((prev) => {
         const equipmentReports = prev.equipmentReports.map((r, i) =>
-          i === index ? { ...r, reviewed: true } : r,
+          (targetId && r.reportId === targetId) || i === index ? { ...r, reviewed: true } : r,
         );
         if (!applyBrokenStatus || !report.isWrecked) {
           return { ...prev, equipmentReports };
@@ -329,6 +343,7 @@ export function EquipmentManagement() {
     const index = fixingReportIndex;
     const report = state.equipmentReports[index];
     if (!report) return;
+    const targetId = report.reportId;
     const today = new Date().toISOString().slice(0, 10);
     const normalizedCost = repairCost.trim().startsWith('₱')
       ? repairCost.trim()
@@ -336,7 +351,7 @@ export function EquipmentManagement() {
     const ok = await runSave('Equipment fixed', () =>
       updateState((prev) => {
         const equipmentReports = prev.equipmentReports.map((r, i) =>
-          i === index
+          (targetId && r.reportId === targetId) || i === index
             ? {
                 ...r,
                 reviewed: true,
@@ -500,20 +515,14 @@ export function EquipmentManagement() {
                 <Label>Name</Label>
                 <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
               </div>
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <select
-                  className={SELECT_CLASS}
-                  value={editForm.category}
-                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                >
-                  {EQUIPMENT_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SelectWithOther
+                label="Category"
+                value={editForm.category}
+                onChange={(cat) => setEditForm({ ...editForm, category: cat })}
+                options={EQUIPMENT_CATEGORIES}
+                selectClassName={SELECT_CLASS}
+                otherPlaceholder="Type custom equipment category..."
+              />
               <div className="space-y-2">
                 <Label>Value (₱)</Label>
                 <Input
@@ -593,20 +602,14 @@ export function EquipmentManagement() {
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <select
-                  className={SELECT_CLASS}
-                  value={supplyForm.category}
-                  onChange={(e) => setSupplyForm({ ...supplyForm, category: e.target.value })}
-                >
-                  {SUPPLY_CATEGORIES.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SelectWithOther
+                label="Category"
+                value={supplyForm.category}
+                onChange={(cat) => setSupplyForm({ ...supplyForm, category: cat })}
+                options={SUPPLY_CATEGORIES}
+                selectClassName={SELECT_CLASS}
+                otherPlaceholder="Type custom supply category..."
+              />
               <div className="space-y-2">
                 <Label>Unit</Label>
                 <Input
@@ -655,7 +658,7 @@ export function EquipmentManagement() {
         {workerReports.length === 0 ? (
           <p className="text-sm text-muted-foreground">No worker reports yet.</p>
         ) : (
-          <div className={`space-y-3 max-h-[360px] ${SCROLL_PANEL_CLASS}`}>
+          <div id="equipment-reports-section" className={`space-y-3 max-h-[360px] ${SCROLL_PANEL_CLASS}`}>
             {workerReports.map((entry) =>
               entry.kind === 'report' ? (
                 <WorkerEquipmentReportCard
@@ -819,7 +822,7 @@ export function EquipmentManagement() {
                 {consumableReports.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No worker supply reports yet.</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div id="consumable-reports-section" className="space-y-2">
                     {consumableReports
                       .slice()
                       .sort((a, b) => (b.reportedAt || '').localeCompare(a.reportedAt || ''))
@@ -829,6 +832,7 @@ export function EquipmentManagement() {
                         return (
                           <div
                             key={report.reportId || `${report.supplyName}-${report.reportedAt}-${index}`}
+                            id={report.reportId ? `supply-${report.reportId}` : undefined}
                             className="rounded-lg bg-[#f5f1ed] border border-[#4a2c2a]/10 p-3"
                           >
                             <div className="flex items-start justify-between gap-3">
@@ -1150,6 +1154,7 @@ function WorkerEquipmentReportCard({
 
   return (
     <div
+      id={report.reportId ? `equipment-${report.reportId}` : undefined}
       className={`rounded-xl p-4 border ${
         isFixed
           ? 'bg-[#f0f7eb] border-[#2d5016]/25'

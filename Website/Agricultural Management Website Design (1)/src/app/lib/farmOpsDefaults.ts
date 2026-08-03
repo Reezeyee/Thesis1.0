@@ -22,6 +22,8 @@ export function emptyCoffeeField(): CoffeeFieldRecord {
     age: '',
     nextHarvest: '',
     productivity: 75,
+    lat: 14.5394408,
+    lng: 120.5763727,
   };
 }
 

@@ -4,9 +4,11 @@ import { cn } from './ui/utils';
 interface SidebarProps {
   activeModule: string;
   onModuleChange: (module: string) => void;
+  pendingCount?: number;
+  onOpenNotifications?: () => void;
 }
 
-export function Sidebar({ activeModule, onModuleChange }: SidebarProps) {
+export function Sidebar({ activeModule, onModuleChange, pendingCount = 0, onOpenNotifications }: SidebarProps) {
   const menuItems = [
     { id: 'dashboard' as const, icon: LayoutDashboard, label: 'Dashboard', hint: 'KPIs & overview' },
     { id: 'farm' as const, icon: Users, label: 'Farm Management', hint: 'HR & schedules' },
@@ -63,10 +65,23 @@ export function Sidebar({ activeModule, onModuleChange }: SidebarProps) {
       <div className="p-4 border-t border-white/10 space-y-2">
         <button
           type="button"
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[#d4a574] hover:bg-[#5d3a38] hover:text-white transition-all"
+          onClick={onOpenNotifications}
+          className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-[#d4a574] hover:bg-[#5d3a38] hover:text-white transition-all group"
         >
-          <Bell className="w-5 h-5" />
-          <span>Notifications</span>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Bell className="w-5 h-5" />
+              {pendingCount > 0 ? (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#d4183d] rounded-full animate-pulse" />
+              ) : null}
+            </div>
+            <span>Notifications</span>
+          </div>
+          {pendingCount > 0 ? (
+            <span className="bg-[#d4183d] text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-sm">
+              {pendingCount}
+            </span>
+          ) : null}
         </button>
         <button
           type="button"

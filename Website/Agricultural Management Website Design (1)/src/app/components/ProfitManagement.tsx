@@ -14,6 +14,7 @@ import {
   revenueChartFromState,
   transactionsFromAppState,
 } from '../lib/profitUi';
+import { SelectWithOther } from './ui/SelectWithOther';
 import {
   DollarSign,
   TrendingUp,
@@ -435,21 +436,15 @@ export function ProfitManagement() {
             <DialogDescription>Choose category (transport, marketing, warehousing, regulatory, …), describe the cost, enter amount.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="expense-category">Expense category</Label>
-              <select
-                id="expense-category"
-                value={expenseForm.category}
-                onChange={(e) => setExpenseForm((f) => ({ ...f, category: e.target.value }))}
-                className="flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-2 text-sm text-[#3e2723] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                {EXPENSE_CATEGORY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SelectWithOther
+              id="expense-category"
+              label="Expense category"
+              value={expenseForm.category}
+              onChange={(val) => setExpenseForm((f) => ({ ...f, category: val }))}
+              options={EXPENSE_CATEGORY_OPTIONS}
+              selectClassName="flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-2 text-sm text-[#3e2723] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              otherPlaceholder="Type custom expense category..."
+            />
             <div className="space-y-2">
               <Label htmlFor="expense-desc">Description</Label>
               <Input

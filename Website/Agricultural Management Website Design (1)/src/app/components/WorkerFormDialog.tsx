@@ -11,12 +11,13 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { SelectWithOther } from './ui/SelectWithOther';
 import {
   BATAAN_PROVINCE,
   BATAAN_CITIES_AND_TOWNS,
   getBarangaysForCity,
 } from '../data/bataanAddressCatalog';
-import { isAtLeast18, isValidPhone11, sanitizePhoneInput, isValidName } from '../lib/workerUi';
+import { isAtLeast18, isValidPhone11, sanitizePhoneInput, sanitizeEmergencyPhoneInput, isValidName } from '../lib/workerUi';
 
 export type WorkerFormDraft = {
   name: string;
@@ -48,7 +49,7 @@ const PHOTO_QUALITY = 0.82;
 export function composeWorkerAddress(form: WorkerFormDraft): string {
   const hn = form.houseNumber.trim();
   const street = form.street.trim();
-  const line1 = hn ? `${hn} ${street}` : street;
+  const line1 = hn && street && hn !== street && !street.includes(hn) ? `${hn} ${street}` : (street || hn);
   return `${line1}, Barangay ${form.barangay.trim()}, ${form.municipality.trim()}, ${BATAAN_PROVINCE}`;
 }
 
@@ -62,8 +63,7 @@ export function addressFormReady(
     isValidPhone11(form.phone) &&
     form.municipality.trim() !== '' &&
     form.barangay.trim() !== '' &&
-    form.street.trim() !== '' &&
-    form.houseNumber.trim() !== '' &&
+    (form.street.trim() !== '' || form.houseNumber.trim() !== '') &&
     (!form.emergencyName.trim() || isValidName(form.emergencyName))
   );
 }
@@ -185,20 +185,16 @@ export function WorkerFormDialog({
                 <p className="text-xs text-muted-foreground">Employees must be at least 18 years old.</p>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="worker-sex">Sex</Label>
-              <select
+              <SelectWithOther
                 id="worker-sex"
+                label="Sex"
                 value={form.sex}
-                onChange={(e) => setForm((f) => ({ ...f, sex: e.target.value }))}
-                className={ADDRESS_SELECT_CLASS}
-              >
-                <option value="">— Select sex —</option>
-                <option>Female</option>
-                <option>Male</option>
-                <option>Prefer not to say</option>
-              </select>
-            </div>
+                onChange={(val) => setForm((f) => ({ ...f, sex: val }))}
+                options={['Female', 'Male', 'Prefer not to say']}
+                placeholder="— Select sex —"
+                selectClassName={ADDRESS_SELECT_CLASS}
+                otherPlaceholder="Type custom sex..."
+              />
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="worker-phone">Phone number *</Label>
               <Input
@@ -219,23 +215,15 @@ export function WorkerFormDialog({
                 </p>
               )}
             </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="worker-role">Role</Label>
-              <select
+              <SelectWithOther
                 id="worker-role"
+                label="Role"
                 value={form.role}
-                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                className={ADDRESS_SELECT_CLASS}
-              >
-                <option>Picker</option>
-                <option>Sorter</option>
-                <option>Field Supervisor</option>
-                <option>Operator</option>
-                <option>Quality Inspector</option>
-              </select>
-
-
-            </div>
+                onChange={(val) => setForm((f) => ({ ...f, role: val }))}
+                options={['Picker', 'Sorter', 'Field Supervisor', 'Operator', 'Quality Inspector']}
+                selectClassName={ADDRESS_SELECT_CLASS}
+                otherPlaceholder="Type custom role..."
+              />
             {!isEditing ? (
               <div className="sm:col-span-2 rounded-xl border border-[#2d5016]/20 bg-[#f0f7eb] p-4">
                 <div className="flex items-start gap-3">
@@ -268,21 +256,16 @@ export function WorkerFormDialog({
                     <p className="text-xs text-red-600 font-medium">Name must only contain letters, spaces, and dashes (-). No numbers or special characters.</p>
                   )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="worker-emergency-relationship">Relationship</Label>
-                  <select
+                  <SelectWithOther
                     id="worker-emergency-relationship"
+                    label="Relationship"
                     value={form.emergencyRelationship}
-                    onChange={(e) => setForm((f) => ({ ...f, emergencyRelationship: e.target.value }))}
-                    className={ADDRESS_SELECT_CLASS}
-                  >
-                    <option value="">— Select relationship —</option>
-                    <option>Parent</option>
-                    <option>Sibling</option>
-                    <option>Spouse</option>
-                    <option>Other</option>
-                  </select>
-                </div>
+                    onChange={(val) => setForm((f) => ({ ...f, emergencyRelationship: val }))}
+                    options={['Parent', 'Sibling', 'Spouse']}
+                    placeholder="— Select relationship —"
+                    selectClassName={ADDRESS_SELECT_CLASS}
+                    otherPlaceholder="Type custom relationship..."
+                  />
                 <div className="space-y-2">
                   <Label htmlFor="worker-emergency-phone">Contact number</Label>
                   <Input
@@ -290,9 +273,9 @@ export function WorkerFormDialog({
                     type="tel"
                     value={form.emergencyPhone}
                     onChange={(e) =>
-                      setForm((f) => ({ ...f, emergencyPhone: sanitizePhoneInput(e.target.value) }))
+                      setForm((f) => ({ ...f, emergencyPhone: sanitizeEmergencyPhoneInput(e.target.value) }))
                     }
-                    placeholder="09XXXXXXXXX"
+                    placeholder="e.g. 09171234567 or +63 917 123 4567"
                     className="bg-white border-[#4a2c2a]/20"
                   />
                 </div>
@@ -365,23 +348,12 @@ export function WorkerFormDialog({
                   </select>
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="worker-street">Street *</Label>
+                  <Label htmlFor="worker-street">House No. / Street / Building *</Label>
                   <Input
                     id="worker-street"
-                    value={form.street}
-                    onChange={(e) => setForm((f) => ({ ...f, street: e.target.value }))}
-                    placeholder="e.g., Rizal Street, National Road"
-                    className="bg-white border-[#4a2c2a]/20"
-                    disabled={!form.barangay}
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="worker-house-number">House / lot number *</Label>
-                  <Input
-                    id="worker-house-number"
-                    value={form.houseNumber}
-                    onChange={(e) => setForm((f) => ({ ...f, houseNumber: e.target.value }))}
-                    placeholder="e.g., 42-A, Lot 12, Blk 3"
+                    value={form.street || form.houseNumber}
+                    onChange={(e) => setForm((f) => ({ ...f, street: e.target.value, houseNumber: e.target.value }))}
+                    placeholder="e.g., #42 Rizal Street, Lot 12 Blk 3"
                     className="bg-white border-[#4a2c2a]/20"
                     disabled={!form.barangay}
                   />

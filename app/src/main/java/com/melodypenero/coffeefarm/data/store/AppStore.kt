@@ -95,7 +95,12 @@ data class AttendanceRecord(
     val attendanceId: String = "",
     /** Logged from worker account; awaiting a payroll line from admin. */
     val awaitingPayrollLine: Boolean = false,
-    val submittedByStaff: Boolean = false
+    val submittedByStaff: Boolean = false,
+    val timeInLatitude: Double? = null,
+    val timeInLongitude: Double? = null,
+    val timeInLocationName: String = "",
+    val faceSnapshotBase64: String = "",
+    val isGeofenceVerified: Boolean? = null
 )
 data class TaskRecord(val title: String, val details: String, val status: String)
 data class SectionRecord(val name: String, val details: String)
@@ -255,7 +260,9 @@ data class CoffeeFieldRecord(
     val variety: String,
     val age: String,
     val nextHarvest: String,
-    val productivity: Int = 0
+    val productivity: Int = 0,
+    val lat: Double? = null,
+    val lng: Double? = null
 )
 
 data class IrrigationSystemRecord(
@@ -611,7 +618,12 @@ class AppStore(context: Context) {
             date = (a.date ?: "").trim(),
             attendanceId = id,
             awaitingPayrollLine = awaitingPayrollLineOverride ?: (a.awaitingPayrollLine ?: false),
-            submittedByStaff = a.submittedByStaff ?: false
+            submittedByStaff = a.submittedByStaff ?: false,
+            timeInLatitude = a.timeInLatitude,
+            timeInLongitude = a.timeInLongitude,
+            timeInLocationName = (a.timeInLocationName ?: "").trim(),
+            faceSnapshotBase64 = (a.faceSnapshotBase64 ?: "").trim(),
+            isGeofenceVerified = a.isGeofenceVerified
         )
     }
 
@@ -1024,7 +1036,12 @@ class AppStore(context: Context) {
         clockIn: String = "",
         clockOut: String = "",
         date: String = "",
-        staffSubmission: Boolean = false
+        staffSubmission: Boolean = false,
+        timeInLatitude: Double? = null,
+        timeInLongitude: Double? = null,
+        timeInLocationName: String = "",
+        faceSnapshotBase64: String = "",
+        isGeofenceVerified: Boolean? = null
     ) {
         val computed = FarmFinance.computeHoursFromClock(clockIn, clockOut)
         val hours = hoursWorked ?: computed
@@ -1041,7 +1058,12 @@ class AppStore(context: Context) {
                     date = date.trim(),
                     attendanceId = aid,
                     awaitingPayrollLine = awaiting,
-                    submittedByStaff = staffSubmission
+                    submittedByStaff = staffSubmission,
+                    timeInLatitude = timeInLatitude,
+                    timeInLongitude = timeInLongitude,
+                    timeInLocationName = timeInLocationName.trim(),
+                    faceSnapshotBase64 = faceSnapshotBase64.trim(),
+                    isGeofenceVerified = isGeofenceVerified
                 )
             )
         )
@@ -1729,7 +1751,12 @@ class AppStore(context: Context) {
         clockOut: String = "",
         date: String = "",
         awaitingPayrollLine: Boolean? = null,
-        submittedByStaff: Boolean? = null
+        submittedByStaff: Boolean? = null,
+        timeInLatitude: Double? = null,
+        timeInLongitude: Double? = null,
+        timeInLocationName: String = "",
+        faceSnapshotBase64: String = "",
+        isGeofenceVerified: Boolean? = null
     ) {
         val prev = state.attendance.getOrNull(index) ?: return
         val computed = FarmFinance.computeHoursFromClock(clockIn, clockOut)
@@ -1749,7 +1776,12 @@ class AppStore(context: Context) {
                         date = date.trim().ifBlank { prev.date ?: "" },
                         attendanceId = aid,
                         awaitingPayrollLine = awaitingPayrollLine ?: prev.awaitingPayrollLine,
-                        submittedByStaff = submittedByStaff ?: prev.submittedByStaff
+                        submittedByStaff = submittedByStaff ?: prev.submittedByStaff,
+                        timeInLatitude = timeInLatitude ?: prev.timeInLatitude,
+                        timeInLongitude = timeInLongitude ?: prev.timeInLongitude,
+                        timeInLocationName = timeInLocationName.trim().ifBlank { (prev.timeInLocationName ?: "") },
+                        faceSnapshotBase64 = faceSnapshotBase64.trim().ifBlank { (prev.faceSnapshotBase64 ?: "") },
+                        isGeofenceVerified = isGeofenceVerified ?: prev.isGeofenceVerified
                     )
                 )
             )

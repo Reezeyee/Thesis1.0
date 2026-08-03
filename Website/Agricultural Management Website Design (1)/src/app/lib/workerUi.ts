@@ -59,6 +59,11 @@ export function isValidPhone11(phone: string): boolean {
   return /^09\d{9}$/.test(value) && value.length === 11;
 }
 
+/** Emergency contact numbers can be local or international (e.g. +63 917 123 4567, +1 202 555 0123). */
+export function sanitizeEmergencyPhoneInput(raw: string): string {
+  return raw.replace(/[^\d\s\-\+\(\)]/g, '').slice(0, 25);
+}
+
 /** Check if full name contains only letters, spaces, and dashes. */
 export function isValidName(name: string): boolean {
   const trimmed = name.trim();

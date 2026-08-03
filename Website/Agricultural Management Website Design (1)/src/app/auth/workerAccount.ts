@@ -62,6 +62,8 @@ export async function createWorkerAuthAccount(args: {
       role: 'FARM_STAFF',
       workerId: args.workerId,
       workerRole: args.role,
+      mustChangePassword: true,
+      isTemporaryPassword: true,
       createdAt: serverTimestamp(),
       source: 'web-admin-worker-form',
     }).catch(() => undefined);

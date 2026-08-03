@@ -54,6 +54,7 @@ import com.melodypenero.coffeefarm.ui.dashboard.DashboardScreen
 import com.melodypenero.coffeefarm.ui.navigation.AppDestination
 import com.melodypenero.coffeefarm.ui.navigation.administratorMobileDestinations
 import com.melodypenero.coffeefarm.ui.navigation.farmStaffMobileDestinations
+import com.melodypenero.coffeefarm.ui.screens.ChangePasswordScreen
 import com.melodypenero.coffeefarm.ui.screens.CoffeeCherryScreen
 import com.melodypenero.coffeefarm.ui.screens.EquipmentScreen
 import com.melodypenero.coffeefarm.ui.screens.HarvestReadinessScreen
@@ -126,6 +127,19 @@ fun CoffeeFarmApp() {
     }
 
     val currentSession = session ?: return
+
+    if (currentSession.mustChangePassword) {
+        ChangePasswordScreen(
+            currentSession = currentSession,
+            onPasswordChanged = { updatedSession ->
+                session = updatedSession
+            },
+            onSignOut = {
+                session = null
+            }
+        )
+        return
+    }
     val allowedDestinations = remember(currentSession.role) {
         destinationsForRole(currentSession.role)
     }

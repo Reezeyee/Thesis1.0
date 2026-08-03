@@ -36,6 +36,11 @@ export interface AttendanceRecord {
   attendanceId?: string;
   awaitingPayrollLine?: boolean;
   submittedByStaff?: boolean;
+  timeInLatitude?: number | null;
+  timeInLongitude?: number | null;
+  timeInLocationName?: string;
+  faceSnapshotBase64?: string;
+  isGeofenceVerified?: boolean | null;
 }
 
 export interface TaskRecord {
@@ -210,6 +215,8 @@ export interface CoffeeFieldRecord {
   age: string;
   nextHarvest: string;
   productivity: number;
+  lat?: number;
+  lng?: number;
 }
 
 export interface IrrigationSystemRecord {
@@ -243,6 +250,7 @@ export interface PestControlRecord {
   status: string;
   treeNumber?: string;
   photoUrl?: string;
+  reportedBy?: string;
 }
 
 export interface ConsumableSupplyRecord {
@@ -351,7 +359,7 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
     treeRipenessScans: raw.treeRipenessScans ?? base.treeRipenessScans,
     harvestSchedules: raw.harvestSchedules ?? base.harvestSchedules,
     harvestReadinessReports: (raw.harvestReadinessReports ?? base.harvestReadinessReports).map((r, index) => ({
-      reportId: r.reportId ?? `HR-${index + 1}`,
+      reportId: r.reportId || `HR-${index + 1}`,
       zone: r.zone ?? '',
       expectedWeight: r.expectedWeight ?? '',
       reportedBy: r.reportedBy ?? '',
@@ -396,7 +404,17 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
       reportedByAuthUid: r.reportedByAuthUid ?? '',
       status: r.status ?? 'Pending',
     })),
-    pestControlLogs: raw.pestControlLogs ?? base.pestControlLogs,
+    pestControlLogs: (raw.pestControlLogs ?? base.pestControlLogs).map((p, index) => ({
+      pestControlId: p.pestControlId || `PEST-${index + 1}`,
+      date: p.date ?? '',
+      field: p.field ?? 'General Field',
+      issue: p.issue ?? '',
+      treatment: p.treatment ?? '',
+      status: p.status ?? 'Pending',
+      treeNumber: p.treeNumber ?? '',
+      photoUrl: p.photoUrl ?? '',
+      reportedBy: p.reportedBy ?? '',
+    })),
     consumableSupplies:
       raw.consumableSupplies?.map((s) => ({
         supplyId: s.supplyId ?? crypto.randomUUID(),

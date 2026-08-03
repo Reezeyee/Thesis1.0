@@ -6,6 +6,7 @@ import {
   type ConsumableSupplyReportRecord,
   type EquipmentConditionReport,
   type HarvestReadinessReportRecord,
+  type IrrigationDamageReportRecord,
   type TreeRipenessScanRecord,
   type SmsMessageRecord,
 } from '../types/appState';
@@ -68,6 +69,11 @@ function harvestReadinessReportKey(r: HarvestReadinessReportRecord): string {
 function consumableReportKey(r: ConsumableSupplyReportRecord): string {
   if (r.reportId) return r.reportId;
   return [r.supplyId ?? '', r.supplyName, r.reportedAt, r.reportedBy].join('\u0001');
+}
+
+function irrigationDamageReportKey(r: IrrigationDamageReportRecord): string {
+  if (r.reportId) return r.reportId;
+  return [(r.irrigationId ?? '').trim(), r.zone ?? '', r.sprinklerLabel, r.reportedAt, r.reportedBy].join('\u0001');
 }
 
 export function mergeEquipmentReports(
@@ -137,6 +143,7 @@ export function mergeRemoteStatePreservingLocalGrades(
     irrigationSystems: mergeByKey(local.irrigationSystems, remote.irrigationSystems, (i) =>
       (i.irrigationId ?? '').trim() || [i.zone, i.type, i.coverage].join('\u0001'),
     ),
+    irrigationDamageReports: mergeByKey(local.irrigationDamageReports, remote.irrigationDamageReports, irrigationDamageReportKey),
     pestControlLogs: mergeByKey(local.pestControlLogs, remote.pestControlLogs, (p) =>
       (p.pestControlId ?? '').trim() || [p.date, p.field, p.issue, p.treatment].join('\u0001'),
     ),
@@ -166,6 +173,7 @@ export function mergeStateForCloudUpload(local: AppState, remote: AppState): App
     harvestReadinessReports: mergeByKey(remote.harvestReadinessReports, local.harvestReadinessReports, harvestReadinessReportKey),
     coffeeFields: local.coffeeFields,
     irrigationSystems: local.irrigationSystems,
+    irrigationDamageReports: mergeByKey(remote.irrigationDamageReports, local.irrigationDamageReports, irrigationDamageReportKey),
     pestControlLogs: local.pestControlLogs,
     sales: local.sales,
     expenses: local.expenses,

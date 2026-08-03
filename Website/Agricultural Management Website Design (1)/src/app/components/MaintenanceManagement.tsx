@@ -20,6 +20,7 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { SelectWithOther } from './ui/SelectWithOther';
 import { LUZON_PROVINCES } from '../data/luzonAddressCatalog';
 import { BATAAN_MAP_HUBS } from '../data/bataanProvinceMap';
 import { BataanCoffeeLeafletMap } from './BataanCoffeeLeafletMap';
@@ -663,30 +664,25 @@ export function MaintenanceManagement() {
             <div className="space-y-2 rounded-xl border border-[#4a2c2a]/15 bg-[#f5f1ed]/50 p-4">
               <p className="text-sm font-medium text-[#3e2723]">Buyer address · Luzon</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="add-buyer-province">Province *</Label>
-                  <select
-                    id="add-buyer-province"
-                    value={addBuyerForm.province}
-                    onChange={(e) =>
-                      setAddBuyerForm((f) => ({
-                        ...f,
-                        province: e.target.value,
-                        municipality: '',
-                        barangay: '',
-                        street: '',
-                      }))
-                    }
-                    className={BUYER_ADDRESS_SELECT_CLASS}
-                  >
-                    <option value="">— Select province —</option>
-                    {LUZON_PROVINCES.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <SelectWithOther
+                  id="add-buyer-province"
+                  label="Province *"
+                  value={addBuyerForm.province}
+                  onChange={(val) =>
+                    setAddBuyerForm((f) => ({
+                      ...f,
+                      province: val,
+                      municipality: '',
+                      barangay: '',
+                      street: '',
+                    }))
+                  }
+                  options={LUZON_PROVINCES}
+                  placeholder="— Select province —"
+                  selectClassName={BUYER_ADDRESS_SELECT_CLASS}
+                  otherPlaceholder="Type custom province..."
+                  className="space-y-2 sm:col-span-2"
+                />
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="add-buyer-city">City / municipality *</Label>
                   <Input

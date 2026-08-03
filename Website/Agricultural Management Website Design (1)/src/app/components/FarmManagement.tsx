@@ -14,8 +14,11 @@ import {
   TreePine,
   Bug,
   Bell,
-
+  AlertTriangle,
+  X,
 } from 'lucide-react';
+import { SelectWithOther } from './ui/SelectWithOther';
+import { CoffeeFieldLandscapeMap } from './CoffeeFieldLandscapeMap';
 import {
   Dialog,
   DialogContent,
@@ -58,6 +61,7 @@ import type {
   AttendanceRecord,
   CoffeeFieldRecord,
   HarvestReadinessReportRecord,
+  IrrigationDamageReportRecord,
   IrrigationSystemRecord,
   PestControlRecord,
   WorkerRecord,
@@ -160,6 +164,271 @@ export function FarmManagement() {
   const [coffeeForm, setCoffeeForm] = useState<CoffeeFieldRecord | null>(null);
   const [irrigationForm, setIrrigationForm] = useState<IrrigationSystemRecord | null>(null);
   const [pestForm, setPestForm] = useState<PestControlRecord | null>(null);
+  const [deleteSprinklerTarget, setDeleteSprinklerTarget] = useState<{
+    type: 'single' | 'section';
+    index?: number;
+    sectionName?: string;
+    sprinklerZone?: string;
+  } | null>(null);
+
+  const [dismissedReportIds, setDismissedReportIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('dismissed_irrigation_report_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [reportDamageDialogOpen, setReportDamageDialogOpen] = useState(false);
+  const [reportDamageForm, setReportDamageForm] = useState({
+    sprinklerZone: '',
+    details: '',
+    workerName: 'Juan Dela Cruz (Worker)',
+  });
+
+  const latestPendingReport = useMemo(() => {
+    const pendingList: Array<{
+      id: string;
+      type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest';
+      title: string;
+      subtitle: string;
+      details: string;
+      reportedBy: string;
+      reportedAt: string;
+      timestamp: number;
+      rawReportId: string;
+    }> = [];
+
+    // 1. Irrigation / Sprinkler damage reports
+    (state.irrigationDamageReports ?? []).forEach((r, idx) => {
+      const status = (r.status || 'Pending').trim().toLowerCase();
+      if (status === 'pending') {
+        const id = r.reportId || `irrigation-${idx}-${r.reportedAt}`;
+        pendingList.push({
+          id,
+          type: 'irrigation',
+          title: r.sprinklerLabel?.trim() || r.zone?.trim() || 'Sprinkler Problem Reported',
+          subtitle: r.zone && r.zone.trim() !== (r.sprinklerLabel || '').trim() ? `Zone: ${r.zone}` : 'Sprinkler System',
+          details: r.details || 'Sprinkler damage reported by worker',
+          reportedBy: r.reportedBy || 'Worker',
+          reportedAt: r.reportedAt || 'Just now',
+          timestamp: Date.parse(r.reportedAt || '') || (Date.now() - idx),
+          rawReportId: r.reportId || '',
+        });
+      }
+    });
+
+    // 2. Equipment condition reports
+    (state.equipmentReports ?? []).forEach((r, idx) => {
+      if (!r.reviewed && !r.fixedAt && !r.isFixedReport) {
+        const id = r.reportId || `equipment-${idx}-${r.reportedAt}`;
+        pendingList.push({
+          id,
+          type: 'equipment',
+          title: `${r.equipmentName || 'Equipment'} Issue`,
+          subtitle: r.isWrecked ? 'Condition: Wrecked / Broken' : 'Condition: Needs Maintenance',
+          details: r.notes || 'Equipment issue reported by staff',
+          reportedBy: r.reportedBy || 'Worker',
+          reportedAt: r.reportedAt || 'Just now',
+          timestamp: Date.parse(r.reportedAt || '') || (Date.now() - idx),
+          rawReportId: r.reportId || '',
+        });
+      }
+    });
+
+    // 3. Consumable supply reports
+    (state.consumableReports ?? []).forEach((r, idx) => {
+      if (!r.reviewed) {
+        const id = r.reportId || `supply-${idx}-${r.reportedAt}`;
+        pendingList.push({
+          id,
+          type: 'supply',
+          title: `${r.supplyName || 'Supply'} Report`,
+          subtitle: r.isRunOut ? 'Status: Out of Stock' : 'Status: Stock Update',
+          details: r.notes || 'Consumable supply report submitted by worker',
+          reportedBy: r.reportedBy || 'Worker',
+          reportedAt: r.reportedAt || 'Just now',
+          timestamp: Date.parse(r.reportedAt || '') || (Date.now() - idx),
+          rawReportId: r.reportId || '',
+        });
+      }
+    });
+
+    // 4. Pest & disease logs
+    (state.pestControlLogs ?? []).forEach((r, idx) => {
+      const status = (r.status || 'Pending').trim().toLowerCase();
+      if (status === 'pending') {
+        const id = r.pestControlId || `pest-${idx}-${r.date}`;
+        pendingList.push({
+          id,
+          type: 'pest',
+          title: `Pest/Disease: ${r.issue || 'Issue Reported'}`,
+          subtitle: `Zone: ${r.field || 'General'}${r.treeNumber ? ` · Tree #${r.treeNumber}` : ''}`,
+          details: r.treatment ? `Plan: ${r.treatment}` : 'Pest/disease issue reported by worker',
+          reportedBy: r.reportedBy || 'Worker',
+          reportedAt: r.date || 'Just now',
+          timestamp: Date.parse(r.date || '') || (Date.now() - idx),
+          rawReportId: r.pestControlId || '',
+        });
+      }
+    });
+
+    // 5. Harvest readiness reports
+    (state.harvestReadinessReports ?? []).forEach((r, idx) => {
+      const status = (r.status || 'Pending Review').trim().toLowerCase();
+      if (status.includes('pending')) {
+        const id = r.reportId || `harvest-${idx}-${r.reportedAt}`;
+        pendingList.push({
+          id,
+          type: 'harvest',
+          title: `Harvest Readiness: ${r.zone || 'Crop Zone'}`,
+          subtitle: `Estimated Yield: ${r.expectedWeight || 'N/A'}`,
+          details: r.notes || 'Harvest readiness report submitted by worker',
+          reportedBy: r.reportedBy || 'Worker',
+          reportedAt: r.reportedAt || 'Just now',
+          timestamp: Date.parse(r.reportedAt || '') || (Date.now() - idx),
+          rawReportId: r.reportId || '',
+        });
+      }
+    });
+
+    if (pendingList.length === 0) return null;
+    return pendingList.sort((a, b) => b.timestamp - a.timestamp)[0];
+  }, [
+    state.irrigationDamageReports,
+    state.equipmentReports,
+    state.consumableReports,
+    state.pestControlLogs,
+    state.harvestReadinessReports,
+  ]);
+
+  const dismissNotification = (notificationId: string) => {
+    if (!notificationId) return;
+    setDismissedReportIds((prev) => {
+      if (prev.includes(notificationId)) return prev;
+      const next = [...prev, notificationId];
+      try {
+        localStorage.setItem('dismissed_irrigation_report_ids', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const scrollToReport = (item?: typeof latestPendingReport) => {
+    if (!item) return;
+    dismissNotification(item.id);
+
+    let sectionId = 'sprinkler-damage-reports-section';
+    let targetId = item.rawReportId ? `report-${item.rawReportId}` : '';
+
+    if (item.type === 'pest') {
+      sectionId = 'pest-reports-section';
+      targetId = item.rawReportId ? `pest-${item.rawReportId}` : '';
+    } else if (item.type === 'harvest') {
+      sectionId = 'harvest-readiness-reports-section';
+    }
+
+    const targetElement = targetId ? document.getElementById(targetId) : null;
+    const sectionElement = document.getElementById(sectionId);
+    const elem = targetElement || sectionElement;
+    if (elem) {
+      elem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      elem.classList.add('ring-4', 'ring-[#d4183d]/50', 'transition-all', 'duration-300');
+      setTimeout(() => {
+        elem.classList.remove('ring-4', 'ring-[#d4183d]/50');
+      }, 3000);
+    }
+  };
+
+  const resolveReportFromNotification = async (item?: typeof latestPendingReport) => {
+    if (!item) return;
+    dismissNotification(item.id);
+
+    const ok = await runSave('Report Status', () =>
+      updateState((prev) => {
+        if (item.type === 'irrigation') {
+          const next = (prev.irrigationDamageReports ?? []).map((r) =>
+            (r.reportId || '') === item.rawReportId || r.sprinklerLabel === item.title ? { ...r, status: 'Resolved' } : r
+          );
+          return { ...prev, irrigationDamageReports: next };
+        } else if (item.type === 'equipment') {
+          const next = (prev.equipmentReports ?? []).map((r) =>
+            (r.reportId || '') === item.rawReportId ? { ...r, reviewed: true } : r
+          );
+          return { ...prev, equipmentReports: next };
+        } else if (item.type === 'supply') {
+          const next = (prev.consumableReports ?? []).map((r) =>
+            (r.reportId || '') === item.rawReportId ? { ...r, reviewed: true } : r
+          );
+          return { ...prev, consumableReports: next };
+        } else if (item.type === 'pest') {
+          const next = (prev.pestControlLogs ?? []).map((r) =>
+            (r.pestControlId || '') === item.rawReportId ? { ...r, status: 'Resolved' } : r
+          );
+          return { ...prev, pestControlLogs: next };
+        } else if (item.type === 'harvest') {
+          const next = (prev.harvestReadinessReports ?? []).map((r) =>
+            (r.reportId || '') === item.rawReportId ? { ...r, status: 'Approved' } : r
+          );
+          return { ...prev, harvestReadinessReports: next };
+        }
+        return prev;
+      })
+    );
+
+    if (ok) {
+      dismissNotification(item.id);
+    }
+  };
+
+  const submitWorkerDamageReport = async () => {
+    if (!reportDamageForm.sprinklerZone || !reportDamageForm.details.trim()) {
+      showSaveError('Please select a sprinkler and describe the problem.');
+      return;
+    }
+
+    const selectedSprinkler = irrigationSystems.find((s) => s.zone === reportDamageForm.sprinklerZone);
+    const sectionName = selectedSprinkler?.type || 'General Field';
+    const newReportId = newFarmEntityId();
+    const timestamp = new Date().toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+    const newReport: IrrigationDamageReportRecord = {
+      reportId: newReportId,
+      irrigationId: selectedSprinkler?.irrigationId,
+      zone: sectionName,
+      sprinklerLabel: reportDamageForm.sprinklerZone,
+      details: reportDamageForm.details.trim(),
+      reportedAt: timestamp,
+      reportedBy: reportDamageForm.workerName.trim() || 'Worker',
+      status: 'Pending',
+    };
+
+    const ok = await runSave('Damage Report', () =>
+      updateState((prev) => ({
+        ...prev,
+        irrigationSystems: prev.irrigationSystems.map((s) =>
+          s.zone === reportDamageForm.sprinklerZone ? { ...s, status: 'Damaged' } : s
+        ),
+        irrigationDamageReports: [newReport, ...(prev.irrigationDamageReports ?? [])],
+      }))
+    );
+
+    if (ok) {
+      setReportDamageDialogOpen(false);
+      setReportDamageForm({
+        sprinklerZone: '',
+        details: '',
+        workerName: 'Juan Dela Cruz (Worker)',
+      });
+      setDismissedReportIds((prev) => prev.filter((id) => id !== newReportId));
+    }
+  };
 
   const isAddingCoffee = coffeeDialogOpen && coffeeEditIndex === null;
   const isAddingIrrigation = irrigationDialogOpen && irrigationEditIndex === null;
@@ -247,7 +516,7 @@ export function FarmManagement() {
     const hasAddressDraft = Boolean(
       form.municipality.trim() || form.barangay.trim() || form.street.trim() || form.houseNumber.trim(),
     );
-    let addr = hasAddressDraft && municipality && barangay && form.street.trim() && form.houseNumber.trim()
+    let addr = hasAddressDraft && municipality && barangay && (form.street.trim() || form.houseNumber.trim())
       ? composeWorkerAddress({ ...form, municipality, barangay })
       : '';
     if (!addr.trim() && isEditingExistingWorker) {
@@ -258,12 +527,12 @@ export function FarmManagement() {
         setWorkerFormError('Please enter city/municipality and barangay.');
         return;
       }
-      if (!form.street.trim() || !form.houseNumber.trim()) {
-        setWorkerFormError('Please enter street and house/lot number.');
+      if (!form.street.trim() && !form.houseNumber.trim()) {
+        setWorkerFormError('Please enter house number / street.');
         return;
       }
     } else if (!addr.trim()) {
-      setWorkerFormError('Please enter street and house/lot number (or keep the existing address).');
+      setWorkerFormError('Please enter house number / street (or keep the existing address).');
       return;
     }
     const existingId =
@@ -549,24 +818,47 @@ export function FarmManagement() {
     if (ok) closeIrrigationDialog();
   };
 
-  const removeIrrigation = async (index: number) => {
-    if (!window.confirm('Remove this sprinkler?')) return;
-    await runSave('Sprinkler', () =>
-      updateState((prev) => ({
-        ...prev,
-        irrigationSystems: prev.irrigationSystems.filter((_, i) => i !== index),
-      })),
-    );
+  const requestRemoveIrrigation = (index: number, zone: string) => {
+    setDeleteSprinklerTarget({
+      type: 'single',
+      index,
+      sprinklerZone: zone,
+    });
   };
 
-  const removeSectionSprinklers = async (sectionName: string) => {
-    if (!window.confirm(`Remove all sprinklers from ${sectionName}?`)) return;
-    await runSave('Sprinklers', () =>
-      updateState((prev) => ({
-        ...prev,
-        irrigationSystems: prev.irrigationSystems.filter((s) => s.type !== sectionName),
-      })),
-    );
+  const requestRemoveSectionSprinklers = (sectionName: string) => {
+    setDeleteSprinklerTarget({
+      type: 'section',
+      sectionName,
+    });
+  };
+
+  const confirmDeleteSprinkler = async () => {
+    if (!deleteSprinklerTarget) return;
+
+    if (deleteSprinklerTarget.type === 'single' && deleteSprinklerTarget.index !== undefined) {
+      const targetIdx = deleteSprinklerTarget.index;
+      const ok = await runSave('Sprinkler', () =>
+        updateState((prev) => ({
+          ...prev,
+          irrigationSystems: prev.irrigationSystems.map((s, i) =>
+            i === targetIdx ? { ...s, status: 'Inactive' } : s,
+          ),
+        })),
+      );
+      if (ok) setDeleteSprinklerTarget(null);
+    } else if (deleteSprinklerTarget.type === 'section' && deleteSprinklerTarget.sectionName) {
+      const secName = deleteSprinklerTarget.sectionName;
+      const ok = await runSave('Sprinklers', () =>
+        updateState((prev) => ({
+          ...prev,
+          irrigationSystems: prev.irrigationSystems.map((s) =>
+            s.type === secName ? { ...s, status: 'Inactive' } : s,
+          ),
+        })),
+      );
+      if (ok) setDeleteSprinklerTarget(null);
+    }
   };
 
   const closePestDialog = () => {
@@ -669,6 +961,88 @@ export function FarmManagement() {
 
   return (
     <div className="space-y-6">
+      {/* Floating Animated Worker Problem Notification Banner */}
+      {latestPendingReport && !dismissedReportIds.includes(latestPendingReport.id) && (
+        <div className="fixed top-6 right-6 z-50 max-w-md w-full animate-in slide-in-from-top-6 fade-in duration-300 pointer-events-auto">
+          <div className="bg-[#fdfbf7]/95 backdrop-blur-md border-2 border-[#d4183d]/40 rounded-2xl p-4 shadow-2xl ring-4 ring-[#d4183d]/15 relative overflow-hidden">
+            <div className="absolute -top-10 -right-10 w-28 h-28 bg-[#d4183d]/15 rounded-full blur-xl pointer-events-none animate-pulse" />
+
+            <div className="flex items-start justify-between gap-3">
+              <div
+                className="flex items-start gap-3 cursor-pointer group"
+                onClick={() => scrollToReport(latestPendingReport)}
+              >
+                <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#d4183d]/15 text-[#d4183d] shadow-sm group-hover:scale-105 transition-transform">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-[#d4183d]/30 animate-ping" />
+                  <AlertTriangle className="h-5 w-5 relative z-10 text-[#d4183d]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-black text-[#3e2723] uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
+                      Worker Problem Reported!
+                    </h4>
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#d4183d] text-white uppercase animate-pulse">
+                      NEW
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                    <strong className="text-[#3e2723] font-bold">{latestPendingReport.title}</strong>
+                    {latestPendingReport.subtitle ? ` (${latestPendingReport.subtitle})` : ''}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Dismiss notification"
+                onClick={() => dismissNotification(latestPendingReport.id)}
+                className="text-gray-400 hover:text-gray-600 rounded-lg p-1 hover:bg-gray-100 transition-colors"
+                title="Mark as read / Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div
+              className="mt-3 bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10 text-xs text-[#3e2723] cursor-pointer hover:bg-[#eae3dc] transition-colors"
+              onClick={() => scrollToReport(latestPendingReport)}
+            >
+              <p className="font-semibold text-[#4a2c2a]/80 mb-1 text-[10px]">
+                Reported by: <span className="text-[#3e2723] font-bold">{latestPendingReport.reportedBy || 'Worker'}</span> • {latestPendingReport.reportedAt || 'Just now'}
+              </p>
+              <p className="text-xs font-medium text-[#2d2520] italic">
+                "{latestPendingReport.details || 'No details provided'}"
+              </p>
+            </div>
+
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => scrollToReport(latestPendingReport)}
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#3e2723] text-white hover:bg-[#2b1b18] shadow-sm transition-all active:scale-95 flex items-center gap-1"
+              >
+                View Report ↓
+              </button>
+              <button
+                type="button"
+                onClick={() => dismissNotification(latestPendingReport.id)}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#4a2c2a]/20 text-[#4a2c2a] hover:bg-[#4a2c2a]/10 transition-colors"
+              >
+                Mark as Read
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void resolveReportFromNotification(latestPendingReport)}
+                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#2d5016] text-white hover:bg-[#1b3310] shadow-sm transition-all active:scale-95 flex items-center gap-1 disabled:opacity-60"
+              >
+                ✓ Mark Resolved
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <h1>Farm Management</h1>
         <p className="text-muted-foreground">Register farm workers, assign tasks, track attendance, and inspect locations</p>
@@ -740,34 +1114,108 @@ export function FarmManagement() {
       </Dialog>
 
       <Dialog open={coffeeDialogOpen} onOpenChange={(o) => { if (!o) closeCoffeeDialog(); else setCoffeeDialogOpen(true); }}>
-        <DialogContent className="sm:max-w-lg bg-[#fdfbf7] border-[#4a2c2a]/15">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-[#fdfbf7] border-[#4a2c2a]/15">
           <DialogHeader>
             <DialogTitle>{isAddingCoffee ? 'Add coffee field' : 'Edit coffee field'}</DialogTitle>
-            <DialogDescription>Saves to Firebase and syncs with the mobile app.</DialogDescription>
+            <DialogDescription>
+              View the coffee plantation landscape map, pin the field plot location, and enter plot specifications.
+            </DialogDescription>
           </DialogHeader>
           {coffeeForm ? (
-            <div className="grid gap-3 py-2">
-              <div className="space-y-2"><Label>Name</Label><Input value={coffeeForm.name} onChange={(e) => setCoffeeForm({ ...coffeeForm, name: e.target.value })} /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2"><Label>Area</Label><Input value={coffeeForm.area} onChange={(e) => setCoffeeForm({ ...coffeeForm, area: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Trees</Label><Input type="number" value={coffeeForm.trees} onChange={(e) => setCoffeeForm({ ...coffeeForm, trees: Number(e.target.value) || 0 })} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2"><Label>Variety</Label><Input value={coffeeForm.variety} onChange={(e) => setCoffeeForm({ ...coffeeForm, variety: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Age</Label><Input value={coffeeForm.age} onChange={(e) => setCoffeeForm({ ...coffeeForm, age: e.target.value })} /></div>
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <select className={SELECT_CLASS} value={coffeeForm.status} onChange={(e) => setCoffeeForm({ ...coffeeForm, status: e.target.value })}>
-                  <option value="excellent">excellent</option>
-                  <option value="healthy">healthy</option>
-                  <option value="monitoring">monitoring</option>
-                  <option value="critical">critical</option>
-                </select>
+            <div className="grid gap-4 py-2">
+              <CoffeeFieldLandscapeMap
+                selectedLat={coffeeForm.lat}
+                selectedLng={coffeeForm.lng}
+                onSelectLocation={(lat, lng) =>
+                  setCoffeeForm({ ...coffeeForm, lat, lng })
+                }
+                existingFields={coffeeFields}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Field Plot Name *</Label>
+                  <Input
+                    value={coffeeForm.name}
+                    onChange={(e) => setCoffeeForm({ ...coffeeForm, name: e.target.value })}
+                    placeholder="e.g. Block A - Mt. Samat High Plot"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Area (Hectares / m²)</Label>
+                  <Input
+                    value={coffeeForm.area}
+                    onChange={(e) => setCoffeeForm({ ...coffeeForm, area: e.target.value })}
+                    placeholder="e.g. 2.5 hectares"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Trees</Label>
+                  <Input
+                    type="number"
+                    value={coffeeForm.trees}
+                    onChange={(e) => setCoffeeForm({ ...coffeeForm, trees: Number(e.target.value) || 0 })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Variety</Label>
+                  <Input
+                    value={coffeeForm.variety}
+                    onChange={(e) => setCoffeeForm({ ...coffeeForm, variety: e.target.value })}
+                    placeholder="e.g. Arabica / Liberica"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Age</Label>
+                  <Input
+                    value={coffeeForm.age}
+                    onChange={(e) => setCoffeeForm({ ...coffeeForm, age: e.target.value })}
+                    placeholder="e.g. 3 years"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Latitude (°N)</Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={coffeeForm.lat ?? ''}
+                    onChange={(e) =>
+                      setCoffeeForm({
+                        ...coffeeForm,
+                        lat: e.target.value !== '' ? Number(e.target.value) : undefined,
+                      })
+                    }
+                    placeholder="14.53944"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Longitude (°E)</Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={coffeeForm.lng ?? ''}
+                    onChange={(e) =>
+                      setCoffeeForm({
+                        ...coffeeForm,
+                        lng: e.target.value !== '' ? Number(e.target.value) : undefined,
+                      })
+                    }
+                    placeholder="120.57637"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <SelectWithOther
+                    label="Status"
+                    value={coffeeForm.status}
+                    onChange={(val) => setCoffeeForm({ ...coffeeForm, status: val })}
+                    options={['excellent', 'healthy', 'monitoring', 'critical']}
+                    selectClassName={SELECT_CLASS}
+                    otherPlaceholder="Type custom status..."
+                  />
+                </div>
               </div>
             </div>
           ) : null}
-          <DialogFooter>
+          <DialogFooter className="mt-2">
             <Button variant="outline" onClick={closeCoffeeDialog}>Cancel</Button>
             <Button className="bg-[#2d5016] text-white" disabled={saving} onClick={() => void saveCoffeeField()}>
               {saving ? 'Saving…' : isAddingCoffee ? 'Add field' : 'Save changes'}
@@ -866,6 +1314,14 @@ export function FarmManagement() {
                   ))}
                 </select>
               </div>
+              <SelectWithOther
+                label="Status"
+                value={irrigationForm.status || 'Active'}
+                onChange={(val) => setIrrigationForm({ ...irrigationForm, status: val })}
+                options={['Active', 'Inactive', 'Maintenance', 'Damaged']}
+                selectClassName={SELECT_CLASS}
+                otherPlaceholder="Type custom status..."
+              />
               <div className="space-y-2">
                 <Label>Last Maintenance Date</Label>
                 <Input
@@ -884,6 +1340,152 @@ export function FarmManagement() {
               onClick={() => void (isAddingIrrigation ? saveIrrigationBatch() : saveIrrigationEdit())}
             >
               {saving ? 'Saving…' : isAddingIrrigation ? `Add ${sprinklerAddCount} Sprinkler${sprinklerAddCount !== 1 ? 's' : ''}` : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Sprinkler Confirmation Dialog */}
+      <Dialog
+        open={deleteSprinklerTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteSprinklerTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md bg-[#fdfbf7] border-[#4a2c2a]/15 shadow-2xl overflow-hidden p-6 animate-in zoom-in-95 fade-in duration-200">
+          <div className="flex flex-col items-center text-center space-y-3 pt-2">
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-[#d4183d]/10 border border-[#d4183d]/20 text-[#d4183d] shadow-sm">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-[#d4183d]/20 animate-ping" />
+              <Trash2 className="h-7 w-7 relative z-10 text-[#d4183d] transition-transform duration-300 hover:scale-110" />
+            </div>
+
+            <DialogHeader className="text-center sm:text-center">
+              <DialogTitle className="text-center text-xl font-bold text-[#3e2723]">
+                {deleteSprinklerTarget?.type === 'section'
+                  ? `Delete All Sprinklers in ${deleteSprinklerTarget.sectionName}?`
+                  : `Delete ${deleteSprinklerTarget?.sprinklerZone || 'Sprinkler'}?`}
+              </DialogTitle>
+              <DialogDescription className="text-center text-sm text-[#4a2c2a]/80 mt-1">
+                Are you sure you want to delete{' '}
+                <span className="font-semibold text-[#3e2723]">
+                  {deleteSprinklerTarget?.type === 'section'
+                    ? `all sprinklers in ${deleteSprinklerTarget.sectionName}`
+                    : deleteSprinklerTarget?.sprinklerZone || 'this sprinkler'}
+                </span>
+                ?
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="bg-[#f5f1ed] border border-[#4a2c2a]/10 rounded-xl p-3.5 text-xs text-muted-foreground flex items-start gap-2.5 text-left w-full mt-2 shadow-inner">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-[#3e2723]">Sprinkler Will Become Inactive</p>
+                <p className="mt-0.5">
+                  The sprinkler will not be deleted from records. Its status will be set to{' '}
+                  <span className="font-bold text-[#d4183d]">Inactive</span>.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="grid grid-cols-2 gap-3 mt-6 sm:flex-none">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full rounded-xl border-[#4a2c2a]/20 hover:bg-[#4a2c2a]/5 text-[#4a2c2a] font-semibold py-2.5 transition-colors"
+              onClick={() => setDeleteSprinklerTarget(null)}
+            >
+              No, Cancel
+            </Button>
+            <Button
+              type="button"
+              className="w-full rounded-xl bg-[#d4183d] hover:bg-[#b01230] text-white font-semibold py-2.5 shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-1.5"
+              onClick={() => void confirmDeleteSprinkler()}
+            >
+              <Trash2 className="w-4 h-4" />
+              Yes, Mark Inactive
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Report Damage / Problem Modal */}
+      <Dialog
+        open={reportDamageDialogOpen}
+        onOpenChange={(o) => {
+          if (!o) setReportDamageDialogOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg bg-[#fdfbf7] border-[#4a2c2a]/15 shadow-2xl p-6">
+          <DialogHeader>
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[#d4183d]/10 text-[#d4183d] flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-bold text-[#3e2723]">
+                  Report Sprinkler Problem
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Submit a new damage or malfunction report (simulating worker mobile app submission).
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-3">
+            <div className="space-y-2">
+              <Label>Select Affected Sprinkler</Label>
+              <select
+                className={SELECT_CLASS}
+                value={reportDamageForm.sprinklerZone}
+                onChange={(e) => setReportDamageForm({ ...reportDamageForm, sprinklerZone: e.target.value })}
+              >
+                <option value="">— Select Sprinkler —</option>
+                {irrigationSystems.map((s) => (
+                  <option key={s.irrigationId || s.zone} value={s.zone}>
+                    {s.zone} ({s.type || 'Unassigned'}) — Current Status: {s.status || 'Active'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Reporter Name (Worker)</Label>
+              <Input
+                value={reportDamageForm.workerName}
+                onChange={(e) => setReportDamageForm({ ...reportDamageForm, workerName: e.target.value })}
+                placeholder="e.g. Juan Dela Cruz (Worker)"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Problem Details / Description</Label>
+              <textarea
+                className="w-full min-h-[90px] rounded-xl border border-[#4a2c2a]/20 bg-white p-3 text-sm text-[#3e2723] focus:outline-none focus:ring-2 focus:ring-[#d4183d]/40"
+                value={reportDamageForm.details}
+                onChange={(e) => setReportDamageForm({ ...reportDamageForm, details: e.target.value })}
+                placeholder="Describe the issue (e.g. Sprinkler head leaking, water pressure low, broken nozzle)"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="grid grid-cols-2 gap-3 mt-4 sm:flex-none">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setReportDamageDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#d4183d] hover:bg-[#b01230] text-white font-semibold shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+              disabled={saving || !reportDamageForm.sprinklerZone || !reportDamageForm.details.trim()}
+              onClick={() => void submitWorkerDamageReport()}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              {saving ? 'Submitting…' : 'Submit Worker Report'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -913,19 +1515,19 @@ export function FarmManagement() {
                   </div>
                 )}
               </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <select
-                  className={SELECT_CLASS}
-                  value={pestForm.status}
-                  onChange={(e) => setPestForm({ ...pestForm, status: e.target.value })}
-                >
-                  <option value="Pending">Pending Review</option>
-                  <option value="Under Treatment">Under Treatment</option>
-                  <option value="Monitoring">Monitoring</option>
-                  <option value="Resolved">Resolved</option>
-                </select>
-              </div>
+              <SelectWithOther
+                label="Status"
+                value={pestForm.status}
+                onChange={(val) => setPestForm({ ...pestForm, status: val })}
+                options={[
+                  { value: 'Pending', label: 'Pending Review' },
+                  { value: 'Under Treatment', label: 'Under Treatment' },
+                  { value: 'Monitoring', label: 'Monitoring' },
+                  { value: 'Resolved', label: 'Resolved' },
+                ]}
+                selectClassName={SELECT_CLASS}
+                otherPlaceholder="Type custom status..."
+              />
             </div>
           ) : null}
           <DialogFooter>
@@ -1022,6 +1624,20 @@ export function FarmManagement() {
                       >
                         {isClockedOut ? 'Completed' : 'Timed in'}
                       </span>
+                      {attendance.isGeofenceVerified !== undefined && attendance.isGeofenceVerified !== null ? (
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                            attendance.isGeofenceVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {attendance.isGeofenceVerified ? '📍 In Field Geofence' : '⚠️ Remote / Outside Field'}
+                        </span>
+                      ) : null}
+                      {attendance.faceSnapshotBase64 ? (
+                        <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-800">
+                          👤 Face Verified
+                        </span>
+                      ) : null}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {attendance.submittedByStaff ? 'Submitted by worker app' : 'Admin or imported record'}
@@ -1046,6 +1662,37 @@ export function FarmManagement() {
                       <p className="mt-1 text-lg font-semibold text-[#3e2723]">{formatHoursWorked(attendance)}</p>
                     </div>
                   </div>
+
+                  {attendance.timeInLatitude != null && attendance.timeInLongitude != null ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#6b5d56]">
+                      <span className="font-semibold text-[#3e2723]">Time In Location:</span>
+                      <span>
+                        {attendance.timeInLocationName || `${attendance.timeInLatitude.toFixed(5)}, ${attendance.timeInLongitude.toFixed(5)}`}
+                      </span>
+                      <a
+                        href={`https://www.google.com/maps?q=${attendance.timeInLatitude},${attendance.timeInLongitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-[#2d5016] underline hover:text-[#4a2c2a]"
+                      >
+                        Map Pin ↗
+                      </a>
+                    </div>
+                  ) : null}
+
+                  {attendance.faceSnapshotBase64 ? (
+                    <div className="mt-3 flex items-center gap-3">
+                      <img
+                        src={attendance.faceSnapshotBase64.startsWith('data:') ? attendance.faceSnapshotBase64 : `data:image/jpeg;base64,${attendance.faceSnapshotBase64}`}
+                        alt="Face verification snapshot"
+                        className="h-12 w-12 rounded-lg object-cover border border-[#4a2c2a]/20 shadow-xs"
+                      />
+                      <div>
+                        <p className="text-xs font-medium text-[#3e2723]">Biometric Snapshot</p>
+                        <p className="text-[11px] text-muted-foreground">Captured on mobile device during time-in</p>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {attendance.details ? (
                     <p className="mt-3 text-sm text-[#6b5d56]">
@@ -1084,7 +1731,7 @@ export function FarmManagement() {
               </button>
             </div>
 
-            <div className="space-y-3 mb-4 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
+            <div id="harvest-readiness-reports-section" className="space-y-3 mb-4 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
               {harvestReadinessReports.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">No readiness reports logged.</p>
               ) : (
@@ -1093,7 +1740,7 @@ export function FarmManagement() {
                   const isApproved = report.status === 'Approved';
 
                   return (
-                    <div key={report.reportId} className="rounded-xl border border-[#4a2c2a]/10 bg-[#fdfbf7] p-3 text-xs flex items-center justify-between gap-3 shadow-sm hover:border-[#4a2c2a]/30 transition-all">
+                    <div key={report.reportId} id={report.reportId ? `harvest-${report.reportId}` : undefined} className="rounded-xl border border-[#4a2c2a]/10 bg-[#fdfbf7] p-3 text-xs flex items-center justify-between gap-3 shadow-sm hover:border-[#4a2c2a]/30 transition-all">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-[#3e2723]">{report.zone}</span>
@@ -1285,6 +1932,7 @@ export function FarmManagement() {
                 sprinklersBySection.map((group) => {
                   const activeCount = group.systems.filter((s) => s.status === 'Active').length;
                   const damagedCount = group.systems.filter((s) => s.status === 'Damaged').length;
+                  const inactiveCount = group.systems.filter((s) => s.status === 'Inactive').length;
                   return (
                     <div key={group.section} className="bg-[#f5f1ed] rounded-xl border border-[#4a2c2a]/10 overflow-hidden">
                       <div className="flex items-center justify-between px-4 py-3 bg-[#4a2c2a]/5 border-b border-[#4a2c2a]/10">
@@ -1294,7 +1942,7 @@ export function FarmManagement() {
                           </div>
                           <div>
                             <h4 className="text-sm font-bold text-[#3e2723]">{group.section}</h4>
-                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
                               <span>{group.systems.length} sprinkler{group.systems.length !== 1 ? 's' : ''}</span>
                               <span>•</span>
                               <span className="text-[#2d5016] font-semibold">{activeCount} active</span>
@@ -1304,58 +1952,92 @@ export function FarmManagement() {
                                   <span className="text-[#d4183d] font-semibold">{damagedCount} damaged</span>
                                 </>
                               )}
+                              {inactiveCount > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-gray-500 font-semibold">{inactiveCount} inactive</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
                         <button
                           type="button"
-                          onClick={() => void removeSectionSprinklers(group.section)}
-                          className="text-[10px] font-medium text-[#d4183d] hover:underline px-2 py-1"
+                          onClick={() => requestRemoveSectionSprinklers(group.section)}
+                          className="text-[10px] font-medium text-[#d4183d] hover:underline px-2 py-1 transition-colors hover:text-[#b01230]"
                         >
-                          Remove All
+                          Delete All
                         </button>
                       </div>
                       <div className="divide-y divide-[#4a2c2a]/5">
-                        {group.systems.map((system) => (
-                          <div key={system.irrigationId || system.zone} className="flex items-center justify-between px-4 py-2.5 hover:bg-white/50 transition-colors">
-                            <div className="flex items-center gap-2.5">
-                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                                system.status === 'Active' ? 'bg-[#2d5016]'
-                                : system.status === 'Damaged' ? 'bg-[#d4183d] animate-pulse'
-                                : system.status === 'Maintenance' ? 'bg-[#d4a574]'
-                                : 'bg-gray-400'
-                              }`} />
-                              <span className="text-sm font-medium text-[#3e2723]">{system.zone}</span>
-                              <span className="text-[10px] font-semibold text-[#4a2c2a]/60 ml-1">({system.coverage || '100%'})</span>
+                        {group.systems.map((system) => {
+                          const isInactive = system.status === 'Inactive';
+                          return (
+                            <div
+                              key={system.irrigationId || system.zone}
+                              className={`flex items-center justify-between px-4 py-2.5 transition-colors ${
+                                isInactive ? 'bg-gray-100/70' : 'hover:bg-white/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <span
+                                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                                    system.status === 'Active'
+                                      ? 'bg-[#2d5016]'
+                                      : system.status === 'Damaged'
+                                      ? 'bg-[#d4183d] animate-pulse'
+                                      : system.status === 'Maintenance'
+                                      ? 'bg-[#d4a574]'
+                                      : 'bg-gray-400'
+                                  }`}
+                                />
+                                <span
+                                  className={`text-sm font-medium ${
+                                    isInactive ? 'text-gray-400 line-through' : 'text-[#3e2723]'
+                                  }`}
+                                >
+                                  {system.zone}
+                                </span>
+                                <span className="text-[10px] font-semibold text-[#4a2c2a]/60 ml-1">
+                                  ({system.coverage || '100%'})
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    system.status === 'Active'
+                                      ? 'bg-[#2d5016]/10 text-[#2d5016]'
+                                      : system.status === 'Damaged'
+                                      ? 'bg-[#d4183d]/10 text-[#d4183d]'
+                                      : system.status === 'Maintenance'
+                                      ? 'bg-[#d4a574]/20 text-[#8b6f47]'
+                                      : 'bg-gray-200 text-gray-600 border border-gray-300'
+                                  }`}
+                                >
+                                  {system.status === 'Damaged' ? '⚠ Damaged' : system.status || 'Active'}
+                                </span>
+                                <button
+                                  type="button"
+                                  aria-label={`Edit ${system.zone}`}
+                                  title="Edit sprinkler status or details"
+                                  className="w-6 h-6 rounded-md bg-white border border-[#4a2c2a]/10 hover:bg-[#4a2c2a] hover:text-white flex items-center justify-center transition-colors text-[#3e2723]"
+                                  onClick={() => openEditIrrigation(system.originalIndex)}
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`Delete ${system.zone}`}
+                                  title="Delete sprinkler (marks as Inactive)"
+                                  className="w-6 h-6 rounded-md bg-white border border-[#4a2c2a]/10 hover:bg-[#d4183d] hover:text-white flex items-center justify-center transition-colors text-[#d4183d]"
+                                  onClick={() => requestRemoveIrrigation(system.originalIndex, system.zone)}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                system.status === 'Active' ? 'bg-[#2d5016]/10 text-[#2d5016]'
-                                : system.status === 'Damaged' ? 'bg-[#d4183d]/10 text-[#d4183d]'
-                                : system.status === 'Maintenance' ? 'bg-[#d4a574]/20 text-[#8b6f47]'
-                                : 'bg-gray-100 text-gray-500'
-                              }`}>
-                                {system.status === 'Damaged' ? '⚠ Damaged' : system.status}
-                              </span>
-                              <button
-                                type="button"
-                                aria-label={`Edit ${system.zone}`}
-                                className="w-6 h-6 rounded-md bg-white border border-[#4a2c2a]/10 hover:bg-[#4a2c2a] hover:text-white flex items-center justify-center transition-colors"
-                                onClick={() => openEditIrrigation(system.originalIndex)}
-                              >
-                                <Edit2 className="w-3 h-3" />
-                              </button>
-                              <button
-                                type="button"
-                                aria-label={`Delete ${system.zone}`}
-                                className="w-6 h-6 rounded-md bg-white border border-[#4a2c2a]/10 hover:bg-[#d4183d] hover:text-white flex items-center justify-center transition-colors"
-                                onClick={() => void removeIrrigation(system.originalIndex)}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -1364,12 +2046,20 @@ export function FarmManagement() {
             </div>
           </div>
 
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+          <div id="sprinkler-damage-reports-section" className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm transition-all duration-300">
             <div className="flex items-center justify-between gap-3 mb-4">
               <div>
                 <h3>Sprinkler Damage Reports</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Reports are submitted by workers through the mobile app</p>
               </div>
+              <button
+                type="button"
+                onClick={() => setReportDamageDialogOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#d4183d] text-white text-xs font-semibold hover:bg-[#b01230] shadow-sm transition-all active:scale-95 shrink-0"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                + Report Problem
+              </button>
             </div>
             <div className="space-y-3">
               {irrigationDamageReports.length === 0 ? (
@@ -1389,19 +2079,25 @@ export function FarmManagement() {
                     : 'bg-[#d4a574] text-[#3e2723]';
 
                   return (
-                    <div key={report.reportId || `${report.reportedAt}-${idx}`} className="bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10">
+                    <div
+                      key={report.reportId || `${report.reportedAt}-${idx}`}
+                      id={report.reportId ? `report-${report.reportId}` : `report-idx-${idx}`}
+                      className="bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10 transition-all duration-300"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-start gap-2">
                             <h4 className="text-sm font-bold text-[#3e2723] truncate leading-tight">
-                              {report.sprinklerLabel || 'Sprinkler'}
+                              {report.sprinklerLabel?.trim() || report.zone?.trim() || 'Sprinkler'}
                             </h4>
                             <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-full uppercase shrink-0 ${statusBadge}`}>
                               {status}
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {(report.zone || 'Unknown zone')}{report.reportedAt ? ` • ${report.reportedAt}` : ''}{report.reportedBy ? ` • ${report.reportedBy}` : ''}
+                            {report.zone && report.zone.trim() !== (report.sprinklerLabel || '').trim() ? `${report.zone} ` : ''}
+                            {report.reportedAt ? `• ${report.reportedAt} ` : ''}
+                            {report.reportedBy ? `• Reported by ${report.reportedBy}` : ''}
                           </p>
                           {report.details ? (
                             <p className="text-sm text-[#3e2723] mt-2 whitespace-pre-line">{report.details}</p>
@@ -1432,7 +2128,7 @@ export function FarmManagement() {
             </div>
           </div>
 
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+          <div id="pest-reports-section" className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
             <div className="flex items-center justify-between gap-3 mb-4">
               <div>
                 <h3>Pest and Disease Issues Report</h3>
@@ -1457,7 +2153,7 @@ export function FarmManagement() {
                   : 'bg-[#d4a574] text-[#3e2723]';
 
                 return (
-                  <div key={idx} className="bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10">
+                  <div key={record.pestControlId || `${record.field}-${record.date}-${idx}`} id={record.pestControlId ? `pest-${record.pestControlId}` : undefined} className="bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10">
                     <div className="flex items-start gap-3">
                       {record.photoUrl ? (
                         <div className="w-14 h-14 rounded-lg bg-white border border-[#4a2c2a]/15 overflow-hidden shrink-0">
@@ -1471,7 +2167,7 @@ export function FarmManagement() {
 
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-start justify-between gap-2">
-                          <h4 className="text-sm font-bold text-[#3e2723] truncate leading-tight">{record.issue}</h4>
+                          <h4 className="text-sm font-bold text-[#3e2723] truncate leading-tight">{record.issue || 'Pest / Disease Issue'}</h4>
                           <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-full uppercase shrink-0 ${statusBadge}`}>
                             {record.status}
                           </span>
@@ -1480,11 +2176,13 @@ export function FarmManagement() {
                         <p className="text-xs font-semibold text-[#2d5016]">
                           Zone: {record.field} {record.treeNumber ? `· Tree #${record.treeNumber}` : ''}
                         </p>
-                        <p className="text-[11px] text-muted-foreground leading-snug truncate">
-                          Plan: {record.treatment}
-                        </p>
+                        {record.treatment ? (
+                          <p className="text-[11px] text-muted-foreground leading-snug truncate">
+                            Plan: {record.treatment}
+                          </p>
+                        ) : null}
                         <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-[#4a2c2a]/5">
-                          <span>Reported: {record.date}</span>
+                          <span>Reported: {record.date}{record.reportedBy ? ` • ${record.reportedBy}` : ''}</span>
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"

@@ -11,6 +11,7 @@ import { SmsManagement } from './components/SmsManagement';
 import { AuthProvider, useRequireAdmin } from './auth/AuthProvider';
 import { LoginScreen } from './auth/LoginScreen';
 import { FarmDataProvider, useFarmData } from './store/FarmDataProvider';
+import { GlobalNotificationBanner, NotificationDrawer, usePendingReports } from './components/NotificationCenter';
 
 export type AppModuleId = 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings';
 
@@ -34,6 +35,24 @@ function SaveStatusBanner() {
 
 function AdminAppShell() {
   const [activeModule, setActiveModule] = useState<AppModuleId>('dashboard');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const pendingReports = usePendingReports();
+
+  const handleNavigateModule = (module: AppModuleId, targetElementId?: string) => {
+    setActiveModule(module);
+    if (targetElementId) {
+      setTimeout(() => {
+        const elem = document.getElementById(targetElementId);
+        if (elem) {
+          elem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          elem.classList.add('ring-4', 'ring-[#d4183d]/50', 'transition-all', 'duration-300');
+          setTimeout(() => {
+            elem.classList.remove('ring-4', 'ring-[#d4183d]/50');
+          }, 3000);
+        }
+      }, 150);
+    }
+  };
 
   const renderModule = () => {
     switch (activeModule) {
@@ -60,7 +79,18 @@ function AdminAppShell() {
 
   return (
     <div className="min-h-screen bg-[#fdfbf7]">
-      <Sidebar activeModule={activeModule} onModuleChange={(m) => setActiveModule(m as AppModuleId)} />
+      <Sidebar
+        activeModule={activeModule}
+        onModuleChange={(m) => setActiveModule(m as AppModuleId)}
+        pendingCount={pendingReports.length}
+        onOpenNotifications={() => setDrawerOpen(true)}
+      />
+      <GlobalNotificationBanner onNavigateModule={handleNavigateModule} />
+      <NotificationDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onNavigateModule={handleNavigateModule}
+      />
       <main className="ml-64 min-h-screen flex flex-col p-8 pb-12">
         <SaveStatusBanner />
         <div className="flex-1">{renderModule()}</div>

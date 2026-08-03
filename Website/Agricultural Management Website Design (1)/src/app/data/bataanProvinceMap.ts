@@ -40,8 +40,8 @@ export const BATAAN_MAP_HUBS: BataanMapHub[] = [
   {
     name: 'Limay Farm HQ · Acojido Coffee Production Site',
     municipality: 'Limay',
-    lng: 120.5949559,
-    lat: 14.5625242,
+    lng: 120.5763727,
+    lat: 14.5394408,
     volumePeso: 198400,
     color: '#d4183d',
     role: 'Coffee production farm and system deployment site',
