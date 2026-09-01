@@ -1,8 +1,27 @@
 import { useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { Coffee, CheckCircle, AlertCircle, Clock, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08 },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.35 },
+  },
+};
 import { useFarmData } from '../store/FarmDataProvider';
 import { parseHarvestKg } from '../lib/farmFinance';
+import { parseWorkerDetails } from '../lib/workerUi';
 import { buildHarvestByMonth } from '../lib/dashboardData';
 import {
   CHART_CHERRY,
@@ -30,6 +49,7 @@ import {
 
 interface CherryRecord {
   id: number;
+  savedAtMillis?: number;
   batchNumber: string;
   date: string;
   grade: string;
@@ -69,7 +89,7 @@ export function CherryManagement() {
             (workerName && w.name.trim().toLowerCase() === workerName.toLowerCase()) ||
             (workerEmail && w.accountEmail?.trim().toLowerCase() === workerEmail.toLowerCase())
         );
-        const isInactive = worker ? JSON.parse(worker.details || '{}').status === 'inactive' : false;
+        const isInactive = worker ? parseWorkerDetails(worker.details).status === 'inactive' : false;
         const sourceName = workerName || workerEmail || 'Mobile scan';
 
         const trimmedTreeId = g.treeId?.trim();
@@ -90,9 +110,12 @@ export function CherryManagement() {
           locationParts.push(sName);
         }
         const locationName = locationParts.length > 0 ? locationParts.join(' - ') : '—';
+        const qualityLevel: 'excellent' | 'good' | 'fair' =
+          conf >= 90 ? 'excellent' : conf >= 75 ? 'good' : 'fair';
 
         return {
           id,
+          savedAtMillis: g.savedAtMillis ?? 0,
           batchNumber: g.batchId?.trim() || 'Unassigned batch',
           date: g.savedAtMillis
             ? new Date(g.savedAtMillis).toLocaleString()
@@ -103,12 +126,13 @@ export function CherryManagement() {
           ripe: bucket === 'ripe' || bucket === 'nearRipe' ? 1 : 0,
           unripe: bucket === 'unripe' ? 1 : 0,
           overripe: bucket === 'overripe' ? 1 : 0,
-          quality: conf >= 90 ? 'excellent' : conf >= 75 ? 'good' : 'fair',
+          quality: qualityLevel,
           confidence: Math.round(conf <= 1 ? conf * 100 : conf),
           source: isInactive ? `${sourceName} (inactive)` : sourceName,
           location: locationName,
         };
-      }),
+      })
+      .sort((a, b) => (b.savedAtMillis ?? 0) - (a.savedAtMillis ?? 0)),
     [state.cherryGrades, state.workers, state.trees],
   );
 
@@ -160,76 +184,90 @@ export function CherryManagement() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="space-y-6 max-w-[1600px] mx-auto pb-8 font-sans"
+    >
+      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
         <div>
-          <h1>Coffee Classification Module</h1>
-          <p className="text-muted-foreground">Offline convolutional neural network species and ripeness analysis</p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
+              CNN Coffee Cherry Classification & Vision
+            </h1>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Model v2.4 Active
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            Convolutional neural network species determination, ripeness evaluation, and quality batch grading.
+          </p>
         </div>
-      </div>
+      </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#2d5016]/20 flex items-center justify-center">
-              <CheckCircle className="w-5 h-5 text-[#2d5016]" />
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+              <CheckCircle className="w-5 h-5 text-emerald-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Ripe Cherries</p>
-              <p className="text-2xl">{totalRipe}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ripe Cherries</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{totalRipe}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#d4a574]/20 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-[#d4a574]" />
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-amber-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Unripe Cherries</p>
-              <p className="text-2xl">{totalUnripe}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Unripe Cherries</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{totalUnripe}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#8b6f47]/20 flex items-center justify-center">
-              <AlertCircle className="w-5 h-5 text-[#8b6f47]" />
+            <div className="w-10 h-10 rounded-xl bg-rose-500/15 flex items-center justify-center">
+              <AlertCircle className="w-5 h-5 text-rose-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Overripe Cherries</p>
-              <p className="text-2xl">{totalOverripe}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Overripe Cherries</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{totalOverripe}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#4a2c2a]/20 flex items-center justify-center">
-              <Coffee className="w-5 h-5 text-[#4a2c2a]" />
+            <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
+              <Coffee className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Processed</p>
-              <p className="text-2xl">{totalKg} kg</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Classifications</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{totalClassifications}</p>
             </div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 flex h-[560px] flex-col bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="lg:col-span-2 flex h-[560px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <h3 className="mb-4">Classification Records</h3>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-[#8b6f47]/35 scrollbar-track-transparent">
             {cherryRecords.length > 0 ? (
               cherryRecords.map((record) => (
                 <div
                   key={record.id}
-                  className="bg-[#f5f1ed] rounded-xl p-4 border border-[#4a2c2a]/10 hover:border-[#4a2c2a]/30 transition-all"
+                  className="bg-muted/40 rounded-xl p-4 border border-border/60 hover:border-border/80 transition-all"
                 >
                   <div className="flex items-start gap-4">
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-white text-[#2d5016]">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-background/80 text-[#2d5016] border border-border/60">
                       <Coffee className="h-7 w-7" />
                     </div>
                     <div className="flex-1">
@@ -261,23 +299,23 @@ export function CherryManagement() {
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
-                      <div className="bg-white rounded-lg p-2">
+                      <div className="bg-background/80 rounded-lg p-2">
                         <p className="text-xs text-muted-foreground mb-1">Grade</p>
                         <p className="text-sm font-medium text-[#2d5016]">{record.grade}</p>
                       </div>
-                      <div className="bg-white rounded-lg p-2">
+                      <div className="bg-background/80 rounded-lg p-2">
                         <p className="text-xs text-muted-foreground mb-1">Species</p>
-                        <p className="text-sm font-medium text-[#5d4037]">{record.species}</p>
+                        <p className="text-sm font-medium text-muted-foreground">{record.species}</p>
                       </div>
-                      <div className="bg-white rounded-lg p-2">
+                      <div className="bg-background/80 rounded-lg p-2">
                         <p className="text-xs text-muted-foreground mb-1">Confidence</p>
                         <p className="text-sm font-medium">{record.confidence}%</p>
                       </div>
-                      <div className="bg-white rounded-lg p-2">
+                      <div className="bg-background/80 rounded-lg p-2">
                         <p className="text-xs text-muted-foreground mb-1">Location</p>
                         <p className="text-sm font-medium truncate" title={record.location}>{record.location}</p>
                       </div>
-                      <div className="bg-white rounded-lg p-2">
+                      <div className="bg-background/80 rounded-lg p-2">
                         <p className="text-xs text-muted-foreground mb-1">Source</p>
                         <p className="text-sm font-medium break-all">{record.source}</p>
                       </div>
@@ -287,7 +325,7 @@ export function CherryManagement() {
                 </div>
               ))
             ) : (
-              <div className="rounded-xl border border-dashed border-[#4a2c2a]/20 bg-[#f5f1ed] p-6 text-center">
+              <div className="rounded-xl border border-dashed border-border/80 bg-muted/40 p-6 text-center">
                 <p className="text-sm text-muted-foreground">
                   No saved grading results yet. Save a cherry grading result in the mobile app and it will appear here.
                 </p>
@@ -315,16 +353,16 @@ export function CherryManagement() {
             <ColoredDonutChart data={qualityDistribution} />
           </ChartPanel>
 
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+          <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
             <h3 className="mb-4">Production Summary</h3>
             <div className="space-y-3">
-              <div className="bg-[#f5f1ed] rounded-lg p-3">
+              <div className="bg-muted/40 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-muted-foreground">Total Batches</span>
                   <span className="text-xl font-medium">{cherryRecords.length}</span>
                 </div>
               </div>
-              <div className="bg-[#f5f1ed] rounded-lg p-3">
+              <div className="bg-muted/40 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-muted-foreground">Avg Confidence</span>
                   <span className="text-xl font-medium">
@@ -337,7 +375,7 @@ export function CherryManagement() {
                   </span>
                 </div>
               </div>
-              <div className="bg-[#f5f1ed] rounded-lg p-3">
+              <div className="bg-muted/40 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-muted-foreground">Ripe Rate</span>
                   <div className="flex items-center gap-1">
@@ -385,6 +423,6 @@ export function CherryManagement() {
           </BarChart>
         </ChartPanel>
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -2,10 +2,12 @@ package com.melodypenero.coffeefarm.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/** Matches Acojido Farm web admin palette. */
+/** Brand-locked Earthy Agricultural Palette for Coffee Farm Management. */
 val Espresso = Color(0xFF4A2C2A)
+val EspressoDark = Color(0xFF2C1A14)
 val Forest = Color(0xFF2D5016)
 val ForestLight = Color(0xFF3D6B22)
+val ForestBright = Color(0xFF5FA83E)
 val Cream = Color(0xFFFDFBF7)
 val CreamMuted = Color(0xFFF5F1ED)
 val Bark = Color(0xFF8B6F47)
@@ -13,11 +15,16 @@ val MutedText = Color(0xFF6B5D56)
 val BorderLight = Color(0x1A4A2C2A)
 val BorderDark = Color(0x33FFFFFF)
 
-val DarkBg = Color(0xFF1A120D)
-val DarkSurface = Color(0xFF2D211A)
-val DarkSurfaceElevated = Color(0xFF3A2A21)
-val DarkBorder = Color(0xFF5A463A)
-val DarkText = Color(0xFFF4EDE6)
+// Gold / Copper Accent for AI scanner, badges, and key metrics
+val AccentGold = Color(0xFFC8963E)
+val AccentGoldBright = Color(0xFFD4AF37)
+val AccentGoldMuted = Color(0xFF9E772F)
+
+val DarkBg = Color(0xFF140D09)
+val DarkSurface = Color(0xFF231812)
+val DarkSurfaceElevated = Color(0xFF31221A)
+val DarkBorder = Color(0xFF4A382C)
+val DarkText = Color(0xFFF5EFEA)
 val DarkTextMuted = Color(0xFFB8A99E)
 
 val AccentGreen = Color(0xFF3D8B2A)
@@ -29,3 +36,4 @@ val ErrorText = Color(0xFFFFB4AB)
 
 /** Legacy alias used by drawer and module scaffolds. */
 val Leaf700 = ForestLight
+

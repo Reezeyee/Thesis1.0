@@ -1,0 +1,12 @@
+path: /Users/melodypenero/Thesis1.0/yolo_detection/dataset
+train: train/images
+val: val/images
+test: test/images
+
+nc: 5
+names:
+  0: 'Unripe'
+  1: 'Ripening'
+  2: 'Ripe'
+  3: 'Overripe'
+  4: 'Dry_Damaged'

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AlertCircle, Banknote, CheckCircle2, Receipt, Smartphone, Wallet } from 'lucide-react';
 import type { PayrollPaymentMethod } from '../types/appState';
 import { payrollPaymentMethodLabel } from '../lib/profitUi';
+import { formatCurrency } from '../lib/currencyFormat';
 import {
   Dialog,
   DialogContent,
@@ -51,31 +52,20 @@ const stepMotion = {
 
 export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = false, onComplete }: Props) {
   const [step, setStep] = useState<Step>('confirm');
-  const [method, setMethod] = useState<PayrollPaymentMethod | null>(null);
-  const [slipRef, setSlipRef] = useState<string | null>(null);
+  const [method, setMethod] = useState<PayrollPaymentMethod>('cash');
+  const [slipRef, setSlipRef] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) {
-      const t = window.setTimeout(() => {
-        setStep('confirm');
-        setMethod(null);
-        setSlipRef(null);
-        setSubmitting(false);
-      }, 200);
-      return () => window.clearTimeout(t);
+    if (open) {
+      setStep('confirm');
+      setMethod('cash');
+      setSlipRef('');
+      setSubmitting(false);
     }
-    return undefined;
-  }, [open]);
+  }, [open, target]);
 
   const busy = saving || submitting;
-
-  const close = () => {
-    if (busy) return;
-    onOpenChange(false);
-  };
-
-  const confirmPay = () => setStep('method');
 
   const submitPayment = async (selected: PayrollPaymentMethod) => {
     if (!target || busy) return;
@@ -92,14 +82,14 @@ export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = fals
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-md bg-[#fdfbf7] border-[#4a2c2a]/15 overflow-hidden">
+      <DialogContent className="sm:max-w-md bg-card border-border/80 text-card-foreground overflow-hidden rounded-xl shadow-lg">
         <DialogHeader>
-          <DialogTitle className="text-[#3e2723]">
+          <DialogTitle className="text-foreground font-heading font-bold text-lg">
             {step === 'confirm' && 'Confirm payroll payment'}
             {step === 'method' && 'Payment method'}
             {step === 'receipt' && 'Payment recorded'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs text-muted-foreground">
             {step === 'confirm' && `You are about to pay ${target.name} for ${target.periodLabel}.`}
             {step === 'method' && 'Choose how this wage was sent to the worker.'}
             {step === 'receipt' && 'A wage receipt was saved and added to transaction history.'}
@@ -110,24 +100,24 @@ export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = fals
           <AnimatePresence mode="wait">
             {step === 'confirm' ? (
               <motion.div key="confirm" {...stepMotion} className="space-y-4">
-                <div className="rounded-xl border border-[#d4a574]/40 bg-[#fff8ed] px-4 py-3 flex gap-3">
-                  <AlertCircle className="w-5 h-5 text-[#b45309] shrink-0 mt-0.5" />
-                  <div className="text-sm text-[#5d4037]">
-                    <p className="font-medium text-[#3e2723] mb-1">Are you sure you want to pay now?</p>
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="text-xs text-foreground/90">
+                    <p className="font-bold text-foreground mb-1 font-heading">Are you sure you want to pay now?</p>
                     <p>
-                      This will mark <span className="font-semibold">{target.name}</span> as paid for{' '}
-                      <span className="font-semibold">{target.periodLabel}</span> and cannot be undone from this
+                      This will mark <span className="font-semibold text-foreground">{target.name}</span> as paid for{' '}
+                      <span className="font-semibold text-foreground">{target.periodLabel}</span> and cannot be undone from this
                       screen.
                     </p>
                   </div>
                 </div>
-                <div className="rounded-xl bg-[#f5f1ed] border border-[#4a2c2a]/10 px-4 py-3 flex justify-between items-center">
+                <div className="rounded-xl bg-muted/40 border border-border/60 px-4 py-3 flex justify-between items-center">
                   <div>
                     <p className="text-xs text-muted-foreground">{target.role}</p>
-                    <p className="font-medium text-[#3e2723]">{target.name}</p>
+                    <p className="font-bold text-foreground font-heading">{target.name}</p>
                   </div>
-                  <p className="text-xl font-semibold tabular-nums text-[#2d5016]">
-                    ₱{target.amount.toLocaleString('en-PH')}
+                  <p className="text-xl font-bold font-mono text-emerald-500">
+                    {formatCurrency(target.amount)}
                   </p>
                 </div>
               </motion.div>
@@ -135,143 +125,94 @@ export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = fals
 
             {step === 'method' ? (
               <motion.div key="method" {...stepMotion} className="space-y-3">
-                <p className="text-sm text-muted-foreground">What kind of transaction was this?</p>
+                <p className="text-xs text-muted-foreground font-mono">What kind of transaction was this?</p>
                 <div className="grid gap-2">
-                  {METHOD_OPTIONS.map((opt, i) => {
+                  {METHOD_OPTIONS.map((opt) => {
                     const Icon = opt.icon;
-                    const selected = method === opt.id;
                     return (
-                      <motion.button
+                      <button
                         key={opt.id}
                         type="button"
                         disabled={busy}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.06 }}
                         onClick={() => void submitPayment(opt.id)}
-                        className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
-                          selected
-                            ? 'border-[#2d5016] bg-[#2d5016]/10 ring-2 ring-[#2d5016]/25'
-                            : 'border-[#4a2c2a]/15 bg-white hover:border-[#2d5016]/40 hover:bg-[#f5f1ed]'
-                        }`}
+                        className="w-full text-left rounded-xl border border-border/60 p-3 bg-muted/30 hover:border-accent hover:bg-accent/10 transition-all flex items-start gap-3 disabled:opacity-60 cursor-pointer"
                       >
-                        <div
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                            selected ? 'bg-[#2d5016] text-white' : 'bg-[#4a2c2a]/10 text-[#4a2c2a]'
-                          }`}
-                        >
-                          <Icon className="w-5 h-5" />
+                        <div className="w-9 h-9 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0 mt-0.5">
+                          <Icon className="w-4 h-4" />
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-[#3e2723]">{opt.label}</p>
+                        <div>
+                          <p className="text-sm font-bold font-heading text-foreground">{opt.label}</p>
                           <p className="text-xs text-muted-foreground">{opt.hint}</p>
                         </div>
-                        {submitting && selected ? (
-                          <span className="text-xs text-[#2d5016] font-medium animate-pulse">Saving…</span>
-                        ) : null}
-                      </motion.button>
+                      </button>
                     );
                   })}
                 </div>
               </motion.div>
             ) : null}
 
-            {step === 'receipt' && slipRef && method ? (
-              <motion.div key="receipt" {...stepMotion} className="space-y-4">
-                <motion.div
-                  initial={{ scale: 0.85, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 320, damping: 22 }}
-                  className="flex flex-col items-center py-4"
-                >
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: 0.1, type: 'spring', stiffness: 400, damping: 18 }}
-                    className="w-16 h-16 rounded-full bg-[#2d5016]/15 flex items-center justify-center mb-3"
-                  >
-                    <CheckCircle2 className="w-9 h-9 text-[#2d5016]" />
-                  </motion.div>
-                  <p className="text-sm font-medium text-[#3e2723]">Payment successful</p>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 }}
-                  className="rounded-xl border-2 border-dashed border-[#4a2c2a]/25 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-center gap-2 mb-3 pb-3 border-b border-[#4a2c2a]/10">
-                    <Receipt className="w-5 h-5 text-[#4a2c2a]" />
-                    <span className="text-sm font-semibold text-[#3e2723]">
-                      {method === 'cash' ? 'Cash wage receipt' : 'Wage receipt'}
-                    </span>
+            {step === 'receipt' ? (
+              <motion.div key="receipt" {...stepMotion} className="space-y-4 text-center py-2">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-base font-bold font-heading text-foreground">
+                    {formatCurrency(target.amount)} paid
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {target.name} · {target.periodLabel}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-muted/40 border border-border/60 p-3 text-left space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Receipt Ref:</span>
+                    <span className="font-mono font-bold text-foreground">{slipRef || 'PAY-REF-LOCAL'}</span>
                   </div>
-                  <dl className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">Worker</dt>
-                      <dd className="font-medium text-[#3e2723] text-right">{target.name}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">Period</dt>
-                      <dd className="text-right">{target.periodLabel}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">Method</dt>
-                      <dd className="font-medium text-right">{payrollPaymentMethodLabel(method)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2 pt-2 border-t border-[#4a2c2a]/10">
-                      <dt className="text-muted-foreground">Amount</dt>
-                      <dd className="text-lg font-semibold tabular-nums text-[#2d5016]">
-                        ₱{target.amount.toLocaleString('en-PH')}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">{method === 'cash' ? 'Cash receipt no.' : 'Receipt no.'}</dt>
-                      <dd className="font-mono text-xs text-[#5d4037] text-right break-all">{slipRef}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-muted-foreground">Date</dt>
-                      <dd className="text-right">{target.paycheckDateLabel}</dd>
-                    </div>
-                  </dl>
-                </motion.div>
-                <p className="text-xs text-center text-muted-foreground">
-                  This receipt appears on the worker card and in Transaction history under Payroll &amp; wages.
-                </p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Payment Method:</span>
+                    <span className="font-medium text-foreground">{payrollPaymentMethodLabel(method)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Paycheck Date:</span>
+                    <span className="font-medium text-foreground">{target.paycheckDateLabel}</span>
+                  </div>
+                </div>
               </motion.div>
             ) : null}
           </AnimatePresence>
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          {step === 'confirm' ? (
+          {step === 'confirm' && (
             <>
-              <Button type="button" variant="outline" onClick={close} disabled={busy} className="border-[#4a2c2a]/30">
+              <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={confirmPay} className="bg-[#2d5016] hover:bg-[#234010] text-white">
-                <Banknote className="w-4 h-4 mr-2" />
-                Yes, continue
+              <Button
+                type="button"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                disabled={busy}
+                onClick={() => setStep('method')}
+              >
+                Continue to pay
               </Button>
             </>
-          ) : null}
-          {step === 'method' ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setStep('confirm')}
-              disabled={busy}
-              className="border-[#4a2c2a]/30"
-            >
+          )}
+          {step === 'method' && (
+            <Button type="button" variant="outline" disabled={busy} onClick={() => setStep('confirm')}>
               Back
             </Button>
-          ) : null}
-          {step === 'receipt' ? (
-            <Button type="button" onClick={close} className="bg-[#2d5016] hover:bg-[#234010] text-white w-full sm:w-auto">
+          )}
+          {step === 'receipt' && (
+            <Button
+              type="button"
+              className="w-full bg-accent text-accent-foreground font-bold hover:bg-accent/90"
+              onClick={() => onOpenChange(false)}
+            >
               Done
             </Button>
-          ) : null}
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

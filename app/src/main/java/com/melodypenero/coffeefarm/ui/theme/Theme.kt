@@ -19,8 +19,10 @@ private val LightColors = lightColorScheme(
     onSecondary = Cream,
     secondaryContainer = CreamMuted,
     onSecondaryContainer = Espresso,
-    tertiary = Bark,
-    onTertiary = Cream,
+    tertiary = AccentGold,
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFAF2E6),
+    onTertiaryContainer = Color(0xFF5A4118),
     background = Cream,
     onBackground = Espresso,
     surface = CreamMuted,
@@ -38,12 +40,14 @@ private val DarkColors = darkColorScheme(
     onPrimary = DarkBg,
     primaryContainer = Color(0xFF2A4A1E),
     onPrimaryContainer = Color(0xFFB8E0A8),
-    secondary = Color(0xFFD4A574),
+    secondary = AccentGold,
     onSecondary = DarkBg,
     secondaryContainer = DarkSurfaceElevated,
     onSecondaryContainer = DarkText,
-    tertiary = Bark,
-    onTertiary = DarkText,
+    tertiary = AccentGoldBright,
+    onTertiary = DarkBg,
+    tertiaryContainer = Color(0xFF382914),
+    onTertiaryContainer = Color(0xFFF3E0BD),
     background = DarkBg,
     onBackground = DarkText,
     surface = DarkSurface,
@@ -51,7 +55,7 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = DarkSurfaceElevated,
     onSurfaceVariant = DarkTextMuted,
     outline = DarkBorder,
-    outlineVariant = Color(0xFF4A372B),
+    outlineVariant = Color(0xFF4A382C),
     error = ErrorSoft,
     onError = Cream
 )
@@ -61,7 +65,7 @@ private val FarmShapes = Shapes(
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(16.dp),
     large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(24.dp)
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 @Composable
@@ -77,3 +81,4 @@ fun CoffeeFarmTheme(
         content = content
     )
 }
+

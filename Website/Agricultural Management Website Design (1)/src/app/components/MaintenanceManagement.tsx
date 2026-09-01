@@ -33,6 +33,7 @@ import {
   currentPayPeriodLabel,
 } from '../lib/profitUi';
 import { saleLineTotal, hourlyRateForWorkerRole, payrollLineAmount } from '../lib/farmFinance';
+import { formatCurrency } from '../lib/currencyFormat';
 import type {
   AppState,
   AttendanceRecord,
@@ -86,7 +87,7 @@ type AddBuyerFormState = {
 };
 
 const BUYER_ADDRESS_SELECT_CLASS =
-  'flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-2 text-sm text-[#3e2723] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 function composeAddBuyerFullAddress(form: AddBuyerFormState): string {
   const street = form.street.trim();
@@ -106,9 +107,37 @@ function dateLabel(d = new Date()): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function parseOptionalCoord(raw: string, label: string): { value?: number; error?: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
+  const value = Number.parseFloat(trimmed);
+  if (!Number.isFinite(value)) return { error: `${label} must be a valid number.` };
+  return { value };
+}
+
 function attendanceSortValue(attendance: AttendanceRecord): number {
-  const parsed = Date.parse(`${attendance.date || ''}T${attendance.clockIn || '00:00'}`);
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (attendance.timestampMillis && attendance.timestampMillis > 0) {
+    return attendance.timestampMillis;
+  }
+  const dateStr = attendance.date?.trim() || '';
+  const clockInStr = attendance.clockIn?.trim() || '';
+  let direct = Date.parse(`${dateStr} ${clockInStr}`);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  direct = Date.parse(dateStr);
+  if (Number.isFinite(direct) && direct > 0) {
+    const timeMatch = clockInStr.match(/(\d{1,2}):(\d{2})(?:\s*([AP]M))?/i);
+    if (timeMatch) {
+      let h = parseInt(timeMatch[1], 10);
+      const m = parseInt(timeMatch[2], 10);
+      const isPm = timeMatch[3]?.toUpperCase() === 'PM';
+      const isAm = timeMatch[3]?.toUpperCase() === 'AM';
+      if (isPm && h < 12) h += 12;
+      if (isAm && h === 12) h = 0;
+      return direct + (h * 3600 + m * 60) * 1000;
+    }
+    return direct;
+  }
+  return 0;
 }
 
 function formatClock24h(raw?: string): string {
@@ -360,14 +389,20 @@ export function MaintenanceManagement() {
     const amount = Math.max(0, Math.round(Number.parseFloat(buyerEditForm.totalPurchases.replace(/,/g, '')) || 0));
     const location = buyerEditForm.location.trim() || existing.location;
     const lastOrder = buyerEditForm.lastOrder.trim() || existing.lastOrder;
-    const lat = buyerEditForm.lat.trim() ? Number.parseFloat(buyerEditForm.lat) : undefined;
-    const lng = buyerEditForm.lng.trim() ? Number.parseFloat(buyerEditForm.lng) : undefined;
+    const latResult = parseOptionalCoord(buyerEditForm.lat, 'Latitude');
+    const lngResult = parseOptionalCoord(buyerEditForm.lng, 'Longitude');
+    if (latResult.error || lngResult.error) {
+      showSaveError(latResult.error || lngResult.error || 'Invalid coordinates.');
+      return;
+    }
+    const lat = latResult.value;
+    const lng = lngResult.value;
     const detailsPayload = encodeBuyerSaleDetails({
       location,
       status: buyerEditForm.status,
       addressLine: buyerEditForm.addressLine.trim() || undefined,
-      lat: lat != null && !Number.isNaN(lat) ? lat : undefined,
-      lng: lng != null && !Number.isNaN(lng) ? lng : undefined,
+      lat,
+      lng,
       role: buyerEditForm.role.trim() || undefined,
       category: existing.category,
       hubIndex: existing.hubIndex,
@@ -443,14 +478,20 @@ export function MaintenanceManagement() {
     const fullAddress = composeAddBuyerFullAddress(addBuyerForm);
     const amount = Math.max(0, Math.round(Number.parseFloat(addBuyerForm.totalPurchases.replace(/,/g, '')) || 0));
     const lastOrder = addBuyerForm.lastOrder.trim() || dateLabel();
-    const lat = addBuyerForm.lat.trim() ? Number.parseFloat(addBuyerForm.lat) : undefined;
-    const lng = addBuyerForm.lng.trim() ? Number.parseFloat(addBuyerForm.lng) : undefined;
+    const latResult = parseOptionalCoord(addBuyerForm.lat, 'Latitude');
+    const lngResult = parseOptionalCoord(addBuyerForm.lng, 'Longitude');
+    if (latResult.error || lngResult.error) {
+      showSaveError(latResult.error || lngResult.error || 'Invalid coordinates.');
+      return;
+    }
+    const lat = latResult.value;
+    const lng = lngResult.value;
     const detailsPayload = encodeBuyerSaleDetails({
       location: locationLabel,
       status: addBuyerForm.status,
       addressLine: fullAddress || undefined,
-      lat: lat != null && !Number.isNaN(lat) ? lat : undefined,
-      lng: lng != null && !Number.isNaN(lng) ? lng : undefined,
+      lat,
+      lng,
       role: addBuyerForm.role.trim() || undefined,
       category: 'custom',
     });
@@ -521,25 +562,34 @@ export function MaintenanceManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
         <div>
-          <h1>Maintenance Module</h1>
-          <p className="text-muted-foreground">Worker attendance logs, Bataan operations map, and buyer channels</p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
+              Maintenance & Operations
+            </h1>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Active Operations
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            Worker attendance logs, Bataan coffee plot operations map, and buyer wholesale channels.
+          </p>
         </div>
         <Button
           onClick={() => setAddBuyerOpen(true)}
-          className="bg-[#2d5016] hover:bg-[#234010] text-white flex items-center gap-1.5"
+          className="bg-accent text-accent-foreground hover:bg-accent/90 font-semibold text-xs h-9 gap-1.5 rounded-xl shadow-xs"
         >
-          <Plus className="w-4.5 h-4.5" />
+          <Plus className="w-4 h-4" />
           Add buyer / channel
         </Button>
       </div>
 
       {/* Edit Buyer Dialog */}
       <Dialog open={editBuyerId !== null} onOpenChange={(open) => { if (!open) setEditBuyerId(null); }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md border-[#4a2c2a]/15 bg-[#fdfbf7]">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md border-border/80 bg-card text-card-foreground">
           <DialogHeader>
-            <DialogTitle className="text-[#3e2723]">Edit buyer / channel</DialogTitle>
+            <DialogTitle className="text-foreground">Edit buyer / channel</DialogTitle>
             <DialogDescription>
               Changes are saved to Firebase and propagate to Luzon-wide maps and channels.
             </DialogDescription>
@@ -551,7 +601,7 @@ export function MaintenanceManagement() {
                 id="buyer-name"
                 value={buyerEditForm.name}
                 onChange={(e) => setBuyerEditForm((f) => ({ ...f, name: e.target.value }))}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -560,7 +610,7 @@ export function MaintenanceManagement() {
                 id="buyer-location"
                 value={buyerEditForm.location}
                 onChange={(e) => setBuyerEditForm((f) => ({ ...f, location: e.target.value }))}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -569,7 +619,7 @@ export function MaintenanceManagement() {
                 id="buyer-address"
                 value={buyerEditForm.addressLine}
                 onChange={(e) => setBuyerEditForm((f) => ({ ...f, addressLine: e.target.value }))}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -578,7 +628,7 @@ export function MaintenanceManagement() {
                 id="buyer-role"
                 value={buyerEditForm.role}
                 onChange={(e) => setBuyerEditForm((f) => ({ ...f, role: e.target.value }))}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -587,7 +637,7 @@ export function MaintenanceManagement() {
                 id="buyer-volume"
                 value={buyerEditForm.totalPurchases}
                 onChange={(e) => setBuyerEditForm((f) => ({ ...f, totalPurchases: e.target.value }))}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -598,7 +648,7 @@ export function MaintenanceManagement() {
                   value={buyerEditForm.lat}
                   onChange={(e) => setBuyerEditForm((f) => ({ ...f, lat: e.target.value }))}
                   placeholder="e.g., 14.62"
-                  className="bg-white border-[#4a2c2a]/20"
+                  className="bg-background/80 border-border/80"
                 />
               </div>
               <div className="space-y-2">
@@ -608,7 +658,7 @@ export function MaintenanceManagement() {
                   value={buyerEditForm.lng}
                   onChange={(e) => setBuyerEditForm((f) => ({ ...f, lng: e.target.value }))}
                   placeholder="e.g., 120.54"
-                  className="bg-white border-[#4a2c2a]/20"
+                  className="bg-background/80 border-border/80"
                 />
               </div>
             </div>
@@ -618,7 +668,7 @@ export function MaintenanceManagement() {
                 id="buyer-status"
                 value={buyerEditForm.status}
                 onChange={(e) => setBuyerEditForm((f) => ({ ...f, status: e.target.value as 'active' | 'inactive' }))}
-                className="flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-2 text-sm text-[#3e2723] outline-none"
+                className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-2 text-sm text-foreground outline-none"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
@@ -626,7 +676,7 @@ export function MaintenanceManagement() {
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setEditBuyerId(null)} className="border-[#4a2c2a]/30">
+            <Button type="button" variant="outline" onClick={() => setEditBuyerId(null)} className="border-border/80">
               Cancel
             </Button>
             <Button
@@ -643,9 +693,9 @@ export function MaintenanceManagement() {
 
       {/* Add Buyer Dialog */}
       <Dialog open={addBuyerOpen} onOpenChange={setAddBuyerOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl border-[#4a2c2a]/15 bg-[#fdfbf7]">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl border-border/80 bg-card text-card-foreground">
           <DialogHeader>
-            <DialogTitle className="text-[#3e2723]">Add buyer / channel</DialogTitle>
+            <DialogTitle className="text-foreground">Add buyer / channel</DialogTitle>
             <DialogDescription>
               Buyers can be anywhere in Luzon. Short location on lists is city, province; the full line is saved for reference.
             </DialogDescription>
@@ -658,11 +708,11 @@ export function MaintenanceManagement() {
                 value={addBuyerForm.name}
                 onChange={(e) => setAddBuyerForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="e.g., QC roastery pickup"
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
-            <div className="space-y-2 rounded-xl border border-[#4a2c2a]/15 bg-[#f5f1ed]/50 p-4">
-              <p className="text-sm font-medium text-[#3e2723]">Buyer address · Luzon</p>
+            <div className="space-y-2 rounded-xl border border-border/70 bg-muted/40 p-4">
+              <p className="text-sm font-medium text-foreground">Buyer address · Luzon</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <SelectWithOther
                   id="add-buyer-province"
@@ -697,7 +747,7 @@ export function MaintenanceManagement() {
                       }))
                     }
                     placeholder="e.g., Baguio City, Limay, Makati"
-                    className="bg-white border-[#4a2c2a]/20"
+                    className="bg-background/80 border-border/80"
                     disabled={!addBuyerForm.province}
                   />
                 </div>
@@ -708,7 +758,7 @@ export function MaintenanceManagement() {
                     value={addBuyerForm.barangay}
                     onChange={(e) => setAddBuyerForm((f) => ({ ...f, barangay: e.target.value }))}
                     placeholder="e.g., Poblacion, San Jose"
-                    className="bg-white border-[#4a2c2a]/20"
+                    className="bg-background/80 border-border/80"
                     disabled={!addBuyerForm.municipality.trim()}
                   />
                 </div>
@@ -719,7 +769,7 @@ export function MaintenanceManagement() {
                     value={addBuyerForm.street}
                     onChange={(e) => setAddBuyerForm((f) => ({ ...f, street: e.target.value }))}
                     placeholder="e.g., Rizal Street, Session Road"
-                    className="bg-white border-[#4a2c2a]/20"
+                    className="bg-background/80 border-border/80"
                     disabled={!addBuyerForm.barangay.trim()}
                   />
                 </div>
@@ -731,7 +781,7 @@ export function MaintenanceManagement() {
                 id="add-buyer-role"
                 value={addBuyerForm.role}
                 onChange={(e) => setAddBuyerForm((f) => ({ ...f, role: e.target.value }))}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -740,7 +790,7 @@ export function MaintenanceManagement() {
                 id="add-buyer-volume"
                 value={addBuyerForm.totalPurchases}
                 onChange={(e) => setAddBuyerForm((f) => ({ ...f, totalPurchases: e.target.value }))}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -749,7 +799,7 @@ export function MaintenanceManagement() {
                 id="add-buyer-last"
                 value={addBuyerForm.lastOrder}
                 onChange={(e) => setAddBuyerForm((f) => ({ ...f, lastOrder: e.target.value }))}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -758,7 +808,7 @@ export function MaintenanceManagement() {
                 id="add-buyer-status"
                 value={addBuyerForm.status}
                 onChange={(e) => setAddBuyerForm((f) => ({ ...f, status: e.target.value as 'active' | 'inactive' }))}
-                className="flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-2 text-sm text-[#3e2723] outline-none"
+                className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-2 text-sm text-foreground outline-none"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
@@ -772,7 +822,7 @@ export function MaintenanceManagement() {
                   value={addBuyerForm.lat}
                   onChange={(e) => setAddBuyerForm((f) => ({ ...f, lat: e.target.value }))}
                   placeholder="14.62"
-                  className="bg-white border-[#4a2c2a]/20"
+                  className="bg-background/80 border-border/80"
                 />
               </div>
               <div className="space-y-2">
@@ -782,13 +832,13 @@ export function MaintenanceManagement() {
                   value={addBuyerForm.lng}
                   onChange={(e) => setAddBuyerForm((f) => ({ ...f, lng: e.target.value }))}
                   placeholder="120.54"
-                  className="bg-white border-[#4a2c2a]/20"
+                  className="bg-background/80 border-border/80"
                 />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setAddBuyerOpen(false)} className="border-[#4a2c2a]/30">
+            <Button type="button" variant="outline" onClick={() => setAddBuyerOpen(false)} className="border-border/80">
               Cancel
             </Button>
             <Button
@@ -804,7 +854,7 @@ export function MaintenanceManagement() {
       </Dialog>
 
       {/* 1. Worker Attendance Logs Block */}
-      <div className="flex h-[620px] flex-col bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+      <div className="flex h-[620px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-lg bg-[#2d5016]/15 flex items-center justify-center">
@@ -818,7 +868,7 @@ export function MaintenanceManagement() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-[#f5f1ed] px-3 py-1 text-xs font-medium text-[#4a2c2a]">
+            <span className="rounded-full bg-muted/40 px-3 py-1 text-xs font-medium text-foreground">
               {pendingAttendance.length} pending payroll
             </span>
             <Button
@@ -848,13 +898,13 @@ export function MaintenanceManagement() {
               return (
                 <div
                   key={attendanceId || `${attendance.workerName}-${attendance.date}-${attendance.clockIn}-${index}`}
-                  className="rounded-lg bg-[#f5f1ed] p-4 border border-[#4a2c2a]/10"
+                  className="rounded-lg bg-muted/40 p-4 border border-border/60"
                 >
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-[#3e2723]">{attendance.workerName || 'Unnamed worker'}</p>
-                        <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[#6b5d56]">
+                        <p className="font-medium text-foreground">{attendance.workerName || 'Unnamed worker'}</p>
+                        <span className="rounded-full bg-background/80 px-2.5 py-1 text-xs text-[#6b5d56]">
                           {worker?.roleRate || 'No role rate'}
                         </span>
                         {isInactive ? (
@@ -867,18 +917,18 @@ export function MaintenanceManagement() {
                             Payroll line added
                           </span>
                         ) : attendance.awaitingPayrollLine ? (
-                          <span className="rounded-full bg-[#d4a574]/30 px-2.5 py-1 text-xs font-medium text-[#4a2c2a]">
+                          <span className="rounded-full bg-[#d4a574]/30 px-2.5 py-1 text-xs font-medium text-foreground">
                             Awaiting payroll
                           </span>
                         ) : (
-                          <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[#6b5d56]">
+                          <span className="rounded-full bg-background/80 px-2.5 py-1 text-xs text-[#6b5d56]">
                             Recorded
                           </span>
                         )}
                       </div>
                       <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                         <span className="text-sm font-medium text-[#2d5016]">
-                          Payroll: ₱{previewPayroll.amount.toLocaleString()}
+                          Payroll: {formatCurrency(previewPayroll.amount)}
                         </span>
                         <Button
                           size="sm"
@@ -891,21 +941,21 @@ export function MaintenanceManagement() {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                      <div className="rounded-lg bg-white p-3 border border-[#4a2c2a]/10">
+                      <div className="rounded-lg bg-background/80 p-3 border border-border/60">
                         <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Date</p>
-                        <p className="mt-1 text-sm font-semibold text-[#3e2723]">{attendance.date || 'No date'}</p>
+                        <p className="mt-1 text-sm font-semibold text-foreground">{attendance.date || 'No date'}</p>
                       </div>
-                      <div className="rounded-lg bg-white p-3 border border-[#4a2c2a]/10">
+                      <div className="rounded-lg bg-background/80 p-3 border border-border/60">
                         <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Time in</p>
                         <p className="mt-1 text-lg font-semibold text-[#2d5016]">{formatClock24h(attendance.clockIn)}</p>
                       </div>
-                      <div className="rounded-lg bg-white p-3 border border-[#4a2c2a]/10">
+                      <div className="rounded-lg bg-background/80 p-3 border border-border/60">
                         <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Time out</p>
-                        <p className="mt-1 text-lg font-semibold text-[#4a2c2a]">{formatClock24h(attendance.clockOut)}</p>
+                        <p className="mt-1 text-lg font-semibold text-foreground">{formatClock24h(attendance.clockOut)}</p>
                       </div>
-                      <div className="rounded-lg bg-white p-3 border border-[#4a2c2a]/10">
+                      <div className="rounded-lg bg-background/80 p-3 border border-border/60">
                         <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Hours</p>
-                        <p className="mt-1 text-sm font-semibold text-[#3e2723]">
+                        <p className="mt-1 text-sm font-semibold text-foreground">
                           {(attendance.hoursWorked ?? 0).toFixed(2)}
                         </p>
                       </div>
@@ -914,15 +964,15 @@ export function MaintenanceManagement() {
                       const dateStr = attendance.date || '';
                       const activities = getWorkerActivitiesForDate(state, attendance.workerName, dateStr);
                       return (
-                        <div className="space-y-1.5 mt-1 border-t border-[#4a2c2a]/10 pt-2.5">
+                        <div className="space-y-1.5 mt-1 border-t border-border/60 pt-2.5">
                           {attendance.details ? (
-                            <p className="text-sm font-medium text-[#3e2723]">
+                            <p className="text-sm font-medium text-foreground">
                               Notes: <span className="font-normal text-[#6b5d56]">{attendance.details}</span>
                             </p>
                           ) : null}
                           {activities.length > 0 ? (
                             <div className="text-xs space-y-1">
-                              <p className="font-semibold text-[#5d4037]">Activities / Tasks logged on this day:</p>
+                              <p className="font-semibold text-muted-foreground">Activities / Tasks logged on this day:</p>
                               <ul className="list-disc list-inside text-[#6b5d56] space-y-0.5">
                                 {activities.map((act, i) => (
                                   <li key={i}>{act}</li>
@@ -945,10 +995,10 @@ export function MaintenanceManagement() {
       </div>
 
       {/* 2. Bataan Operations Map & Channels Block */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+      <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-lg bg-[#4a2c2a]/15 flex items-center justify-center">
-            <MapIcon className="w-5 h-5 text-[#4a2c2a]" />
+            <MapIcon className="w-5 h-5 text-foreground" />
           </div>
           <div>
             <h3>Bataan operations map</h3>
@@ -957,7 +1007,7 @@ export function MaintenanceManagement() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-3">
-            <h4 className="text-sm font-medium text-[#3e2723]">Bataan — coffee on the map (zoom and pins)</h4>
+            <h4 className="text-sm font-medium text-foreground">Bataan — coffee on the map (zoom and pins)</h4>
             <BataanCoffeeLeafletMap
               hubStatuses={hubStatusesForMap}
               hubDisplayNames={hubDisplayNamesForMap}
@@ -973,7 +1023,7 @@ export function MaintenanceManagement() {
               {BATAAN_MAP_HUBS.map((hub, idx) => {
                 const channelBuyer = buyers.find((b) => b.category === 'channel' && b.hubIndex === idx);
                 return (
-                  <div key={`${hub.municipality}-${hub.name}`} className="bg-[#f5f1ed] rounded-lg p-3 border border-[#4a2c2a]/10">
+                  <div key={`${hub.municipality}-${hub.name}`} className="bg-muted/40 rounded-lg p-3 border border-border/60">
                     <div className="flex items-start gap-2 mb-2">
                       <div className="w-3 h-3 rounded-full mt-1 shrink-0" style={{ backgroundColor: hub.color }} />
                       <div className="flex-1 min-w-0">
@@ -990,18 +1040,18 @@ export function MaintenanceManagement() {
                           <MapPin className="w-3 h-3 shrink-0" />
                           <span>{channelBuyer?.location ?? `${hub.municipality}, Bataan`}</span>
                         </div>
-                        <div className="flex items-center justify-between text-xs pt-2 border-t border-[#4a2c2a]/10 gap-2">
+                        <div className="flex items-center justify-between text-xs pt-2 border-t border-border/60 gap-2">
                           <span className="text-muted-foreground">Synced channel volume</span>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="font-medium text-[#2d5016] tabular-nums">
-                              ₱{(channelBuyer?.totalPurchases ?? 0).toLocaleString()}
+                              {formatCurrency(channelBuyer?.totalPurchases ?? 0)}
                             </span>
                             {channelBuyer ? (
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                className="h-7 px-2 border-[#4a2c2a]/25 text-[#3e2723]"
+                                className="h-7 px-2 border-border/80 text-foreground"
                                 onClick={() => openBuyerEdit(channelBuyer)}
                               >
                                 <Edit2 className="w-3.5 h-3.5 mr-1" />
@@ -1013,7 +1063,7 @@ export function MaintenanceManagement() {
                                 variant="outline"
                                 size="sm"
                                 disabled={saving}
-                                className="h-7 px-2 border-[#4a2c2a]/25 text-[#3e2723]"
+                                className="h-7 px-2 border-border/80 text-foreground"
                                 onClick={() => void setupBataanChannel(idx)}
                               >
                                 <Plus className="w-3.5 h-3.5 mr-1" />
@@ -1033,14 +1083,14 @@ export function MaintenanceManagement() {
       </div>
 
       {/* 3. Buyers & Channels List Block */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+      <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
         <h3 className="mb-4">Buyers & channels list</h3>
         <p className="text-xs text-muted-foreground mb-3">
           Channel hubs, OSM cafés (☕), and custom buyers you add. Edit any row to tune volumes; add Luzon-valid coordinates on custom buyers for an orange pin (map view stays on Bataan).
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {buyersSortedForUi.map((buyer) => (
-            <div key={buyer.id} className="bg-[#f5f1ed] rounded-xl p-4 border border-[#4a2c2a]/10">
+            <div key={buyer.id} className="bg-muted/40 rounded-xl p-4 border border-border/60">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="flex items-start gap-2 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-[#4a2c2a] flex items-center justify-center shrink-0">
@@ -1055,7 +1105,7 @@ export function MaintenanceManagement() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <h4 className="text-sm truncate">{buyer.name}</h4>
-                      <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white border border-[#4a2c2a]/15 text-muted-foreground shrink-0">
+                      <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-background/80 border border-border/70 text-muted-foreground shrink-0">
                         {buyer.category === 'channel' ? 'Channel hub' : buyer.category === 'cafe' ? 'Café (OSM)' : 'Other buyer'}
                       </span>
                     </div>
@@ -1083,7 +1133,7 @@ export function MaintenanceManagement() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 px-2 border-[#4a2c2a]/25 text-[#3e2723]"
+                    className="h-7 px-2 border-border/80 text-foreground"
                     onClick={() => openBuyerEdit(buyer)}
                   >
                     <Edit2 className="w-3.5 h-3.5 mr-1" />
@@ -1091,9 +1141,9 @@ export function MaintenanceManagement() {
                   </Button>
                 </div>
               </div>
-              <div className="flex items-center justify-between text-sm pt-2 border-t border-[#4a2c2a]/10">
+              <div className="flex items-center justify-between text-sm pt-2 border-t border-border/60">
                 <span className="text-muted-foreground">Total purchases</span>
-                <span className="font-medium text-[#2d5016]">₱{buyer.totalPurchases.toLocaleString()}</span>
+                <span className="font-medium text-[#2d5016]">{formatCurrency(buyer.totalPurchases)}</span>
               </div>
               <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                 <Calendar className="w-3 h-3" />

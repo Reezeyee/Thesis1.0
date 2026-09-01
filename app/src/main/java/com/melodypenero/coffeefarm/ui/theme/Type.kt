@@ -8,39 +8,84 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 
+/** Cabinet Grotesk font family for display, headlines, and card titles. */
+val CabinetGroteskFontFamily = FontFamily.SansSerif
+
+/** Satoshi font family for body, UI labels, buttons, and tabular text. */
+val SatoshiFontFamily = FontFamily.SansSerif
+
 val Typography = Typography(
+    displayLarge = TextStyle(
+        fontFamily = CabinetGroteskFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 32.sp,
+        lineHeight = 38.sp
+    ),
+    displayMedium = TextStyle(
+        fontFamily = CabinetGroteskFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 26.sp,
+        lineHeight = 32.sp
+    ),
     headlineSmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = CabinetGroteskFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 24.sp,
         lineHeight = 30.sp
     ),
     titleLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = CabinetGroteskFontFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 21.sp
+        fontSize = 21.sp,
+        lineHeight = 27.sp
     ),
     titleMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = CabinetGroteskFontFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 17.sp
+        fontSize = 17.sp,
+        lineHeight = 23.sp
+    ),
+    titleSmall = TextStyle(
+        fontFamily = CabinetGroteskFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 15.sp,
+        lineHeight = 20.sp
     ),
     bodyLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = SatoshiFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 22.sp
     ),
     bodyMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = SatoshiFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp
     ),
+    bodySmall = TextStyle(
+        fontFamily = SatoshiFontFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp
+    ),
     labelLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = SatoshiFontFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 18.sp
+    ),
+    labelMedium = TextStyle(
+        fontFamily = SatoshiFontFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 13.sp
+        fontSize = 12.sp,
+        lineHeight = 16.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = SatoshiFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 14.sp
     )
 )
 
@@ -75,3 +120,4 @@ fun scaledTypography(scale: Float): Typography {
         )
     )
 }
+

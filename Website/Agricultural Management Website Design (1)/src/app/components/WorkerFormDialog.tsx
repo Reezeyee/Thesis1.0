@@ -1,5 +1,5 @@
-import { useState, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
-import { KeyRound, Upload, X } from 'lucide-react';
+import { useState, type ChangeEvent, type Dispatch, type SetStateAction, useMemo } from 'react';
+import { KeyRound, Upload, X, AlertCircle, Info, ShieldCheck, Camera } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -17,54 +17,63 @@ import {
   BATAAN_CITIES_AND_TOWNS,
   getBarangaysForCity,
 } from '../data/bataanAddressCatalog';
-import { isAtLeast18, isValidPhone11, sanitizePhoneInput, sanitizeEmergencyPhoneInput, isValidName } from '../lib/workerUi';
-
-export type WorkerFormDraft = {
-  name: string;
-  birthday: string;
-  sex: string;
-  phone: string;
-  role: string;
-  municipality: string;
-  barangay: string;
-  street: string;
-  houseNumber: string;
-  province: typeof BATAAN_PROVINCE;
-  imageUrl: string;
-  status: 'active' | 'inactive';
-  emergencyName: string;
-  emergencyRelationship: string;
-  emergencyPhone: string;
-};
+import {
+  isAtLeast18,
+  calculateMaxBirthDate,
+  isValidEmergencyPhone,
+  isValidPhone11,
+  sanitizeEmergencyPhoneInput,
+  sanitizePhoneInput,
+  isValidNamePart,
+  ACCEPTED_NAME_CHARS_DESCRIPTION,
+  type WorkerFormDraft,
+} from '../lib/workerUi';
 
 const ADDRESS_SELECT_CLASS =
-  'flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-2 text-sm text-[#3e2723] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'flex h-9 w-full rounded-md border border-border/80 bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent';
 
 const PHOTO_INPUT_CLASS =
-  'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md bg-[#2d5016] px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#234010]';
+  'inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md bg-accent px-3 text-sm font-semibold text-accent-foreground shadow-sm transition-colors hover:bg-accent/90';
 
 const MAX_PHOTO_SIZE = 640;
 const PHOTO_QUALITY = 0.82;
 
-export function composeWorkerAddress(form: WorkerFormDraft): string {
-  const hn = form.houseNumber.trim();
-  const street = form.street.trim();
-  const line1 = hn && street && hn !== street && !street.includes(hn) ? `${hn} ${street}` : (street || hn);
-  return `${line1}, Barangay ${form.barangay.trim()}, ${form.municipality.trim()}, ${BATAAN_PROVINCE}`;
-}
-
 export function addressFormReady(
   form: WorkerFormDraft,
-  opts?: { fallbackAddress?: string; isEditing?: boolean },
+  opts?: { isEditing?: boolean },
 ): boolean {
+  const isEditing = opts?.isEditing ?? false;
+
+  const validFirstName = form.firstName.trim().length > 0 && isValidNamePart(form.firstName);
+  const validMiddleInitial = !form.middleInitial.trim() || isValidNamePart(form.middleInitial, true);
+  const validLastName = form.lastName.trim().length > 0 && isValidNamePart(form.lastName);
+  const validNickname = !form.nickname.trim() || isValidNamePart(form.nickname);
+
+  const validBirthday = isAtLeast18(form.birthday);
+  const validPhone = isValidPhone11(form.phone);
+
+  const validAddress =
+    form.addressLine1.trim().length > 0 &&
+    form.municipality.trim().length > 0 &&
+    form.barangay.trim().length > 0;
+
+  const validEmergencyName = !form.emergencyName.trim() || isValidNamePart(form.emergencyName);
+  const validEmergencyPhone = isValidEmergencyPhone(form.emergencyPhone);
+
+  // Profile photo is REQUIRED for registration; for editing, must have an existing or new photo
+  const validPhoto = isEditing ? true : Boolean(form.imageUrl && form.imageUrl.trim().length > 0);
+
   return (
-    isValidName(form.name) &&
-    isAtLeast18(form.birthday) &&
-    isValidPhone11(form.phone) &&
-    form.municipality.trim() !== '' &&
-    form.barangay.trim() !== '' &&
-    (form.street.trim() !== '' || form.houseNumber.trim() !== '') &&
-    (!form.emergencyName.trim() || isValidName(form.emergencyName))
+    validFirstName &&
+    validMiddleInitial &&
+    validLastName &&
+    validNickname &&
+    validBirthday &&
+    validPhone &&
+    validAddress &&
+    validEmergencyName &&
+    validEmergencyPhone &&
+    validPhoto
   );
 }
 
@@ -111,7 +120,6 @@ type Props = {
   setForm: Dispatch<SetStateAction<WorkerFormDraft>>;
   onSave: () => void | Promise<void>;
   saving?: boolean;
-  fallbackAddress?: string;
   formError?: string | null;
 };
 
@@ -123,12 +131,16 @@ export function WorkerFormDialog({
   setForm,
   onSave,
   saving = false,
-  fallbackAddress,
   formError,
 }: Props) {
   const [photoError, setPhotoError] = useState<string | null>(null);
-  const barangayOptions =
-    form.municipality.trim() !== '' ? getBarangaysForCity(form.municipality) : [];
+
+  // Dynamic minimum birthdate for >= 18 years old
+  const maxBirthDate = useMemo(() => calculateMaxBirthDate(), []);
+
+  const barangayOptions = useMemo(() => {
+    return form.municipality.trim() !== '' ? getBarangaysForCity(form.municipality) : [];
+  }, [form.municipality]);
 
   const handlePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -144,47 +156,164 @@ export function WorkerFormDialog({
     }
   };
 
+  const isFormValid = addressFormReady(form, { isEditing });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl bg-[#fdfbf7] border-[#4a2c2a]/15">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl bg-card text-card-foreground border-border/80 rounded-2xl shadow-xl">
         <DialogHeader>
-          <DialogTitle className="text-[#3e2723]">{isEditing ? 'Edit employee' : 'Add employee'}</DialogTitle>
-          <DialogDescription>
-            Worker ID is generated automatically. Addresses are in{' '}
-            <span className="font-medium text-[#5d4037]">Bataan</span> only; choose city and barangay,
-            then enter the street and house or lot number.
+          <DialogTitle className="text-lg font-bold text-foreground font-heading">
+            {isEditing ? 'Edit Employee Information' : 'Register New Farm Employee'}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Complete the form below to register the worker. Worker ID is automatically generated.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="worker-name">Full name *</Label>
-              <Input
-                id="worker-name"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="e.g., Jose Rizal"
-                className={`bg-white border-[#4a2c2a]/20 ${form.name && !isValidName(form.name) ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
-              />
-              {form.name && !isValidName(form.name) && (
-                <p className="text-xs text-red-600 font-medium">Full name must only contain letters, spaces, and dashes (-). No numbers or other special characters allowed.</p>
-              )}
+
+        {/* Name Guidelines Header Alert */}
+        <div className="rounded-xl border border-accent/30 bg-accent/10 p-3 text-xs space-y-1">
+          <div className="flex items-center gap-1.5 font-semibold text-accent-foreground">
+            <Info className="w-4 h-4 text-accent shrink-0" />
+            <span>Name Format & Acceptance Guidelines</span>
+          </div>
+          <p className="text-muted-foreground leading-relaxed pl-5">
+            Please enter the employee's name following the designated fields (First Name, Middle Initial, Last Name). Accepted special characters: apostrophes ('), hyphens (-), and periods (.) for initials.
+          </p>
+        </div>
+
+        <div className="grid gap-5 py-2">
+          {/* Section 1: Full Name Fields */}
+          <div className="space-y-3 rounded-xl border border-border/70 bg-muted/30 p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground font-heading">
+                1. Employee Name
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Sample: Jose P. Rizal
+              </span>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="worker-birthday">Birthday *</Label>
-              <Input
-                id="worker-birthday"
-                type="date"
-                value={form.birthday}
-                onChange={(e) => setForm((f) => ({ ...f, birthday: e.target.value }))}
-                className={`bg-white border-[#4a2c2a]/20 ${form.birthday && !isAtLeast18(form.birthday) ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
-              />
-              {form.birthday && !isAtLeast18(form.birthday) ? (
-                <p className="text-xs text-red-600 font-medium">Error: Employee must be at least 18 years old.</p>
-              ) : (
-                <p className="text-xs text-muted-foreground">Employees must be at least 18 years old.</p>
-              )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+              {/* First Name */}
+              <div className="sm:col-span-5 space-y-1.5">
+                <Label htmlFor="worker-first-name" className="text-xs font-semibold">
+                  First Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="worker-first-name"
+                  value={form.firstName}
+                  onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
+                  placeholder="Sample: Jose"
+                  className={`bg-background/90 text-sm ${
+                    form.firstName && !isValidNamePart(form.firstName)
+                      ? 'border-destructive focus-visible:ring-destructive'
+                      : ''
+                  }`}
+                />
+                {form.firstName && !isValidNamePart(form.firstName) && (
+                  <p className="text-[11px] text-destructive font-medium">
+                    Only letters, hyphens (-), and apostrophes (') allowed.
+                  </p>
+                )}
+              </div>
+
+              {/* Middle Initial */}
+              <div className="sm:col-span-2 space-y-1.5">
+                <Label htmlFor="worker-middle-initial" className="text-xs font-semibold">
+                  M.I.
+                </Label>
+                <Input
+                  id="worker-middle-initial"
+                  maxLength={3}
+                  value={form.middleInitial}
+                  onChange={(e) => setForm((f) => ({ ...f, middleInitial: e.target.value }))}
+                  placeholder="Sample: P."
+                  className={`bg-background/90 text-sm ${
+                    form.middleInitial && !isValidNamePart(form.middleInitial, true)
+                      ? 'border-destructive focus-visible:ring-destructive'
+                      : ''
+                  }`}
+                />
+              </div>
+
+              {/* Last Name */}
+              <div className="sm:col-span-5 space-y-1.5">
+                <Label htmlFor="worker-last-name" className="text-xs font-semibold">
+                  Last Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="worker-last-name"
+                  value={form.lastName}
+                  onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
+                  placeholder="Sample: Rizal"
+                  className={`bg-background/90 text-sm ${
+                    form.lastName && !isValidNamePart(form.lastName)
+                      ? 'border-destructive focus-visible:ring-destructive'
+                      : ''
+                  }`}
+                />
+                {form.lastName && !isValidNamePart(form.lastName) && (
+                  <p className="text-[11px] text-destructive font-medium">
+                    Only letters, hyphens (-), and apostrophes (') allowed.
+                  </p>
+                )}
+              </div>
+
+              {/* Nickname (Optional with clear instructions) */}
+              <div className="sm:col-span-12 space-y-1.5 pt-1">
+                <Label htmlFor="worker-nickname" className="text-xs font-semibold flex items-center justify-between">
+                  <span>Nickname <span className="text-muted-foreground font-normal">(Optional)</span></span>
+                  <span className="text-[11px] text-muted-foreground font-normal">Preferred alias used on field radios/badges</span>
+                </Label>
+                <Input
+                  id="worker-nickname"
+                  value={form.nickname}
+                  onChange={(e) => setForm((f) => ({ ...f, nickname: e.target.value }))}
+                  placeholder="Sample: Pepe"
+                  className="bg-background/90 text-sm"
+                />
+              </div>
             </div>
+          </div>
+
+          {/* Section 2: Personal & Role Details */}
+          <div className="space-y-3 rounded-xl border border-border/70 bg-muted/30 p-4">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground font-heading">
+              2. Personal & Contact Information
+            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Birthday with dynamic age validation */}
+              <div className="space-y-1.5">
+                <Label htmlFor="worker-birthday" className="text-xs font-semibold flex items-center justify-between">
+                  <span>Birthday <span className="text-destructive">*</span></span>
+                  <span className="text-[10px] text-muted-foreground font-normal">Min. 18 years old</span>
+                </Label>
+                <Input
+                  id="worker-birthday"
+                  type="date"
+                  max={maxBirthDate}
+                  value={form.birthday}
+                  onChange={(e) => setForm((f) => ({ ...f, birthday: e.target.value }))}
+                  className={`bg-background/90 text-sm ${
+                    form.birthday && !isAtLeast18(form.birthday)
+                      ? 'border-destructive focus-visible:ring-destructive'
+                      : ''
+                  }`}
+                />
+                {form.birthday && !isAtLeast18(form.birthday) ? (
+                  <p className="text-[11px] text-destructive font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    Error: Employee must be at least 18 years old (born on or before {maxBirthDate}).
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Must be born on or before {maxBirthDate}.
+                  </p>
+                )}
+              </div>
+
+              {/* Sex */}
               <SelectWithOther
                 id="worker-sex"
                 label="Sex"
@@ -193,257 +322,356 @@ export function WorkerFormDialog({
                 options={['Female', 'Male', 'Prefer not to say']}
                 placeholder="— Select sex —"
                 selectClassName={ADDRESS_SELECT_CLASS}
-                otherPlaceholder="Type custom sex..."
+                otherPlaceholder="Sample: Custom sex..."
               />
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="worker-phone">Phone number *</Label>
-              <Input
-                id="worker-phone"
-                type="tel"
-                value={form.phone}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }))
-                }
-                placeholder="09XXXXXXXXX"
-                className={`bg-white border-[#4a2c2a]/20 ${form.phone && !isValidPhone11(form.phone) ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
-              />
-              {form.phone && !isValidPhone11(form.phone) ? (
-                <p className="text-xs text-red-600 font-medium">Phone number must be exactly 11 digits starting with 09 (e.g. 09171234567).</p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Format guide: 09171234567 (strictly 11 digits).
-                </p>
-              )}
-            </div>
-              <SelectWithOther
-                id="worker-role"
-                label="Role"
-                value={form.role}
-                onChange={(val) => setForm((f) => ({ ...f, role: val }))}
-                options={['Picker', 'Sorter', 'Field Supervisor', 'Operator', 'Quality Inspector']}
-                selectClassName={ADDRESS_SELECT_CLASS}
-                otherPlaceholder="Type custom role..."
-              />
-            {!isEditing ? (
-              <div className="sm:col-span-2 rounded-xl border border-[#2d5016]/20 bg-[#f0f7eb] p-4">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#2d5016]">
-                    <KeyRound className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-[#2d5016]">Authentication account</p>
-                    <p className="text-xs text-[#4a2c2a]">
-                      After saving, the system will generate the worker's login email and temporary
-                      password. The credentials will appear immediately for the admin to give to the employee.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            <div className="space-y-2 sm:col-span-2 rounded-xl border border-[#4a2c2a]/15 bg-[#f5f1ed]/50 p-4">
-              <p className="text-sm font-medium text-[#3e2723]">Emergency contact</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="worker-emergency-name">Full name</Label>
-                  <Input
-                    id="worker-emergency-name"
-                    value={form.emergencyName}
-                    onChange={(e) => setForm((f) => ({ ...f, emergencyName: e.target.value }))}
-                    placeholder="e.g., Maria Santos"
-                    className={`bg-white border-[#4a2c2a]/20 ${form.emergencyName && !isValidName(form.emergencyName) ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
-                  />
-                  {form.emergencyName && !isValidName(form.emergencyName) && (
-                    <p className="text-xs text-red-600 font-medium">Name must only contain letters, spaces, and dashes (-). No numbers or special characters.</p>
-                  )}
-                </div>
-                  <SelectWithOther
-                    id="worker-emergency-relationship"
-                    label="Relationship"
-                    value={form.emergencyRelationship}
-                    onChange={(val) => setForm((f) => ({ ...f, emergencyRelationship: val }))}
-                    options={['Parent', 'Sibling', 'Spouse']}
-                    placeholder="— Select relationship —"
-                    selectClassName={ADDRESS_SELECT_CLASS}
-                    otherPlaceholder="Type custom relationship..."
-                  />
-                <div className="space-y-2">
-                  <Label htmlFor="worker-emergency-phone">Contact number</Label>
-                  <Input
-                    id="worker-emergency-phone"
-                    type="tel"
-                    value={form.emergencyPhone}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, emergencyPhone: sanitizeEmergencyPhoneInput(e.target.value) }))
-                    }
-                    placeholder="e.g. 09171234567 or +63 917 123 4567"
-                    className="bg-white border-[#4a2c2a]/20"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2 sm:col-span-2 rounded-xl border border-[#4a2c2a]/15 bg-[#f5f1ed]/50 p-4">
-              <p className="text-sm font-medium text-[#3e2723]">Residential address · Bataan</p>
-              <p className="text-xs text-muted-foreground pb-2">
-                Select city then barangay. Street is typed manually (no preset list).
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="worker-province-fixed">Province</Label>
-                  <Input
-                    id="worker-province-fixed"
-                    readOnly
-                    value={BATAAN_PROVINCE}
-                    aria-readonly="true"
-                    className="bg-[#e8e2dc] border-[#4a2c2a]/20 text-[#3e2723]"
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="worker-city">City / municipality *</Label>
-                  <select
-                    id="worker-city"
-                    value={form.municipality}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        municipality: e.target.value,
-                        barangay: isEditing ? f.barangay : '',
-                        street: isEditing ? f.street : '',
-                        houseNumber: isEditing ? f.houseNumber : '',
-                      }))
-                    }
-                    className={ADDRESS_SELECT_CLASS}
-                  >
-                    <option value="">— Select city or municipality —</option>
-                    {BATAAN_CITIES_AND_TOWNS.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="worker-barangay">Barangay *</Label>
-                  <select
-                    id="worker-barangay"
-                    disabled={barangayOptions.length === 0}
-                    value={form.barangay}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        barangay: e.target.value,
-                        street: isEditing ? f.street : '',
-                        houseNumber: isEditing ? f.houseNumber : '',
-                      }))
-                    }
-                    className={ADDRESS_SELECT_CLASS}
-                  >
-                    <option value="">
-                      {form.municipality ? '— Select barangay —' : '— Choose a city first —'}
-                    </option>
-                    {barangayOptions.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="worker-street">House No. / Street / Building *</Label>
-                  <Input
-                    id="worker-street"
-                    value={form.street || form.houseNumber}
-                    onChange={(e) => setForm((f) => ({ ...f, street: e.target.value, houseNumber: e.target.value }))}
-                    placeholder="e.g., #42 Rizal Street, Lot 12 Blk 3"
-                    className="bg-white border-[#4a2c2a]/20"
-                    disabled={!form.barangay}
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="space-y-3 sm:col-span-2">
-              <Label htmlFor="worker-photo">Profile photo</Label>
-              <div className="flex flex-col gap-3 rounded-xl border border-[#4a2c2a]/15 bg-[#f5f1ed]/50 p-4 sm:flex-row sm:items-center">
-                <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#4a2c2a]/15 bg-white">
-                  {form.imageUrl ? (
-                    <img
-                      src={form.imageUrl}
-                      alt="Selected worker"
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">No photo</span>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    <label htmlFor="worker-photo" className={PHOTO_INPUT_CLASS}>
-                      <Upload className="h-4 w-4" />
-                      Upload photo
-                    </label>
-                    {form.imageUrl ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          setPhotoError(null);
-                          setForm((f) => ({ ...f, imageUrl: '' }));
-                        }}
-                        className="border-[#4a2c2a]/30"
-                      >
-                        <X className="mr-2 h-4 w-4" />
-                        Remove
-                      </Button>
-                    ) : null}
-                  </div>
-                  <Input
-                    id="worker-photo"
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    className="sr-only"
-                  />
-                  {photoError ? (
-                    <p className="text-xs text-red-600" role="alert">
-                      {photoError}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-            {isEditing && (
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="worker-status">Employment status</Label>
-                <select
-                  id="worker-status"
-                  value={form.status}
+
+              {/* Phone Number */}
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="worker-phone" className="text-xs font-semibold flex items-center justify-between">
+                  <span>Contact Phone Number <span className="text-destructive">*</span></span>
+                  <span className="text-[10px] text-muted-foreground font-normal">Sample: 09171234567</span>
+                </Label>
+                <Input
+                  id="worker-phone"
+                  type="tel"
+                  value={form.phone}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, status: e.target.value as 'active' | 'inactive' }))
+                    setForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }))
+                  }
+                  placeholder="Sample: 09171234567"
+                  className={`bg-background/90 text-sm ${
+                    form.phone && !isValidPhone11(form.phone)
+                      ? 'border-destructive focus-visible:ring-destructive'
+                      : ''
+                  }`}
+                />
+                {form.phone && !isValidPhone11(form.phone) ? (
+                  <p className="text-[11px] text-destructive font-medium">
+                    Phone number must be strictly 11 digits starting with 09 (Sample: 09171234567).
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Format: 11 digits starting with 09.
+                  </p>
+                )}
+              </div>
+
+              {/* Role */}
+              <div className="sm:col-span-2">
+                <SelectWithOther
+                  id="worker-role"
+                  label="Assigned Role"
+                  value={form.role}
+                  onChange={(val) => setForm((f) => ({ ...f, role: val }))}
+                  options={['Picker', 'Sorter', 'Field Supervisor', 'Operator', 'Quality Inspector', 'Agronomist']}
+                  selectClassName={ADDRESS_SELECT_CLASS}
+                  otherPlaceholder="Sample: Machine Technician"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Address Form */}
+          <div className="space-y-3 rounded-xl border border-border/70 bg-muted/30 p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground font-heading">
+                3. Address
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Province: {BATAAN_PROVINCE}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* City / Municipality */}
+              <div className="space-y-1.5">
+                <Label htmlFor="worker-city" className="text-xs font-semibold">
+                  City / Municipality <span className="text-destructive">*</span>
+                </Label>
+                <select
+                  id="worker-city"
+                  value={form.municipality}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      municipality: e.target.value,
+                      barangay: '',
+                    }))
                   }
                   className={ADDRESS_SELECT_CLASS}
                 >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
+                  <option value="">— Select City / Municipality —</option>
+                  {BATAAN_CITIES_AND_TOWNS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
                 </select>
               </div>
-            )}
+
+              {/* Barangay */}
+              <div className="space-y-1.5">
+                <Label htmlFor="worker-barangay" className="text-xs font-semibold">
+                  Barangay <span className="text-destructive">*</span>
+                </Label>
+                <select
+                  id="worker-barangay"
+                  disabled={barangayOptions.length === 0}
+                  value={form.barangay}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      barangay: e.target.value,
+                    }))
+                  }
+                  className={ADDRESS_SELECT_CLASS}
+                >
+                  <option value="">
+                    {form.municipality ? '— Select Barangay —' : '— Choose City first —'}
+                  </option>
+                  {barangayOptions.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Province (Auto-associated) */}
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="worker-province-fixed" className="text-xs font-semibold">
+                  Province
+                </Label>
+                <Input
+                  id="worker-province-fixed"
+                  readOnly
+                  value={form.province || BATAAN_PROVINCE}
+                  aria-readonly="true"
+                  className="bg-muted/70 text-sm font-medium text-foreground cursor-not-allowed"
+                />
+              </div>
+
+              {/* Address Line 1 */}
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="worker-address-1" className="text-xs font-semibold flex items-center justify-between">
+                  <span>Address Line 1 <span className="text-destructive">*</span></span>
+                  <span className="text-[10px] text-muted-foreground font-normal">House / Bldg / Street / Lot / Blk</span>
+                </Label>
+                <Input
+                  id="worker-address-1"
+                  value={form.addressLine1}
+                  onChange={(e) => setForm((f) => ({ ...f, addressLine1: e.target.value }))}
+                  placeholder="Sample: #42 Rizal Street, Building A, Lot 12 Blk 3"
+                  className="bg-background/90 text-sm"
+                />
+              </div>
+
+              {/* Address Line 2 */}
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="worker-address-2" className="text-xs font-semibold flex items-center justify-between">
+                  <span>Address Line 2 <span className="text-muted-foreground font-normal">(Optional)</span></span>
+                  <span className="text-[10px] text-muted-foreground font-normal">Subdivision / Village / Floor / Landmark</span>
+                </Label>
+                <Input
+                  id="worker-address-2"
+                  value={form.addressLine2}
+                  onChange={(e) => setForm((f) => ({ ...f, addressLine2: e.target.value }))}
+                  placeholder="Sample: Villa Dolores Subdivision, 2nd Floor"
+                  className="bg-background/90 text-sm"
+                />
+              </div>
+            </div>
           </div>
+
+          {/* Section 4: Emergency Contact */}
+          <div className="space-y-3 rounded-xl border border-border/70 bg-muted/30 p-4">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground font-heading">
+              4. Emergency Contact
+            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="worker-emergency-name" className="text-xs font-semibold">
+                  Contact Person Full Name
+                </Label>
+                <Input
+                  id="worker-emergency-name"
+                  value={form.emergencyName}
+                  onChange={(e) => setForm((f) => ({ ...f, emergencyName: e.target.value }))}
+                  placeholder="Sample: Maria Santos"
+                  className="bg-background/90 text-sm"
+                />
+              </div>
+
+              <SelectWithOther
+                id="worker-emergency-relationship"
+                label="Relationship"
+                value={form.emergencyRelationship}
+                onChange={(val) => setForm((f) => ({ ...f, emergencyRelationship: val }))}
+                options={['Parent', 'Spouse', 'Sibling', 'Guardian', 'Child', 'Relative']}
+                placeholder="— Select relationship —"
+                selectClassName={ADDRESS_SELECT_CLASS}
+                otherPlaceholder="Sample: Friend / Neighbor"
+              />
+
+              <div className="space-y-1.5">
+                <Label htmlFor="worker-emergency-phone" className="text-xs font-semibold">
+                  Emergency Phone Number
+                </Label>
+                <Input
+                  id="worker-emergency-phone"
+                  type="tel"
+                  value={form.emergencyPhone}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      emergencyPhone: sanitizeEmergencyPhoneInput(e.target.value),
+                    }))
+                  }
+                  placeholder="Sample: 09181234567"
+                  className="bg-background/90 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 5: Profile Photo (REQUIRED FOR REGISTRATION) */}
+          <div className="space-y-3 rounded-xl border border-border/70 bg-muted/30 p-4">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="worker-photo" className="text-xs font-bold uppercase tracking-wider text-muted-foreground font-heading flex items-center gap-1.5">
+                5. Profile Photo <span className="text-destructive font-black">* (Required)</span>
+              </Label>
+              {!form.imageUrl ? (
+                <span className="px-2 py-0.5 rounded-md bg-destructive/15 text-destructive text-[10px] font-bold">
+                  Photo Required
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> Photo Attached
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-xl border border-border/70 bg-background/80 p-4">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-border bg-muted/50">
+                {form.imageUrl ? (
+                  <img
+                    src={form.imageUrl}
+                    alt="Selected worker"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                    <Camera className="w-6 h-6" />
+                    <span className="text-[10px] font-medium">Required</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Upload a clear, front-facing profile photo for worker identity and attendance verification.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <label htmlFor="worker-photo-upload" className={PHOTO_INPUT_CLASS}>
+                    <Upload className="h-4 w-4" />
+                    {form.imageUrl ? 'Change Photo' : 'Upload Profile Photo *'}
+                  </label>
+                  {form.imageUrl ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPhotoError(null);
+                        setForm((f) => ({ ...f, imageUrl: '' }));
+                      }}
+                      className="border-border/80 text-xs"
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+                <Input
+                  id="worker-photo-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  className="sr-only"
+                />
+                {photoError ? (
+                  <p className="text-xs text-destructive font-medium" role="alert">
+                    {photoError}
+                  </p>
+                ) : null}
+                {!form.imageUrl && (
+                  <p className="text-[11px] text-destructive font-semibold">
+                    * A profile photo is required to complete employee registration.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Account Creation Notice */}
+          {!isEditing ? (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 flex items-start gap-3">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                <KeyRound className="h-4 w-4" />
+              </div>
+              <div className="text-xs">
+                <p className="font-bold text-emerald-700 dark:text-emerald-300">
+                  Automated Mobile Credentials
+                </p>
+                <p className="text-muted-foreground mt-0.5 leading-relaxed">
+                  Upon saving, login credentials (worker Gmail & temporary password) will be automatically provisioned for field attendance and crop scanning.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="worker-status" className="text-xs font-semibold">
+                Employment Status
+              </Label>
+              <select
+                id="worker-status"
+                value={form.status}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, status: e.target.value as 'active' | 'inactive' }))
+                }
+                className={ADDRESS_SELECT_CLASS}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+          )}
         </div>
+
         {formError ? (
-          <p className="text-sm text-red-600 px-1" role="alert">
+          <p className="text-xs text-destructive font-medium px-1 flex items-center gap-1.5" role="alert">
+            <AlertCircle className="w-4 h-4 shrink-0" />
             {formError}
           </p>
         ) : null}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="border-[#4a2c2a]/30">
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            className="border-border/80"
+          >
             Cancel
           </Button>
           <Button
             type="button"
             onClick={() => void onSave()}
-            disabled={!addressFormReady(form, { fallbackAddress, isEditing }) || saving}
-            className="bg-[#2d5016] hover:bg-[#234010] text-white"
+            disabled={!isFormValid || saving}
+            className="bg-[#2d5016] hover:bg-[#234010] text-white font-bold"
           >
-            {saving ? 'Saving…' : isEditing ? 'Save changes' : 'Save employee'}
+            {saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Register Employee'}
           </Button>
         </DialogFooter>
       </DialogContent>

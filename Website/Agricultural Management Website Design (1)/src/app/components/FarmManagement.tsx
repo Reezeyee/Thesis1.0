@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from 'react';
+import { motion } from 'framer-motion';
 import {
   User,
   UserX,
@@ -15,10 +16,38 @@ import {
   Bug,
   Bell,
   AlertTriangle,
+  Search,
   X,
+  ClipboardCheck,
+  CheckCircle2,
+  FileClock,
+  CalendarDays,
+  History,
+  Eye,
+  Check,
+  XCircle,
+  FileText,
 } from 'lucide-react';
 import { SelectWithOther } from './ui/SelectWithOther';
 import { CoffeeFieldLandscapeMap } from './CoffeeFieldLandscapeMap';
+import { DashboardGrid, GridItem } from './ui/DashboardGrid';
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.08 },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.35 },
+  },
+};
 import {
   Dialog,
   DialogContent,
@@ -32,24 +61,26 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { BATAAN_PROVINCE } from '../data/bataanAddressCatalog';
 import { useFarmData } from '../store/FarmDataProvider';
+import { useAuth } from '../auth/AuthProvider';
 import { createWorkerAuthAccount, type CreatedWorkerAccount } from '../auth/workerAccount';
 import { distinctRoles, hourlyRateForWorkerRole, payrollLineAmount } from '../lib/farmFinance';
+import { formatCurrency } from '../lib/currencyFormat';
 import { runSave, showSaveError } from '../lib/saveFeedback';
+import { logStateApiActivity, logUiAction } from '../lib/apiRouteLogger';
 import {
   isAtLeast18,
+  isValidEmergencyPhone,
   isValidPhone11,
   parseWorkerDetails,
   sanitizePhoneInput,
-  uiToWorkerRecord,
-  workerRecordToFormInput,
   workerRecordToUi,
+  workerRecordToDraft,
+  draftToWorkerRecord,
+  emptyWorkerDraft,
   type WorkerUi,
-} from '../lib/workerUi';
-import {
-  WorkerFormDialog,
-  composeWorkerAddress,
   type WorkerFormDraft,
-} from './WorkerFormDialog';
+} from '../lib/workerUi';
+import { WorkerFormDialog } from './WorkerFormDialog';
 import {
   emptyCoffeeField,
   emptyIrrigationSystem,
@@ -58,35 +89,20 @@ import {
 } from '../lib/farmOpsDefaults';
 import type {
   AppState,
+  ApprovalStatus,
   AttendanceRecord,
   CoffeeFieldRecord,
   HarvestReadinessReportRecord,
   IrrigationDamageReportRecord,
   IrrigationSystemRecord,
+  LeaveRequestRecord,
   PestControlRecord,
+  TimesheetCorrectionRequest,
   WorkerRecord,
 } from '../types/appState';
 
-const emptyWorkerDraft = (): WorkerFormDraft => ({
-  name: '',
-  birthday: '',
-  sex: '',
-  phone: '',
-  role: 'Harvester',
-  municipality: '',
-  barangay: '',
-  street: '',
-  houseNumber: '',
-  province: BATAAN_PROVINCE,
-  imageUrl: '',
-  status: 'active',
-  emergencyName: '',
-  emergencyRelationship: '',
-  emergencyPhone: '',
-});
-
 const SELECT_CLASS =
-  'flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-2 text-sm text-[#3e2723] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 function isHarvestReady(field: CoffeeFieldRecord): boolean {
   const status = field.status.toLowerCase();
@@ -97,8 +113,28 @@ function isHarvestReady(field: CoffeeFieldRecord): boolean {
 }
 
 function attendanceSortValue(attendance: AttendanceRecord): number {
-  const parsed = Date.parse(`${attendance.date || ''}T${attendance.clockIn || '00:00'}`);
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (attendance.timestampMillis && attendance.timestampMillis > 0) {
+    return attendance.timestampMillis;
+  }
+  const dateStr = attendance.date?.trim() || '';
+  const clockInStr = attendance.clockIn?.trim() || '';
+  let direct = Date.parse(`${dateStr} ${clockInStr}`);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  direct = Date.parse(dateStr);
+  if (Number.isFinite(direct) && direct > 0) {
+    const timeMatch = clockInStr.match(/(\d{1,2}):(\d{2})(?:\s*([AP]M))?/i);
+    if (timeMatch) {
+      let h = parseInt(timeMatch[1], 10);
+      const m = parseInt(timeMatch[2], 10);
+      const isPm = timeMatch[3]?.toUpperCase() === 'PM';
+      const isAm = timeMatch[3]?.toUpperCase() === 'AM';
+      if (isPm && h < 12) h += 12;
+      if (isAm && h === 12) h = 0;
+      return direct + (h * 3600 + m * 60) * 1000;
+    }
+    return direct;
+  }
+  return 0;
 }
 
 function formatClock24h(raw?: string): string {
@@ -124,10 +160,32 @@ function formatHoursWorked(attendance: AttendanceRecord): string {
   return Number.isFinite(hours) && hours > 0 ? hours.toFixed(2) : '0.00';
 }
 
+function statusBadgeClass(status: ApprovalStatus | string): string {
+  if (status === 'Approved') return 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30';
+  if (status === 'Rejected') return 'bg-rose-500/15 text-rose-500 border-rose-500/30';
+  return 'bg-amber-500/15 text-amber-500 border-amber-500/30';
+}
+
+function attendanceRecordForCorrection(request: TimesheetCorrectionRequest): AttendanceRecord {
+  return {
+    workerName: request.workerName,
+    date: request.date,
+    clockIn: request.requestedClockIn || request.originalClockIn || undefined,
+    clockOut: request.requestedClockOut || request.originalClockOut || undefined,
+    details: `Created from approved timesheet correction ${request.correctionId}`,
+    attendanceId: request.attendanceId || `ATT-${Date.now().toString().slice(-6)}`,
+    submittedByStaff: true,
+    awaitingPayrollLine: true,
+    timestampMillis: Date.now(),
+  };
+}
+
 
 
 export function FarmManagement() {
   const { state, loading, updateState, saving } = useFarmData();
+  const { session } = useAuth();
+  const managerName = session?.displayName || 'Farm Manager';
   const workers = state.workers.map((w, index) => workerRecordToUi(w, index));
   const activeWorkers = workers.filter((worker) => worker.status === 'active');
   const inactiveWorkers = workers.filter((worker) => worker.status === 'inactive');
@@ -135,15 +193,124 @@ export function FarmManagement() {
   const irrigationSystems = state.irrigationSystems;
   const irrigationDamageReports = state.irrigationDamageReports ?? [];
   const pestControlLogs = state.pestControlLogs;
-  const recentAttendance = useMemo(
-    () => [...state.attendance].sort((a, b) => attendanceSortValue(b) - attendanceSortValue(a)).slice(0, 12),
-    [state.attendance],
-  );
+  const [workerSearchQuery, setWorkerSearchQuery] = useState('');
+  const [workerRoleFilter, setWorkerRoleFilter] = useState('All');
+  const [workerStatusFilter, setWorkerStatusFilter] = useState('All');
+  const [workerSortOrder, setWorkerSortOrder] = useState<'newest' | 'oldest' | 'name'>('newest');
+
+  const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
+  const [attendanceSortOrder, setAttendanceSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [selectedAttendanceProof, setSelectedAttendanceProof] = useState<AttendanceRecord | null>(null);
+  const [approvalRemarks, setApprovalRemarks] = useState<Record<string, string>>({});
+
+  const filteredWorkers = useMemo(() => {
+    let list = [...workers];
+    if (workerSearchQuery.trim()) {
+      const q = workerSearchQuery.toLowerCase();
+      list = list.filter(
+        (w) =>
+          w.name.toLowerCase().includes(q) ||
+          w.role.toLowerCase().includes(q) ||
+          w.barangay.toLowerCase().includes(q) ||
+          w.municipality.toLowerCase().includes(q) ||
+          w.phone.includes(q) ||
+          w.workerId.toLowerCase().includes(q),
+      );
+    }
+    if (workerRoleFilter !== 'All') {
+      list = list.filter((w) => w.role.toLowerCase() === workerRoleFilter.toLowerCase());
+    }
+    if (workerStatusFilter !== 'All') {
+      list = list.filter((w) => w.status === workerStatusFilter.toLowerCase());
+    }
+    if (workerSortOrder === 'name') {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (workerSortOrder === 'oldest') {
+      list.sort((a, b) => a.index - b.index);
+    } else {
+      list.sort((a, b) => b.index - a.index);
+    }
+    return list;
+  }, [workers, workerSearchQuery, workerRoleFilter, workerStatusFilter, workerSortOrder]);
+
+  const filteredAttendance = useMemo(() => {
+    let list = [...state.attendance];
+    if (attendanceSearchQuery.trim()) {
+      const q = attendanceSearchQuery.toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.workerName?.toLowerCase().includes(q) ||
+          a.date?.toLowerCase().includes(q) ||
+          a.timeInLocationName?.toLowerCase().includes(q) ||
+          a.details?.toLowerCase().includes(q),
+      );
+    }
+    if (attendanceSortOrder === 'oldest') {
+      list.sort((a, b) => attendanceSortValue(a) - attendanceSortValue(b));
+    } else {
+      list.sort((a, b) => attendanceSortValue(b) - attendanceSortValue(a));
+    }
+    return list;
+  }, [state.attendance, attendanceSearchQuery, attendanceSortOrder]);
+
   const recentTasks = state.tasks.slice(0, 8);
   const harvestReadinessReports = useMemo(
     () => [...state.harvestReadinessReports].sort((a, b) => Date.parse(b.reportedAt || '') - Date.parse(a.reportedAt || '')),
     [state.harvestReadinessReports],
   );
+  const timesheetCorrections = useMemo(
+    () => [...(state.timesheetCorrections || [])].sort((a, b) => Date.parse(b.submittedAt || '') - Date.parse(a.submittedAt || '')),
+    [state.timesheetCorrections],
+  );
+  const leaveRequests = useMemo(
+    () => [...(state.leaveRequests || [])].sort((a, b) => Date.parse(b.submittedAt || '') - Date.parse(a.submittedAt || '')),
+    [state.leaveRequests],
+  );
+  const pendingTimesheetCorrections = timesheetCorrections.filter((request) => request.status === 'Pending');
+  const pendingLeaveRequests = leaveRequests.filter((request) => request.status === 'Pending');
+
+  const [approvalsStatusFilter, setApprovalsStatusFilter] = useState<'All' | 'Pending' | 'Approved' | 'Rejected'>('Pending');
+  const [approvalsTypeFilter, setApprovalsTypeFilter] = useState<'all' | 'timesheets' | 'leaves'>('all');
+  const [approvalsSearchQuery, setApprovalsSearchQuery] = useState('');
+  const [selectedAuditCorrection, setSelectedAuditCorrection] = useState<TimesheetCorrectionRequest | null>(null);
+
+  const filteredTimesheetCorrections = useMemo(() => {
+    let list = [...timesheetCorrections];
+    if (approvalsStatusFilter !== 'All') {
+      list = list.filter((r) => r.status === approvalsStatusFilter);
+    }
+    if (approvalsSearchQuery.trim()) {
+      const q = approvalsSearchQuery.toLowerCase();
+      list = list.filter(
+        (r) =>
+          r.workerName.toLowerCase().includes(q) ||
+          r.date.toLowerCase().includes(q) ||
+          r.reason.toLowerCase().includes(q) ||
+          r.correctionId.toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [timesheetCorrections, approvalsStatusFilter, approvalsSearchQuery]);
+
+  const filteredLeaveRequests = useMemo(() => {
+    let list = [...leaveRequests];
+    if (approvalsStatusFilter !== 'All') {
+      list = list.filter((r) => r.status === approvalsStatusFilter);
+    }
+    if (approvalsSearchQuery.trim()) {
+      const q = approvalsSearchQuery.toLowerCase();
+      list = list.filter(
+        (r) =>
+          r.workerName.toLowerCase().includes(q) ||
+          r.leaveType.toLowerCase().includes(q) ||
+          r.startDate.toLowerCase().includes(q) ||
+          r.endDate.toLowerCase().includes(q) ||
+          r.reason.toLowerCase().includes(q) ||
+          r.leaveId.toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [leaveRequests, approvalsStatusFilter, approvalsSearchQuery]);
 
   const [selectedWorkerIndex, setSelectedWorkerIndex] = useState<number | null>(null);
   const [workerFormOpen, setWorkerFormOpen] = useState(false);
@@ -467,12 +634,7 @@ export function FarmManagement() {
     const record = state.workers[worker.index];
     if (!record) return;
     setEditingWorkerIndex(worker.index);
-    const input = workerRecordToFormInput(record);
-    setForm({
-      ...input,
-      province: BATAAN_PROVINCE,
-      phone: sanitizePhoneInput(input.phone),
-    });
+    setForm(workerRecordToDraft(record));
     setWorkerFormError(null);
     setSelectedWorkerIndex(worker.index);
     setWorkerFormOpen(true);
@@ -487,75 +649,42 @@ export function FarmManagement() {
 
   const saveWorker = async () => {
     setWorkerFormError(null);
-    const name = form.name.trim();
     const existingWorker =
       editingWorkerIndex !== null ? state.workers[editingWorkerIndex] : undefined;
-    const existingMeta = parseWorkerDetails(existingWorker?.details);
-    const isEditingExistingWorker = Boolean(existingWorker);
-    const birthday = form.birthday.trim() || existingMeta.birthday?.trim() || existingWorker?.birthday?.trim() || '';
-    const phone = form.phone.trim() || existingWorker?.phoneNumber?.trim() || '';
-    const emergencyPhone = form.emergencyPhone.trim();
-    if (!name) {
-      setWorkerFormError('Please enter the worker name.');
+    const existingId = existingWorker?.workerId;
+
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      setWorkerFormError('Please enter both first name and last name.');
       return;
     }
-    if (isEditingExistingWorker ? form.birthday.trim() && !isAtLeast18(form.birthday) : !isAtLeast18(birthday)) {
+    if (!isAtLeast18(form.birthday)) {
       setWorkerFormError('Please enter a birthday showing the employee is at least 18 years old.');
       return;
     }
-    if (isEditingExistingWorker ? form.phone.trim() && !isValidPhone11(form.phone) : !isValidPhone11(phone)) {
-      setWorkerFormError('Phone number must follow 09XXXXXXXXX or +63XXXXXXXXXX.');
+    if (!isValidPhone11(form.phone)) {
+      setWorkerFormError('Phone number must be strictly 11 digits starting with 09 (Sample: 09171234567).');
       return;
     }
-    if (emergencyPhone && !isValidPhone11(emergencyPhone)) {
-      setWorkerFormError('Emergency contact number must follow 09XXXXXXXXX or +63XXXXXXXXXX.');
+    if (!isValidEmergencyPhone(form.emergencyPhone)) {
+      setWorkerFormError('Emergency contact number must contain 7 to 15 digits.');
       return;
     }
-    let municipality = form.municipality.trim() || existingMeta.municipality?.trim() || '';
-    let barangay = form.barangay.trim() || existingMeta.barangay?.trim() || '';
-    const hasAddressDraft = Boolean(
-      form.municipality.trim() || form.barangay.trim() || form.street.trim() || form.houseNumber.trim(),
-    );
-    let addr = hasAddressDraft && municipality && barangay && (form.street.trim() || form.houseNumber.trim())
-      ? composeWorkerAddress({ ...form, municipality, barangay })
-      : '';
-    if (!addr.trim() && isEditingExistingWorker) {
-      addr = existingWorker?.address?.trim() || '';
-    }
-    if (editingWorkerIndex === null) {
-      if (!municipality || !barangay) {
-        setWorkerFormError('Please enter city/municipality and barangay.');
-        return;
-      }
-      if (!form.street.trim() && !form.houseNumber.trim()) {
-        setWorkerFormError('Please enter house number / street.');
-        return;
-      }
-    } else if (!addr.trim()) {
-      setWorkerFormError('Please enter house number / street (or keep the existing address).');
+    if (!form.municipality.trim() || !form.barangay.trim()) {
+      setWorkerFormError('Please select both city/municipality and barangay.');
       return;
     }
-    const existingId =
-      editingWorkerIndex !== null ? state.workers[editingWorkerIndex]?.workerId : undefined;
-    let record = uiToWorkerRecord(
-      {
-        name,
-        birthday,
-        sex: form.sex,
-        phone: sanitizePhoneInput(phone),
-        role: form.role,
-        municipality,
-        barangay,
-        address: addr,
-        status: form.status,
-        imageUrl: form.imageUrl,
-        emergencyName: form.emergencyName,
-        emergencyRelationship: form.emergencyRelationship,
-        emergencyPhone: form.emergencyPhone,
-      },
-      existingId,
-    );
+    if (!form.addressLine1.trim()) {
+      setWorkerFormError('Please enter Address Line 1.');
+      return;
+    }
+    if (editingWorkerIndex === null && !form.imageUrl.trim()) {
+      setWorkerFormError('A profile photo is required to complete employee registration.');
+      return;
+    }
+
+    let record = draftToWorkerRecord(form, existingId, existingWorker?.authUid);
     if (editingWorkerIndex !== null && existingWorker) {
+      const existingMeta = parseWorkerDetails(existingWorker.details);
       const newMeta = parseWorkerDetails(record.details);
       record = {
         ...record,
@@ -571,6 +700,7 @@ export function FarmManagement() {
         }),
       };
     }
+
     let generatedAccount: CreatedWorkerAccount | null = null;
     if (editingWorkerIndex === null) {
       try {
@@ -614,11 +744,16 @@ export function FarmManagement() {
         setSelectedWorkerIndex(state.workers.length);
       }
     });
+
     if (ok) {
-      setCreatedWorkerAccount(generatedAccount ? {
-        ...generatedAccount,
-        phone: record.phoneNumber || form.phone,
-      } : null);
+      setCreatedWorkerAccount(
+        generatedAccount
+          ? {
+              ...generatedAccount,
+              phone: record.phoneNumber || form.phone,
+            }
+          : null,
+      );
       closeWorkerForm();
       return;
     }
@@ -694,6 +829,97 @@ export function FarmManagement() {
         alert(`Harvest Report ${report.reportId} Approved!\n\nA harvest schedule task has been automatically scheduled for ${report.zone}.`);
       }
     }
+  };
+
+  const reviewTimesheetCorrection = async (request: TimesheetCorrectionRequest, status: ApprovalStatus) => {
+    logUiAction(`Clicked "${status === 'Approved' ? 'Approve Timesheet' : 'Reject Timesheet'}"`);
+    const remarks = approvalRemarks[request.correctionId]?.trim() || '';
+    const reviewedAt = new Date().toLocaleString('en-US');
+    const payload = { correctionId: request.correctionId, status, remarks };
+
+    const ok = await runSave('Timesheet correction', () =>
+      logStateApiActivity(
+        'POST',
+        `/api/timesheets/correction/${request.correctionId}/review`,
+        payload,
+        () => updateState((prev) => {
+          const attendance = [...prev.attendance];
+          if (status === 'Approved') {
+            const existingIndex = attendance.findIndex(
+              (record) =>
+                (request.attendanceId && record.attendanceId === request.attendanceId) ||
+                (record.workerName.trim().toLowerCase() === request.workerName.trim().toLowerCase() && record.date === request.date),
+            );
+            if (existingIndex >= 0) {
+              attendance[existingIndex] = {
+                ...attendance[existingIndex],
+                clockIn: request.requestedClockIn || attendance[existingIndex].clockIn,
+                clockOut: request.requestedClockOut || attendance[existingIndex].clockOut,
+                details: `${attendance[existingIndex].details || 'Attendance record'} | Approved correction ${request.correctionId}: original ${request.originalClockIn || '--'}/${request.originalClockOut || '--'}`,
+              };
+            } else {
+              attendance.unshift(attendanceRecordForCorrection(request));
+            }
+          }
+
+          return {
+            ...prev,
+            attendance,
+            timesheetCorrections: prev.timesheetCorrections.map((item) =>
+              item.correctionId === request.correctionId
+                ? {
+                    ...item,
+                    status,
+                    reviewedAt,
+                    reviewedBy: managerName,
+                    managerRemarks: remarks,
+                    auditTrail: [
+                      ...(item.auditTrail || []),
+                      {
+                        actorName: managerName,
+                        action: `${status} timesheet correction`,
+                        remarks,
+                        timestamp: reviewedAt,
+                      },
+                    ],
+                  }
+                : item,
+            ),
+          };
+        }),
+      ),
+    );
+    if (ok) setApprovalRemarks((prev) => ({ ...prev, [request.correctionId]: '' }));
+  };
+
+  const reviewLeaveRequest = async (request: LeaveRequestRecord, status: ApprovalStatus) => {
+    logUiAction(`Clicked "${status === 'Approved' ? 'Approve Leave' : 'Reject Leave'}"`);
+    const remarks = approvalRemarks[request.leaveId]?.trim() || '';
+    const reviewedAt = new Date().toLocaleString('en-US');
+    const payload = { leaveId: request.leaveId, status, remarks };
+
+    const ok = await runSave('Leave request', () =>
+      logStateApiActivity(
+        'POST',
+        `/api/leaves/${request.leaveId}/review`,
+        payload,
+        () => updateState((prev) => ({
+          ...prev,
+          leaveRequests: prev.leaveRequests.map((item) =>
+            item.leaveId === request.leaveId
+              ? {
+                  ...item,
+                  status,
+                  reviewedAt,
+                  reviewedBy: managerName,
+                  managerRemarks: remarks,
+                }
+              : item,
+          ),
+        })),
+      ),
+    );
+    if (ok) setApprovalRemarks((prev) => ({ ...prev, [request.leaveId]: '' }));
   };
 
   const closeCoffeeDialog = () => {
@@ -960,11 +1186,16 @@ export function FarmManagement() {
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="space-y-6 max-w-[1600px] mx-auto pb-8 font-sans"
+    >
       {/* Floating Animated Worker Problem Notification Banner */}
       {latestPendingReport && !dismissedReportIds.includes(latestPendingReport.id) && (
         <div className="fixed top-6 right-6 z-50 max-w-md w-full animate-in slide-in-from-top-6 fade-in duration-300 pointer-events-auto">
-          <div className="bg-[#fdfbf7]/95 backdrop-blur-md border-2 border-[#d4183d]/40 rounded-2xl p-4 shadow-2xl ring-4 ring-[#d4183d]/15 relative overflow-hidden">
+          <div className="bg-card/95 backdrop-blur-md border-2 border-[#d4183d]/40 rounded-2xl p-4 shadow-2xl ring-4 ring-[#d4183d]/15 relative overflow-hidden">
             <div className="absolute -top-10 -right-10 w-28 h-28 bg-[#d4183d]/15 rounded-full blur-xl pointer-events-none animate-pulse" />
 
             <div className="flex items-start justify-between gap-3">
@@ -978,7 +1209,7 @@ export function FarmManagement() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-black text-[#3e2723] uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
+                    <h4 className="text-xs font-black text-foreground uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
                       Worker Problem Reported!
                     </h4>
                     <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#d4183d] text-white uppercase animate-pulse">
@@ -986,7 +1217,7 @@ export function FarmManagement() {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                    <strong className="text-[#3e2723] font-bold">{latestPendingReport.title}</strong>
+                    <strong className="text-foreground font-bold">{latestPendingReport.title}</strong>
                     {latestPendingReport.subtitle ? ` (${latestPendingReport.subtitle})` : ''}
                   </p>
                 </div>
@@ -1004,11 +1235,11 @@ export function FarmManagement() {
             </div>
 
             <div
-              className="mt-3 bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10 text-xs text-[#3e2723] cursor-pointer hover:bg-[#eae3dc] transition-colors"
+              className="mt-3 bg-muted/40 rounded-xl p-3 border border-border/60 text-xs text-foreground cursor-pointer hover:bg-[#eae3dc] transition-colors"
               onClick={() => scrollToReport(latestPendingReport)}
             >
-              <p className="font-semibold text-[#4a2c2a]/80 mb-1 text-[10px]">
-                Reported by: <span className="text-[#3e2723] font-bold">{latestPendingReport.reportedBy || 'Worker'}</span> • {latestPendingReport.reportedAt || 'Just now'}
+              <p className="font-semibold text-foreground/80 mb-1 text-[10px]">
+                Reported by: <span className="text-foreground font-bold">{latestPendingReport.reportedBy || 'Worker'}</span> • {latestPendingReport.reportedAt || 'Just now'}
               </p>
               <p className="text-xs font-medium text-[#2d2520] italic">
                 "{latestPendingReport.details || 'No details provided'}"
@@ -1026,7 +1257,7 @@ export function FarmManagement() {
               <button
                 type="button"
                 onClick={() => dismissNotification(latestPendingReport.id)}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#4a2c2a]/20 text-[#4a2c2a] hover:bg-[#4a2c2a]/10 transition-colors"
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-border/80 text-foreground hover:bg-[#4a2c2a]/10 transition-colors"
               >
                 Mark as Read
               </button>
@@ -1043,10 +1274,21 @@ export function FarmManagement() {
         </div>
       )}
 
-      <div>
-        <h1>Farm Management</h1>
-        <p className="text-muted-foreground">Register farm workers, assign tasks, track attendance, and inspect locations</p>
-      </div>
+      <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
+              Farm Operations Management
+            </h1>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live System
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            Register farm personnel, manage field tasks, verify geofenced attendance, and inspect plot sectors.
+          </p>
+        </div>
+      </motion.div>
 
       <WorkerFormDialog
         open={workerFormOpen}
@@ -1059,12 +1301,11 @@ export function FarmManagement() {
         setForm={setForm}
         onSave={saveWorker}
         saving={saving}
-        fallbackAddress={editingWorkerAddress}
         formError={workerFormError}
       />
 
       <Dialog open={Boolean(createdWorkerAccount)} onOpenChange={(open) => { if (!open) setCreatedWorkerAccount(null); }}>
-        <DialogContent className="sm:max-w-md bg-[#fdfbf7] border-[#4a2c2a]/15">
+        <DialogContent className="sm:max-w-md bg-card text-card-foreground border-border/80">
           <DialogHeader>
             <DialogTitle>Worker account created</DialogTitle>
             <DialogDescription>
@@ -1074,19 +1315,19 @@ export function FarmManagement() {
           </DialogHeader>
           {createdWorkerAccount ? (
             <div className="space-y-3 py-2">
-              <div className="rounded-lg bg-[#f5f1ed] p-3">
+              <div className="rounded-lg bg-muted/40 p-3">
                 <p className="text-xs text-muted-foreground mb-1">Email</p>
                 <p className="break-all text-sm font-medium">{createdWorkerAccount.email}</p>
               </div>
-              <div className="rounded-lg bg-[#f5f1ed] p-3">
+              <div className="rounded-lg bg-muted/40 p-3">
                 <p className="text-xs text-muted-foreground mb-1">Temporary password</p>
                 <p className="break-all font-mono text-sm font-medium">{createdWorkerAccount.password}</p>
               </div>
               {createdWorkerAccount.phone && (
-                <div className="rounded-lg bg-[#f0f7eb] border border-[#2d5016]/20 p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="rounded-lg bg-emerald-500/10 border border-[#2d5016]/20 p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
                   <div className="text-left">
                     <p className="text-xs text-[#2d5016] font-semibold">Associated Mobile Phone</p>
-                    <p className="text-sm font-bold text-[#3e2723]">{createdWorkerAccount.phone}</p>
+                    <p className="text-sm font-bold text-foreground">{createdWorkerAccount.phone}</p>
                   </div>
                   <Button
                     type="button"
@@ -1114,7 +1355,7 @@ export function FarmManagement() {
       </Dialog>
 
       <Dialog open={coffeeDialogOpen} onOpenChange={(o) => { if (!o) closeCoffeeDialog(); else setCoffeeDialogOpen(true); }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-[#fdfbf7] border-[#4a2c2a]/15">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-card text-card-foreground border-border/80">
           <DialogHeader>
             <DialogTitle>{isAddingCoffee ? 'Add coffee field' : 'Edit coffee field'}</DialogTitle>
             <DialogDescription>
@@ -1225,7 +1466,7 @@ export function FarmManagement() {
       </Dialog>
 
       <Dialog open={irrigationDialogOpen} onOpenChange={(o) => { if (!o) closeIrrigationDialog(); else setIrrigationDialogOpen(true); }}>
-        <DialogContent className="sm:max-w-lg bg-[#fdfbf7] border-[#4a2c2a]/15">
+        <DialogContent className="sm:max-w-lg bg-card text-card-foreground border-border/80">
           <DialogHeader>
             <DialogTitle>{isAddingIrrigation ? 'Add Sprinklers' : 'Edit Sprinkler'}</DialogTitle>
             <DialogDescription>
@@ -1295,11 +1536,11 @@ export function FarmManagement() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Sprinkler ID</Label>
-                  <Input value={irrigationForm.zone} readOnly className="bg-[#e8e2dc] font-bold border-[#4a2c2a]/20" />
+                  <Input value={irrigationForm.zone} readOnly className="bg-[#e8e2dc] font-bold border-border/80" />
                 </div>
                 <div className="space-y-2">
                   <Label>Section</Label>
-                  <Input value={irrigationForm.type || 'Unassigned'} readOnly className="bg-[#e8e2dc] border-[#4a2c2a]/20" />
+                  <Input value={irrigationForm.type || 'Unassigned'} readOnly className="bg-[#e8e2dc] border-border/80" />
                 </div>
               </div>
               <div className="space-y-2">
@@ -1352,7 +1593,7 @@ export function FarmManagement() {
           if (!o) setDeleteSprinklerTarget(null);
         }}
       >
-        <DialogContent className="sm:max-w-md bg-[#fdfbf7] border-[#4a2c2a]/15 shadow-2xl overflow-hidden p-6 animate-in zoom-in-95 fade-in duration-200">
+        <DialogContent className="sm:max-w-md bg-card text-card-foreground border-border/80 shadow-2xl overflow-hidden p-6 animate-in zoom-in-95 fade-in duration-200">
           <div className="flex flex-col items-center text-center space-y-3 pt-2">
             <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-[#d4183d]/10 border border-[#d4183d]/20 text-[#d4183d] shadow-sm">
               <span className="absolute inline-flex h-full w-full rounded-full bg-[#d4183d]/20 animate-ping" />
@@ -1360,14 +1601,14 @@ export function FarmManagement() {
             </div>
 
             <DialogHeader className="text-center sm:text-center">
-              <DialogTitle className="text-center text-xl font-bold text-[#3e2723]">
+              <DialogTitle className="text-center text-xl font-bold text-foreground">
                 {deleteSprinklerTarget?.type === 'section'
                   ? `Delete All Sprinklers in ${deleteSprinklerTarget.sectionName}?`
                   : `Delete ${deleteSprinklerTarget?.sprinklerZone || 'Sprinkler'}?`}
               </DialogTitle>
-              <DialogDescription className="text-center text-sm text-[#4a2c2a]/80 mt-1">
+              <DialogDescription className="text-center text-sm text-foreground/80 mt-1">
                 Are you sure you want to delete{' '}
-                <span className="font-semibold text-[#3e2723]">
+                <span className="font-semibold text-foreground">
                   {deleteSprinklerTarget?.type === 'section'
                     ? `all sprinklers in ${deleteSprinklerTarget.sectionName}`
                     : deleteSprinklerTarget?.sprinklerZone || 'this sprinkler'}
@@ -1376,10 +1617,10 @@ export function FarmManagement() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="bg-[#f5f1ed] border border-[#4a2c2a]/10 rounded-xl p-3.5 text-xs text-muted-foreground flex items-start gap-2.5 text-left w-full mt-2 shadow-inner">
+            <div className="bg-muted/40 border border-border/60 rounded-xl p-3.5 text-xs text-muted-foreground flex items-start gap-2.5 text-left w-full mt-2 shadow-inner">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-[#3e2723]">Sprinkler Will Become Inactive</p>
+                <p className="font-semibold text-foreground">Sprinkler Will Become Inactive</p>
                 <p className="mt-0.5">
                   The sprinkler will not be deleted from records. Its status will be set to{' '}
                   <span className="font-bold text-[#d4183d]">Inactive</span>.
@@ -1392,7 +1633,7 @@ export function FarmManagement() {
             <Button
               type="button"
               variant="outline"
-              className="w-full rounded-xl border-[#4a2c2a]/20 hover:bg-[#4a2c2a]/5 text-[#4a2c2a] font-semibold py-2.5 transition-colors"
+              className="w-full rounded-xl border-border/80 hover:bg-[#4a2c2a]/5 text-foreground font-semibold py-2.5 transition-colors"
               onClick={() => setDeleteSprinklerTarget(null)}
             >
               No, Cancel
@@ -1416,14 +1657,14 @@ export function FarmManagement() {
           if (!o) setReportDamageDialogOpen(false);
         }}
       >
-        <DialogContent className="sm:max-w-lg bg-[#fdfbf7] border-[#4a2c2a]/15 shadow-2xl p-6">
+        <DialogContent className="sm:max-w-lg bg-card text-card-foreground border-border/80 shadow-2xl p-6">
           <DialogHeader>
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-[#d4183d]/10 text-[#d4183d] flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <DialogTitle className="text-lg font-bold text-[#3e2723]">
+                <DialogTitle className="text-lg font-bold text-foreground">
                   Report Sprinkler Problem
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
@@ -1462,7 +1703,7 @@ export function FarmManagement() {
             <div className="space-y-2">
               <Label>Problem Details / Description</Label>
               <textarea
-                className="w-full min-h-[90px] rounded-xl border border-[#4a2c2a]/20 bg-white p-3 text-sm text-[#3e2723] focus:outline-none focus:ring-2 focus:ring-[#d4183d]/40"
+                className="w-full min-h-[90px] rounded-xl border border-border/80 bg-background/80 p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#d4183d]/40"
                 value={reportDamageForm.details}
                 onChange={(e) => setReportDamageForm({ ...reportDamageForm, details: e.target.value })}
                 placeholder="Describe the issue (e.g. Sprinkler head leaking, water pressure low, broken nozzle)"
@@ -1492,7 +1733,7 @@ export function FarmManagement() {
       </Dialog>
 
       <Dialog open={pestDialogOpen} onOpenChange={(o) => { if (!o) closePestDialog(); else setPestDialogOpen(true); }}>
-        <DialogContent className="sm:max-w-lg bg-[#fdfbf7] border-[#4a2c2a]/15">
+        <DialogContent className="sm:max-w-lg bg-card border-border/70">
           <DialogHeader>
             <DialogTitle>Assign Treatment</DialogTitle>
             <DialogDescription>
@@ -1501,7 +1742,7 @@ export function FarmManagement() {
           </DialogHeader>
           {pestForm ? (
             <div className="grid gap-3 py-2">
-              <div className="bg-[#f5f1ed] rounded-lg p-3 space-y-1">
+              <div className="bg-muted/40 rounded-lg p-3 space-y-1">
                 <p className="text-xs text-muted-foreground">Worker Report</p>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div><span className="text-xs text-muted-foreground">Zone:</span> <span className="font-medium">{pestForm.field || '—'}</span></div>
@@ -1511,7 +1752,7 @@ export function FarmManagement() {
                 </div>
                 {pestForm.photoUrl && (
                   <div className="mt-2">
-                    <img src={pestForm.photoUrl} alt={pestForm.issue} className="w-20 h-20 rounded-lg object-cover border border-[#4a2c2a]/15" />
+                    <img src={pestForm.photoUrl} alt={pestForm.issue} className="w-20 h-20 rounded-lg object-cover border border-border/70" />
                   </div>
                 )}
               </div>
@@ -1540,40 +1781,40 @@ export function FarmManagement() {
       </Dialog>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#2d5016]/20 flex items-center justify-center">
-              <User className="w-5 h-5 text-[#2d5016]" />
+            <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
+              <User className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Farm employees</p>
-              <p className="text-2xl">{activeWorkers.length}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Farm employees</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{activeWorkers.length}</p>
               <p className="text-xs text-muted-foreground">{inactiveWorkers.length} inactive kept on record</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#8b6f47]/20 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-[#8b6f47]" />
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-amber-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Tasks Pending</p>
-              <p className="text-2xl">{pendingTasks}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tasks Pending</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{pendingTasks}</p>
               <p className="text-xs text-muted-foreground">Daily work assignments</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#d4a574]/20 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-[#d4a574]" />
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+              <BarChart3 className="w-5 h-5 text-emerald-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Harvest alerts</p>
-              <p className="text-2xl">{readyFields.length}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Harvest alerts</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{readyFields.length}</p>
               <p className="text-xs text-muted-foreground">Green = ready, black = harvestable batch</p>
             </div>
           </div>
@@ -1581,91 +1822,528 @@ export function FarmManagement() {
       </div>
 
 
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+      {/* Manager Approvals Hub */}
+      <div className="bg-card/95 border border-border/80 rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#2d5016]/15 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-[#2d5016]" />
+            <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
+              <ClipboardCheck className="w-6 h-6" />
             </div>
             <div>
-              <h3>Worker Attendance</h3>
-              <p className="text-sm text-muted-foreground">Mobile time-in and time-out records synced from worker accounts</p>
+              <h3 className="font-bold text-base sm:text-lg font-heading text-foreground">
+                Manager Approvals Hub
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Review timesheet correction requests and employee leave filings with original vs requested data diffs, reasons, and remarks.
+              </p>
             </div>
           </div>
-          <span className="rounded-full bg-[#f5f1ed] px-3 py-1 text-xs font-medium text-[#4a2c2a]">
-            {state.attendance.length} total record{state.attendance.length === 1 ? '' : 's'}
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs shrink-0">
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2">
+              <p className="text-lg font-black text-foreground">
+                {pendingTimesheetCorrections.length + pendingLeaveRequests.length}
+              </p>
+              <p className="font-semibold text-muted-foreground text-[10px] uppercase">Pending Total</p>
+            </div>
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2">
+              <p className="text-lg font-black text-amber-600 dark:text-amber-400">
+                {pendingTimesheetCorrections.length}
+              </p>
+              <p className="font-semibold text-muted-foreground text-[10px] uppercase">Timesheets</p>
+            </div>
+            <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 px-3 py-2 col-span-2 sm:col-span-1">
+              <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">
+                {pendingLeaveRequests.length}
+              </p>
+              <p className="font-semibold text-muted-foreground text-[10px] uppercase">Leaves</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Approval Filter Toolbar */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-3 border-t border-border/60">
+          <div className="flex flex-wrap items-center gap-1.5 bg-muted/60 p-1 rounded-xl border border-border/70 text-xs">
+            {(['Pending', 'Approved', 'Rejected', 'All'] as const).map((status) => {
+              const count =
+                status === 'Pending'
+                  ? pendingTimesheetCorrections.length + pendingLeaveRequests.length
+                  : status === 'Approved'
+                  ? timesheetCorrections.filter((r) => r.status === 'Approved').length +
+                    leaveRequests.filter((r) => r.status === 'Approved').length
+                  : status === 'Rejected'
+                  ? timesheetCorrections.filter((r) => r.status === 'Rejected').length +
+                    leaveRequests.filter((r) => r.status === 'Rejected').length
+                  : timesheetCorrections.length + leaveRequests.length;
+              const isActive = approvalsStatusFilter === status;
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => {
+                    logUiAction(`Filtered Approvals by status: "${status}"`);
+                    setApprovalsStatusFilter(status);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all ${
+                    isActive
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <span>{status}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                      status === 'Pending' && count > 0
+                        ? 'bg-amber-500 text-black font-extrabold'
+                        : 'bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-xl border border-border/70 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  logUiAction('Filtered Approvals type: "All"');
+                  setApprovalsTypeFilter('all');
+                }}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all ${
+                  approvalsTypeFilter === 'all'
+                    ? 'bg-background text-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  logUiAction('Filtered Approvals type: "Timesheets"');
+                  setApprovalsTypeFilter('timesheets');
+                }}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all ${
+                  approvalsTypeFilter === 'timesheets'
+                    ? 'bg-background text-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Timesheets
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  logUiAction('Filtered Approvals type: "Leaves"');
+                  setApprovalsTypeFilter('leaves');
+                }}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all ${
+                  approvalsTypeFilter === 'leaves'
+                    ? 'bg-background text-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Leaves
+              </button>
+            </div>
+
+            <div className="relative flex-1 md:w-56">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search requests..."
+                value={approvalsSearchQuery}
+                onChange={(e) => setApprovalsSearchQuery(e.target.value)}
+                className="pl-8 h-8 text-xs bg-background/80"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Requests Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {/* Timesheet Corrections Column / Card */}
+          {(approvalsTypeFilter === 'all' || approvalsTypeFilter === 'timesheets') && (
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileClock className="w-4 h-4 text-amber-500" />
+                  <h4 className="text-sm font-bold text-foreground font-heading">
+                    Timesheet Corrections
+                  </h4>
+                </div>
+                <span className="text-xs font-mono text-muted-foreground">
+                  {filteredTimesheetCorrections.length} request{filteredTimesheetCorrections.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                {filteredTimesheetCorrections.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-muted-foreground border border-dashed border-border/70 rounded-xl">
+                    No timesheet correction requests found for this filter.
+                  </div>
+                ) : (
+                  filteredTimesheetCorrections.map((request) => (
+                    <div
+                      key={request.correctionId}
+                      className="rounded-xl bg-card border border-border/70 p-3.5 text-xs space-y-3 shadow-xs"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-sm text-foreground">{request.workerName}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Target Date: <span className="font-semibold text-foreground">{request.date}</span> · {request.correctionId}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${statusBadgeClass(
+                            request.status
+                          )}`}
+                        >
+                          {request.status}
+                        </span>
+                      </div>
+
+                      {/* Side-by-side Diff */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg bg-muted/40 border border-border/50 p-2">
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">Original Recorded</p>
+                          <p className="font-mono font-bold text-foreground mt-0.5">
+                            {request.originalClockIn || '--'} / {request.originalClockOut || '--'}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2">
+                          <p className="text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">Requested Correction</p>
+                          <p className="font-mono font-bold text-foreground mt-0.5">
+                            {request.requestedClockIn || '--'} / {request.requestedClockOut || '--'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-muted/30 p-2 border border-border/50">
+                        <p className="text-muted-foreground">
+                          Reason: <span className="text-foreground font-medium">{request.reason}</span>
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>Submitted {request.submittedAt}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            logUiAction(`Viewed audit trail for correction ${request.correctionId}`);
+                            setSelectedAuditCorrection(request);
+                          }}
+                          className="font-semibold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
+                        >
+                          <History className="w-3 h-3" />
+                          Audit Log ({request.auditTrail?.length || 1})
+                        </button>
+                      </div>
+
+                      {request.status === 'Pending' ? (
+                        <div className="pt-2 border-t border-border/50 space-y-2">
+                          <textarea
+                            value={approvalRemarks[request.correctionId] || ''}
+                            onChange={(event) =>
+                              setApprovalRemarks((prev) => ({
+                                ...prev,
+                                [request.correctionId]: event.target.value,
+                              }))
+                            }
+                            placeholder="Manager remarks (optional)"
+                            className="min-h-14 w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                          />
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={saving}
+                              onClick={() => void reviewTimesheetCorrection(request, 'Approved')}
+                              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex-1"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              Approve Correction
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={saving}
+                              onClick={() => void reviewTimesheetCorrection(request, 'Rejected')}
+                              className="rounded-lg border-rose-500/40 text-rose-500 hover:bg-rose-500/10 font-bold text-xs"
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="pt-2 border-t border-border/50 text-[11px] text-muted-foreground space-y-0.5">
+                          <p>
+                            Reviewed by <span className="font-semibold text-foreground">{request.reviewedBy || 'Manager'}</span> on {request.reviewedAt}
+                          </p>
+                          {request.managerRemarks && (
+                            <p className="text-foreground italic">
+                              Remarks: "{request.managerRemarks}"
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Leave Requests Column / Card */}
+          {(approvalsTypeFilter === 'all' || approvalsTypeFilter === 'leaves') && (
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-emerald-500" />
+                  <h4 className="text-sm font-bold text-foreground font-heading">
+                    Employee Leave Requests
+                  </h4>
+                </div>
+                <span className="text-xs font-mono text-muted-foreground">
+                  {filteredLeaveRequests.length} request{filteredLeaveRequests.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                {filteredLeaveRequests.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-muted-foreground border border-dashed border-border/70 rounded-xl">
+                    No leave requests found for this filter.
+                  </div>
+                ) : (
+                  filteredLeaveRequests.map((request) => (
+                    <div
+                      key={request.leaveId}
+                      className="rounded-xl bg-card border border-border/70 p-3.5 text-xs space-y-3 shadow-xs"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-sm text-foreground">{request.workerName}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {request.leaveType} · {request.leaveId}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${statusBadgeClass(
+                            request.status
+                          )}`}
+                        >
+                          {request.status}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg bg-muted/40 border border-border/50 p-2">
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">Schedule</p>
+                          <p className="font-semibold text-foreground mt-0.5">
+                            {request.startDate} to {request.endDate}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-muted/40 border border-border/50 p-2">
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">Duration</p>
+                          <p className="font-bold text-foreground mt-0.5">
+                            {request.leaveDays} {request.leaveDays === 1 ? 'day' : 'days'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-muted/30 p-2 border border-border/50">
+                        <p className="text-muted-foreground">
+                          Reason: <span className="text-foreground font-medium">{request.reason}</span>
+                        </p>
+                      </div>
+
+                      <p className="text-[11px] text-muted-foreground">
+                        Submitted {request.submittedAt}
+                      </p>
+
+                      {request.status === 'Pending' ? (
+                        <div className="pt-2 border-t border-border/50 space-y-2">
+                          <textarea
+                            value={approvalRemarks[request.leaveId] || ''}
+                            onChange={(event) =>
+                              setApprovalRemarks((prev) => ({
+                                ...prev,
+                                [request.leaveId]: event.target.value,
+                              }))
+                            }
+                            placeholder="Manager remarks (optional)"
+                            className="min-h-14 w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                          />
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={saving}
+                              onClick={() => void reviewLeaveRequest(request, 'Approved')}
+                              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex-1"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              Approve Leave
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={saving}
+                              onClick={() => void reviewLeaveRequest(request, 'Rejected')}
+                              className="rounded-lg border-rose-500/40 text-rose-500 hover:bg-rose-500/10 font-bold text-xs"
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="pt-2 border-t border-border/50 text-[11px] text-muted-foreground space-y-0.5">
+                          <p>
+                            Reviewed by <span className="font-semibold text-foreground">{request.reviewedBy || 'Manager'}</span> on {request.reviewedAt}
+                          </p>
+                          {request.managerRemarks && (
+                            <p className="text-foreground italic">
+                              Remarks: "{request.managerRemarks}"
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+
+      <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-accent" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base font-heading text-foreground">Worker Attendance</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Mobile time-in and time-out records synced from worker accounts</p>
+            </div>
+          </div>
+          <span className="rounded-full bg-muted border border-border/60 px-3 py-1 text-xs font-mono font-medium text-foreground">
+            {filteredAttendance.length} of {state.attendance.length} record{state.attendance.length === 1 ? '' : 's'}
           </span>
         </div>
 
-        {recentAttendance.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No worker attendance has synced yet.</p>
+        {/* Search & Sort Controls */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search by worker name, date, location..."
+              value={attendanceSearchQuery}
+              onChange={(e) => setAttendanceSearchQuery(e.target.value)}
+              className="pl-9 h-9 text-xs bg-background/80"
+            />
+          </div>
+          <select
+            value={attendanceSortOrder}
+            onChange={(e) => setAttendanceSortOrder(e.target.value as 'newest' | 'oldest')}
+            className="h-9 px-3 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
+          >
+            <option value="newest">Sort: Most Recent First</option>
+            <option value="oldest">Sort: Oldest First</option>
+          </select>
+        </div>
+
+        {filteredAttendance.length === 0 ? (
+          <p className="text-xs text-muted-foreground font-mono py-4 text-center">
+            {attendanceSearchQuery ? 'No attendance records match your search query.' : 'No worker attendance has synced yet.'}
+          </p>
         ) : (
-          <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-[#8b6f47]/35 scrollbar-track-transparent">
-            {recentAttendance.map((attendance, index) => {
+          <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
+            {filteredAttendance.map((attendance, index) => {
               const worker = state.workers.find(
-                (w) => w.name.trim().toLowerCase() === attendance.workerName.trim().toLowerCase(),
+                (w) => w.name.trim().toLowerCase() === attendance.workerName?.trim().toLowerCase(),
               );
               const isClockedOut = Boolean(attendance.clockOut?.trim());
               return (
                 <div
                   key={attendance.attendanceId || `${attendance.workerName}-${attendance.date}-${attendance.clockIn}-${index}`}
-                  className="rounded-lg bg-[#f5f1ed] p-4 border border-[#4a2c2a]/10"
+                  className="rounded-xl bg-muted/40 p-4 border border-border/60"
                 >
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium text-[#3e2723]">{attendance.workerName || 'Unnamed worker'}</p>
-                      <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[#6b5d56]">
+                      <p className="font-bold text-sm text-foreground font-heading">{attendance.workerName || 'Unnamed worker'}</p>
+                      <span className="rounded-full bg-background/80 border border-border/40 px-2.5 py-0.5 text-xs text-muted-foreground font-medium">
                         {worker?.roleRate || 'No role rate'}
                       </span>
                       <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          isClockedOut ? 'bg-[#2d5016] text-white' : 'bg-[#d4a574]/30 text-[#4a2c2a]'
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-bold font-mono ${
+                          isClockedOut ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
                         }`}
                       >
                         {isClockedOut ? 'Completed' : 'Timed in'}
                       </span>
                       {attendance.isGeofenceVerified !== undefined && attendance.isGeofenceVerified !== null ? (
                         <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                            attendance.isGeofenceVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            attendance.isGeofenceVerified ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/25' : 'bg-amber-500/15 text-amber-500 border border-amber-500/25'
                           }`}
                         >
                           {attendance.isGeofenceVerified ? '📍 In Field Geofence' : '⚠️ Remote / Outside Field'}
                         </span>
                       ) : null}
                       {attendance.faceSnapshotBase64 ? (
-                        <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-800">
-                          👤 Face Verified
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAttendanceProof(attendance)}
+                          className="rounded-full bg-blue-500/15 hover:bg-blue-500/25 text-blue-500 border border-blue-500/25 px-2.5 py-0.5 text-xs font-medium cursor-pointer transition-colors"
+                          title="Click to view full photo proof"
+                        >
+                          👤 Face Verified (View Photo ↗)
+                        </button>
+                      ) : null}
+                      {attendance.details?.includes('Approved correction') ? (
+                        <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                          ✏️ Approved Timesheet Correction
                         </span>
                       ) : null}
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-[11px] text-muted-foreground font-mono">
                       {attendance.submittedByStaff ? 'Submitted by worker app' : 'Admin or imported record'}
                     </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mt-4 md:grid-cols-4">
-                    <div className="rounded-lg bg-white p-3 border border-[#4a2c2a]/10">
-                      <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Date</p>
-                      <p className="mt-1 text-sm font-semibold text-[#3e2723]">{attendance.date || 'No date'}</p>
+                    <div className="rounded-lg bg-background/80 p-3 border border-border/50">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground font-mono">Date</p>
+                      <p className="mt-1 text-sm font-bold font-mono text-foreground">{attendance.date || 'No date'}</p>
                     </div>
-                    <div className="rounded-lg bg-white p-3 border border-[#4a2c2a]/10">
-                      <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Time in</p>
-                      <p className="mt-1 text-lg font-semibold text-[#2d5016]">{formatClock24h(attendance.clockIn)}</p>
+                    <div className="rounded-lg bg-background/80 p-3 border border-border/50">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground font-mono">Time in</p>
+                      <p className="mt-1 text-lg font-extrabold font-mono text-emerald-500">{formatClock24h(attendance.clockIn)}</p>
                     </div>
-                    <div className="rounded-lg bg-white p-3 border border-[#4a2c2a]/10">
-                      <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Time out</p>
-                      <p className="mt-1 text-lg font-semibold text-[#4a2c2a]">{formatClock24h(attendance.clockOut)}</p>
+                    <div className="rounded-lg bg-background/80 p-3 border border-border/50">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground font-mono">Time out</p>
+                      <p className="mt-1 text-lg font-extrabold font-mono text-amber-500">{formatClock24h(attendance.clockOut)}</p>
                     </div>
-                    <div className="rounded-lg bg-white p-3 border border-[#4a2c2a]/10">
-                      <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Hours worked</p>
-                      <p className="mt-1 text-lg font-semibold text-[#3e2723]">{formatHoursWorked(attendance)}</p>
+                    <div className="rounded-lg bg-background/80 p-3 border border-border/50">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground font-mono">Hours worked</p>
+                      <p className="mt-1 text-lg font-extrabold font-mono text-foreground">{formatHoursWorked(attendance)}</p>
                     </div>
                   </div>
 
                   {attendance.timeInLatitude != null && attendance.timeInLongitude != null ? (
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#6b5d56]">
-                      <span className="font-semibold text-[#3e2723]">Time In Location:</span>
+                      <span className="font-semibold text-foreground">Time In Location:</span>
                       <span>
                         {attendance.timeInLocationName || `${attendance.timeInLatitude.toFixed(5)}, ${attendance.timeInLongitude.toFixed(5)}`}
                       </span>
@@ -1673,7 +2351,7 @@ export function FarmManagement() {
                         href={`https://www.google.com/maps?q=${attendance.timeInLatitude},${attendance.timeInLongitude}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-medium text-[#2d5016] underline hover:text-[#4a2c2a]"
+                        className="inline-flex items-center gap-1 font-medium text-[#2d5016] underline hover:text-foreground"
                       >
                         Map Pin ↗
                       </a>
@@ -1681,22 +2359,27 @@ export function FarmManagement() {
                   ) : null}
 
                   {attendance.faceSnapshotBase64 ? (
-                    <div className="mt-3 flex items-center gap-3">
+                    <div
+                      onClick={() => setSelectedAttendanceProof(attendance)}
+                      className="mt-3 flex items-center gap-3 cursor-pointer p-2 rounded-lg bg-background/60 hover:bg-background/90 border border-border/50 transition-colors"
+                    >
                       <img
                         src={attendance.faceSnapshotBase64.startsWith('data:') ? attendance.faceSnapshotBase64 : `data:image/jpeg;base64,${attendance.faceSnapshotBase64}`}
                         alt="Face verification snapshot"
-                        className="h-12 w-12 rounded-lg object-cover border border-[#4a2c2a]/20 shadow-xs"
+                        className="h-12 w-12 rounded-lg object-cover border border-border/80 shadow-xs shrink-0"
                       />
                       <div>
-                        <p className="text-xs font-medium text-[#3e2723]">Biometric Snapshot</p>
-                        <p className="text-[11px] text-muted-foreground">Captured on mobile device during time-in</p>
+                        <p className="text-xs font-semibold text-foreground flex items-center gap-1">
+                          Biometric Photo Proof <span className="text-[10px] text-accent">(Click to enlarge)</span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">Captured on device camera during shift check-in</p>
                       </div>
                     </div>
                   ) : null}
 
                   {attendance.details ? (
                     <p className="mt-3 text-sm text-[#6b5d56]">
-                      Notes: <span className="text-[#3e2723]">{attendance.details}</span>
+                      Notes: <span className="text-foreground">{attendance.details}</span>
                     </p>
                   ) : null}
                 </div>
@@ -1709,23 +2392,23 @@ export function FarmManagement() {
 
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm flex flex-col justify-between">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-[#2d5016]/15 flex items-center justify-center">
-                  <Bell className="w-5 h-5 text-[#2d5016]" />
+                <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
+                  <Bell className="w-5 h-5 text-accent" />
                 </div>
                 <div>
-                  <h3>Harvest Readiness Board</h3>
-                  <p className="text-xs text-muted-foreground">Workers report crop readiness; admins review and confirm</p>
+                  <h3 className="font-bold text-base font-heading text-foreground">Harvest Readiness Board</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">Workers report crop readiness; admins review and confirm</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => void createHarvestReadinessReport()}
                 disabled={saving}
-                className="text-[10px] font-bold px-2 py-1 rounded bg-[#2d5016]/10 text-[#2d5016] border border-[#2d5016]/25 hover:bg-[#2d5016]/20 transition-colors"
+                className="text-[10px] font-bold font-mono px-2.5 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition-colors cursor-pointer"
               >
                 Simulate Worker Report
               </button>
@@ -1733,29 +2416,29 @@ export function FarmManagement() {
 
             <div id="harvest-readiness-reports-section" className="space-y-3 mb-4 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
               {harvestReadinessReports.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">No readiness reports logged.</p>
+                <p className="text-xs font-mono text-muted-foreground py-2">No readiness reports logged.</p>
               ) : (
                 harvestReadinessReports.map((report) => {
                   const isPending = report.status === 'Pending Review';
                   const isApproved = report.status === 'Approved';
 
                   return (
-                    <div key={report.reportId} id={report.reportId ? `harvest-${report.reportId}` : undefined} className="rounded-xl border border-[#4a2c2a]/10 bg-[#fdfbf7] p-3 text-xs flex items-center justify-between gap-3 shadow-sm hover:border-[#4a2c2a]/30 transition-all">
+                    <div key={report.reportId} id={report.reportId ? `harvest-${report.reportId}` : undefined} className="rounded-xl border border-border/60 bg-muted/40 p-3 text-xs flex items-center justify-between gap-3 shadow-xs hover:border-border transition-all">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-[#3e2723]">{report.zone}</span>
-                          <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-full uppercase ${
-                            isApproved ? 'bg-[#2d5016] text-white' : report.status === 'Rejected' ? 'bg-[#d4183d] text-white' : 'bg-[#8b6f47] text-white'
+                          <span className="font-bold font-heading text-foreground">{report.zone}</span>
+                          <span className={`text-[9px] font-extrabold font-mono px-2 py-0.5 rounded-full uppercase ${
+                            isApproved ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30' : report.status === 'Rejected' ? 'bg-rose-500/15 text-rose-500 border border-rose-500/30' : 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
                           }`}>
                             {report.status}
                           </span>
                         </div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Estimated yield: <span className="font-semibold text-[#2d5016]">{report.expectedWeight}</span> · By {report.reportedBy}
+                        <p className="text-[11px] text-muted-foreground">
+                          Estimated yield: <span className="font-bold text-foreground">{report.expectedWeight}</span> · By {report.reportedBy}
                         </p>
-                        <p className="text-[9px] text-muted-foreground">Submitted: {report.reportedAt} · ID: {report.reportId}</p>
+                        <p className="text-[10px] font-mono text-muted-foreground">Submitted: {report.reportedAt} · ID: {report.reportId}</p>
                         {report.notes ? (
-                          <p className="text-[10px] text-[#6b5d56]">{report.notes}</p>
+                          <p className="text-[11px] text-muted-foreground italic">{report.notes}</p>
                         ) : null}
                       </div>
 
@@ -1765,7 +2448,7 @@ export function FarmManagement() {
                             type="button"
                             disabled={saving}
                             onClick={() => void reviewHarvestReadinessReport(report.reportId, 'Approved')}
-                            className="bg-[#2d5016] hover:bg-[#234010] text-white font-semibold px-2.5 py-1 rounded text-[10px] disabled:opacity-60"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] disabled:opacity-60 cursor-pointer shadow-2xs"
                           >
                             Approve
                           </button>
@@ -1773,7 +2456,7 @@ export function FarmManagement() {
                             type="button"
                             disabled={saving}
                             onClick={() => void reviewHarvestReadinessReport(report.reportId, 'Rejected')}
-                            className="border border-[#d4183d]/45 hover:bg-red-50 text-[#d4183d] font-semibold px-2 py-1 rounded text-[10px] disabled:opacity-60"
+                            className="border border-rose-500/40 hover:bg-rose-500/10 text-rose-500 font-bold px-2 py-1 rounded-lg text-[10px] disabled:opacity-60 cursor-pointer"
                           >
                             Reject
                           </button>
@@ -1786,44 +2469,44 @@ export function FarmManagement() {
             </div>
           </div>
 
-          <div className="rounded-xl bg-[#2d5016]/5 border border-[#2d5016]/10 p-3 space-y-2">
-            <p className="text-[10px] font-semibold text-[#2d5016] uppercase tracking-wider">Ready Crops Quick Indicators</p>
+          <div className="rounded-xl bg-accent/10 border border-accent/20 p-3 space-y-2">
+            <p className="text-[10px] font-bold text-accent uppercase tracking-wider font-mono">Ready Crops Quick Indicators</p>
             <div className="flex flex-wrap gap-2">
               {readyFields.map((field) => (
-                <span key={field.fieldId || field.name} className="inline-flex items-center gap-1.5 rounded-full bg-[#2d5016]/10 border border-[#2d5016]/20 px-2 py-1 text-[10px] font-medium text-[#2d5016]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#2d5016]"></span>
+                <span key={field.fieldId || field.name} className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-bold font-mono text-emerald-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   {field.name}
                 </span>
               ))}
               {readyFields.length === 0 && (
-                <span className="text-[10px] text-muted-foreground">No crops marked harvestable after CNN scan confirmation.</span>
+                <span className="text-[11px] text-muted-foreground font-mono">No crops marked harvestable after CNN scan confirmation.</span>
               )}
             </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-[#8b6f47]/15 flex items-center justify-center">
-              <Calendar className="w-5 h-5 text-[#8b6f47]" />
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center">
+              <Calendar className="w-5 h-5 text-amber-500" />
             </div>
             <div>
-              <h3>Schedule management</h3>
-              <p className="text-sm text-muted-foreground">Daily activities and assignments</p>
+              <h3 className="font-bold text-base font-heading text-foreground">Schedule management</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Daily activities and assignments</p>
             </div>
           </div>
           <div className="space-y-3">
             {state.harvestSchedules.slice(0, 3).map((schedule, index) => (
-              <div key={`${schedule.sectionName}-${index}`} className="rounded-lg bg-[#f5f1ed] p-3">
-                <p className="text-sm font-medium text-[#3e2723]">{schedule.sectionName}</p>
-                <p className="text-xs text-muted-foreground">{schedule.details}</p>
-                <span className="mt-2 inline-flex rounded-full bg-[#8b6f47] px-2 py-1 text-xs text-white">
+              <div key={`${schedule.sectionName}-${index}`} className="rounded-xl bg-muted/40 border border-border/60 p-3.5">
+                <p className="text-sm font-bold font-heading text-foreground">{schedule.sectionName}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{schedule.details}</p>
+                <span className="mt-2 inline-flex rounded-full bg-accent/20 border border-accent/30 px-2.5 py-0.5 text-xs font-mono font-bold text-accent">
                   {schedule.status}
                 </span>
               </div>
             ))}
             {state.harvestSchedules.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground font-mono">
                 Add harvest schedules and task records to answer daily farm operation questions.
               </p>
             ) : null}
@@ -1831,35 +2514,38 @@ export function FarmManagement() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="flex h-[560px] flex-col bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
+        <div className="flex h-full min-h-[560px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3 mb-4">
-            <h3>Coffee Fields</h3>
+            <h3 className="font-bold text-base font-heading text-foreground">Coffee Fields</h3>
             <button
               type="button"
               onClick={openAddCoffee}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2d5016] text-white text-sm hover:bg-[#1b3310]"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent text-accent-foreground font-semibold text-xs hover:bg-accent/90 shadow-2xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               Add field
             </button>
           </div>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-[#8b6f47]/35 scrollbar-track-transparent">
+          <div className="mb-4">
+            <CoffeeFieldLandscapeMap existingFields={coffeeFields} />
+          </div>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
             {coffeeFields.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No coffee fields yet. Add one or wait for starter data to sync from Firebase.</p>
+              <p className="text-xs text-muted-foreground font-mono">No coffee fields yet. Add one or wait for starter data to sync from Firebase.</p>
             ) : null}
             {coffeeFields.map((field, fieldIdx) => (
               <div
                 key={field.fieldId || field.name}
-                className="bg-[#f5f1ed] rounded-xl p-4 border border-[#4a2c2a]/10 transition-all duration-300"
+                className="bg-muted/40 rounded-xl p-4 border border-border/60 transition-all duration-300"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#2d5016]/20 flex items-center justify-center">
-                      <TreePine className="w-5 h-5 text-[#2d5016]" />
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+                      <TreePine className="w-5 h-5 text-emerald-500" />
                     </div>
                     <div>
-                      <h4 className="mb-1">{field.name}</h4>
+                      <h4 className="font-bold text-sm text-foreground font-heading">{field.name}</h4>
                       <p className="text-xs text-muted-foreground">{field.area} • {field.trees} trees</p>
                     </div>
                   </div>
@@ -1867,30 +2553,30 @@ export function FarmManagement() {
                     <button
                       type="button"
                       aria-label={`Edit ${field.name}`}
-                      className="w-8 h-8 rounded-lg bg-white border border-[#4a2c2a]/15 hover:bg-[#4a2c2a] hover:text-white flex items-center justify-center"
+                      className="w-8 h-8 rounded-lg bg-background border border-border/60 hover:border-accent hover:text-accent flex items-center justify-center transition-colors cursor-pointer"
                       onClick={() => openEditCoffee(fieldIdx)}
                     >
-                      <Edit2 className="w-4 h-4" />
+                      <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     <button
                       type="button"
                       aria-label={`Delete ${field.name}`}
-                      className="w-8 h-8 rounded-lg bg-white border border-[#4a2c2a]/15 hover:bg-[#d4183d] hover:text-white flex items-center justify-center"
+                      className="w-8 h-8 rounded-lg bg-background border border-border/60 hover:border-rose-500 hover:text-rose-500 flex items-center justify-center transition-colors cursor-pointer"
                       onClick={() => void removeCoffeeField(fieldIdx)}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                     <span
-                      className={`text-xs px-3 py-1 rounded-full ${
+                      className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-bold ${
                         isHarvestReady(field)
-                          ? 'bg-[#2d5016] text-white'
+                          ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
                           : field.status === 'excellent'
-                          ? 'bg-[#2d5016] text-white'
+                          ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
                           : field.status === 'healthy'
-                          ? 'bg-[#4a2c2a] text-white'
+                          ? 'bg-accent/15 text-accent border border-accent/30'
                           : field.status === 'monitoring'
-                          ? 'bg-[#d4a574] text-white'
-                          : 'bg-[#d4183d] text-white'
+                          ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                          : 'bg-rose-500/15 text-rose-500 border border-rose-500/30'
                       }`}
                     >
                       {isHarvestReady(field) ? 'Ready for harvest' : field.status}
@@ -1898,13 +2584,13 @@ export function FarmManagement() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mb-2">
-                  <div className="bg-white rounded-lg p-2">
-                    <p className="text-xs text-muted-foreground">Variety</p>
-                    <p className="text-sm font-medium">{field.variety}</p>
+                  <div className="bg-background/80 rounded-lg p-2.5 border border-border/40">
+                    <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Variety</p>
+                    <p className="text-xs font-bold text-foreground font-heading">{field.variety}</p>
                   </div>
-                  <div className="bg-white rounded-lg p-2">
-                    <p className="text-xs text-muted-foreground">Age</p>
-                    <p className="text-sm font-medium">{field.age}</p>
+                  <div className="bg-background/80 rounded-lg p-2.5 border border-border/40">
+                    <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Age</p>
+                    <p className="text-xs font-bold text-foreground font-heading">{field.age}</p>
                   </div>
                 </div>
               </div>
@@ -1913,35 +2599,35 @@ export function FarmManagement() {
         </div>
 
         <div className="space-y-6">
-          <div className="flex h-[420px] flex-col bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+          <div className="flex h-[420px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
             <div className="flex items-center justify-between gap-3 mb-4">
-              <h3>Irrigation Info</h3>
+              <h3 className="font-bold text-base font-heading text-foreground">Irrigation Info</h3>
               <button
                 type="button"
                 onClick={openAddIrrigation}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2d5016] text-white text-sm hover:bg-[#1b3310]"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent text-accent-foreground font-semibold text-xs hover:bg-accent/90 shadow-2xs cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 Add Sprinklers
               </button>
             </div>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-[#8b6f47]/35 scrollbar-track-transparent">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
               {sprinklersBySection.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No sprinklers registered yet. Add sprinklers to a section to get started.</p>
+                <p className="text-xs text-muted-foreground font-mono">No sprinklers registered yet. Add sprinklers to a section to get started.</p>
               ) : (
                 sprinklersBySection.map((group) => {
                   const activeCount = group.systems.filter((s) => s.status === 'Active').length;
                   const damagedCount = group.systems.filter((s) => s.status === 'Damaged').length;
                   const inactiveCount = group.systems.filter((s) => s.status === 'Inactive').length;
                   return (
-                    <div key={group.section} className="bg-[#f5f1ed] rounded-xl border border-[#4a2c2a]/10 overflow-hidden">
-                      <div className="flex items-center justify-between px-4 py-3 bg-[#4a2c2a]/5 border-b border-[#4a2c2a]/10">
+                    <div key={group.section} className="bg-muted/40 rounded-xl border border-border/60 overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-3 bg-[#4a2c2a]/5 border-b border-border/60">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-sm">
-                            <Droplets className="w-4 h-4 text-[#4a2c2a]" />
+                          <div className="w-8 h-8 rounded-lg bg-background/80 flex items-center justify-center shadow-sm">
+                            <Droplets className="w-4 h-4 text-foreground" />
                           </div>
                           <div>
-                            <h4 className="text-sm font-bold text-[#3e2723]">{group.section}</h4>
+                            <h4 className="text-sm font-bold text-foreground">{group.section}</h4>
                             <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
                               <span>{group.systems.length} sprinkler{group.systems.length !== 1 ? 's' : ''}</span>
                               <span>•</span>
@@ -1976,7 +2662,7 @@ export function FarmManagement() {
                             <div
                               key={system.irrigationId || system.zone}
                               className={`flex items-center justify-between px-4 py-2.5 transition-colors ${
-                                isInactive ? 'bg-gray-100/70' : 'hover:bg-white/50'
+                                isInactive ? 'bg-gray-100/70' : 'hover:bg-background/50'
                               }`}
                             >
                               <div className="flex items-center gap-2.5">
@@ -1993,12 +2679,12 @@ export function FarmManagement() {
                                 />
                                 <span
                                   className={`text-sm font-medium ${
-                                    isInactive ? 'text-gray-400 line-through' : 'text-[#3e2723]'
+                                    isInactive ? 'text-gray-400 line-through' : 'text-foreground'
                                   }`}
                                 >
                                   {system.zone}
                                 </span>
-                                <span className="text-[10px] font-semibold text-[#4a2c2a]/60 ml-1">
+                                <span className="text-[10px] font-semibold text-foreground/60 ml-1">
                                   ({system.coverage || '100%'})
                                 </span>
                               </div>
@@ -2020,7 +2706,7 @@ export function FarmManagement() {
                                   type="button"
                                   aria-label={`Edit ${system.zone}`}
                                   title="Edit sprinkler status or details"
-                                  className="w-6 h-6 rounded-md bg-white border border-[#4a2c2a]/10 hover:bg-[#4a2c2a] hover:text-white flex items-center justify-center transition-colors text-[#3e2723]"
+                                  className="w-6 h-6 rounded-md bg-background/80 border border-border/60 hover:bg-[#4a2c2a] hover:text-white flex items-center justify-center transition-colors text-foreground"
                                   onClick={() => openEditIrrigation(system.originalIndex)}
                                 >
                                   <Edit2 className="w-3 h-3" />
@@ -2029,7 +2715,7 @@ export function FarmManagement() {
                                   type="button"
                                   aria-label={`Delete ${system.zone}`}
                                   title="Delete sprinkler (marks as Inactive)"
-                                  className="w-6 h-6 rounded-md bg-white border border-[#4a2c2a]/10 hover:bg-[#d4183d] hover:text-white flex items-center justify-center transition-colors text-[#d4183d]"
+                                  className="w-6 h-6 rounded-md bg-background/80 border border-border/60 hover:bg-[#d4183d] hover:text-white flex items-center justify-center transition-colors text-[#d4183d]"
                                   onClick={() => requestRemoveIrrigation(system.originalIndex, system.zone)}
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -2046,16 +2732,16 @@ export function FarmManagement() {
             </div>
           </div>
 
-          <div id="sprinkler-damage-reports-section" className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm transition-all duration-300">
+          <div id="sprinkler-damage-reports-section" className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm transition-all duration-300">
             <div className="flex items-center justify-between gap-3 mb-4">
               <div>
-                <h3>Sprinkler Damage Reports</h3>
+                <h3 className="font-bold text-base font-heading text-foreground">Sprinkler Damage Reports</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Reports are submitted by workers through the mobile app</p>
               </div>
               <button
                 type="button"
                 onClick={() => setReportDamageDialogOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#d4183d] text-white text-xs font-semibold hover:bg-[#b01230] shadow-sm transition-all active:scale-95 shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer"
               >
                 <AlertTriangle className="w-3.5 h-3.5" />
                 + Report Problem
@@ -2063,7 +2749,7 @@ export function FarmManagement() {
             </div>
             <div className="space-y-3">
               {irrigationDamageReports.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No sprinkler damage reports yet. Workers can submit reports from the Irrigation module in the mobile app.</p>
+                <p className="text-xs text-muted-foreground font-mono">No sprinkler damage reports yet. Workers can submit reports from the Irrigation module in the mobile app.</p>
               ) : null}
               {irrigationDamageReports
                 .slice()
@@ -2073,34 +2759,34 @@ export function FarmManagement() {
                   const status = (report.status || 'Pending').trim() || 'Pending';
                   const isResolved = status.toLowerCase() === 'resolved';
                   const statusBadge = isResolved
-                    ? 'bg-[#2d5016] text-white'
+                    ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
                     : status.toLowerCase() === 'pending'
-                    ? 'bg-[#d4183d] text-white'
-                    : 'bg-[#d4a574] text-[#3e2723]';
+                    ? 'bg-rose-500/15 text-rose-500 border border-rose-500/30'
+                    : 'bg-amber-500/15 text-amber-500 border border-amber-500/30';
 
                   return (
                     <div
                       key={report.reportId || `${report.reportedAt}-${idx}`}
                       id={report.reportId ? `report-${report.reportId}` : `report-idx-${idx}`}
-                      className="bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10 transition-all duration-300"
+                      className="bg-muted/40 rounded-xl p-3.5 border border-border/60 transition-all duration-300"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-start gap-2">
-                            <h4 className="text-sm font-bold text-[#3e2723] truncate leading-tight">
+                            <h4 className="text-sm font-bold text-foreground font-heading truncate leading-tight">
                               {report.sprinklerLabel?.trim() || report.zone?.trim() || 'Sprinkler'}
                             </h4>
-                            <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-full uppercase shrink-0 ${statusBadge}`}>
+                            <span className={`text-[9px] font-extrabold font-mono px-2 py-0.5 rounded-full uppercase shrink-0 ${statusBadge}`}>
                               {status}
                             </span>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
+                          <p className="text-xs text-muted-foreground mt-0.5 font-mono">
                             {report.zone && report.zone.trim() !== (report.sprinklerLabel || '').trim() ? `${report.zone} ` : ''}
                             {report.reportedAt ? `• ${report.reportedAt} ` : ''}
                             {report.reportedBy ? `• Reported by ${report.reportedBy}` : ''}
                           </p>
                           {report.details ? (
-                            <p className="text-sm text-[#3e2723] mt-2 whitespace-pre-line">{report.details}</p>
+                            <p className="text-xs text-foreground/90 mt-2 whitespace-pre-line font-medium">{report.details}</p>
                           ) : null}
                         </div>
 
@@ -2116,7 +2802,7 @@ export function FarmManagement() {
                                 return { ...prev, irrigationDamageReports: next };
                               })
                             }
-                            className="shrink-0 text-[10px] font-semibold px-2.5 py-1 rounded bg-[#2d5016] text-white hover:bg-[#1b3310] disabled:opacity-60"
+                            className="shrink-0 text-xs font-bold font-mono px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 cursor-pointer shadow-2xs"
                           >
                             Mark resolved
                           </button>
@@ -2128,16 +2814,16 @@ export function FarmManagement() {
             </div>
           </div>
 
-          <div id="pest-reports-section" className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+          <div id="pest-reports-section" className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
             <div className="flex items-center justify-between gap-3 mb-4">
               <div>
-                <h3>Pest and Disease Issues Report</h3>
+                <h3 className="font-bold text-base font-heading text-foreground">Pest and Disease Issues Report</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Reports are submitted by workers through the mobile app</p>
               </div>
             </div>
             <div className="space-y-3">
               {pestControlLogs.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No pest or disease reports from workers yet. Workers can submit reports from the mobile app.</p>
+                <p className="text-xs text-muted-foreground font-mono">No pest or disease reports from workers yet. Workers can submit reports from the mobile app.</p>
               ) : null}
               {pestControlLogs.map((record, idx) => {
                 const isPending = record.status === 'Pending';
@@ -2145,49 +2831,49 @@ export function FarmManagement() {
                 const isTreatment = record.status === 'Under Treatment';
 
                 const statusBadge = isResolved
-                  ? 'bg-[#2d5016] text-white'
+                  ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
                   : isPending
-                  ? 'bg-[#d4183d] text-white'
+                  ? 'bg-rose-500/15 text-rose-500 border border-rose-500/30'
                   : isTreatment
-                  ? 'bg-[#8b6f47] text-white'
-                  : 'bg-[#d4a574] text-[#3e2723]';
+                  ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                  : 'bg-accent/15 text-accent border border-accent/30';
 
                 return (
-                  <div key={record.pestControlId || `${record.field}-${record.date}-${idx}`} id={record.pestControlId ? `pest-${record.pestControlId}` : undefined} className="bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10">
+                  <div key={record.pestControlId || `${record.field}-${record.date}-${idx}`} id={record.pestControlId ? `pest-${record.pestControlId}` : undefined} className="bg-muted/40 rounded-xl p-3.5 border border-border/60">
                     <div className="flex items-start gap-3">
                       {record.photoUrl ? (
-                        <div className="w-14 h-14 rounded-lg bg-white border border-[#4a2c2a]/15 overflow-hidden shrink-0">
+                        <div className="w-14 h-14 rounded-lg bg-background border border-border/60 overflow-hidden shrink-0">
                           <img src={record.photoUrl} alt={record.issue} className="w-full h-full object-cover" />
                         </div>
                       ) : (
-                        <div className="w-14 h-14 rounded-lg bg-white border border-[#4a2c2a]/15 flex items-center justify-center shrink-0 text-muted-foreground text-[9px] font-medium leading-none">
+                        <div className="w-14 h-14 rounded-lg bg-background border border-border/60 flex items-center justify-center shrink-0 text-muted-foreground text-[9px] font-mono font-medium leading-none">
                           No Photo
                         </div>
                       )}
 
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-start justify-between gap-2">
-                          <h4 className="text-sm font-bold text-[#3e2723] truncate leading-tight">{record.issue || 'Pest / Disease Issue'}</h4>
-                          <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-full uppercase shrink-0 ${statusBadge}`}>
+                          <h4 className="text-sm font-bold text-foreground font-heading truncate leading-tight">{record.issue || 'Pest / Disease Issue'}</h4>
+                          <span className={`text-[9px] font-extrabold font-mono px-2 py-0.5 rounded-full uppercase shrink-0 ${statusBadge}`}>
                             {record.status}
                           </span>
                         </div>
 
-                        <p className="text-xs font-semibold text-[#2d5016]">
+                        <p className="text-xs font-mono font-bold text-emerald-500">
                           Zone: {record.field} {record.treeNumber ? `· Tree #${record.treeNumber}` : ''}
                         </p>
                         {record.treatment ? (
-                          <p className="text-[11px] text-muted-foreground leading-snug truncate">
+                          <p className="text-xs text-muted-foreground leading-snug truncate">
                             Plan: {record.treatment}
                           </p>
                         ) : null}
-                        <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-[#4a2c2a]/5">
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono pt-1.5 border-t border-border/40">
                           <span>Reported: {record.date}{record.reportedBy ? ` • ${record.reportedBy}` : ''}</span>
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
                               aria-label="Assign treatment"
-                              className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#2d5016]/10 text-[#2d5016] text-[10px] font-semibold hover:bg-[#2d5016]/20 transition-colors"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-accent/15 text-accent text-[10px] font-bold hover:bg-accent/25 transition-colors cursor-pointer"
                               onClick={() => openEditPest(idx)}
                             >
                               <Edit2 className="w-3 h-3" />
@@ -2207,101 +2893,156 @@ export function FarmManagement() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex h-[620px] flex-col bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
-            <div className="flex items-center justify-between gap-4 mb-4">
-              <h3>Employee Directory</h3>
+          <div className="flex h-[660px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-bold text-base font-heading text-foreground">Employee Directory</h3>
+                <p className="text-xs text-muted-foreground">
+                  Showing {filteredWorkers.length} of {workers.length} registered personnel
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={openAddDialog}
-                className="flex items-center gap-2 px-4 py-2 bg-[#2d5016] text-white text-sm font-medium rounded-xl hover:bg-[#234010] transition-colors shadow-md shrink-0"
+                className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground text-xs font-bold rounded-xl hover:bg-accent/90 transition-all shadow-2xs shrink-0 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 Add employee
               </button>
             </div>
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-[#8b6f47]/35 scrollbar-track-transparent md:grid-cols-2">
-              {workers.map((worker) => (
-                <div
-                  key={worker.index}
-                  onClick={() => setSelectedWorkerIndex(worker.index)}
-                  className={`bg-[#f5f1ed] rounded-xl p-4 border cursor-pointer transition-all hover:shadow-md ${
-                    selectedWorkerIndex === worker.index
-                      ? 'border-[#2d5016]/50 ring-2 ring-[#2d5016]/20'
-                      : 'border-[#4a2c2a]/10 hover:border-[#4a2c2a]/30'
-                  }`}
+
+            {/* Search and Filters Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-4">
+              <div className="sm:col-span-6 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search name, role, barangay, phone..."
+                  value={workerSearchQuery}
+                  onChange={(e) => setWorkerSearchQuery(e.target.value)}
+                  className="pl-9 h-9 text-xs bg-background/80"
+                />
+              </div>
+              <div className="sm:col-span-3">
+                <select
+                  value={workerRoleFilter}
+                  onChange={(e) => setWorkerRoleFilter(e.target.value)}
+                  className="w-full h-9 px-2.5 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
                 >
-                  <div className="flex items-start gap-3">
-                    <img
-                      src={worker.image}
-                      alt={worker.name}
-                      className="w-16 h-16 rounded-xl object-cover"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <h4 className="mb-1 truncate">{worker.name}</h4>
-                      <p className="text-sm text-[#2d5016] mb-2">{worker.role}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <MapPin className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{[worker.address, worker.barangay].filter(Boolean).join(', ')}</span>
+                  <option value="All">All Roles</option>
+                  <option value="Picker">Picker</option>
+                  <option value="Sorter">Sorter</option>
+                  <option value="Field Supervisor">Field Supervisor</option>
+                  <option value="Operator">Operator</option>
+                  <option value="Quality Inspector">Quality Inspector</option>
+                </select>
+              </div>
+              <div className="sm:col-span-3">
+                <select
+                  value={workerSortOrder}
+                  onChange={(e) => setWorkerSortOrder(e.target.value as 'newest' | 'oldest' | 'name')}
+                  className="w-full h-9 px-2.5 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
+                >
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="name">Name (A–Z)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent md:grid-cols-2">
+              {filteredWorkers.length === 0 ? (
+                <div className="col-span-full text-center py-12">
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {workerSearchQuery || workerRoleFilter !== 'All'
+                      ? 'No employees match the specified filters.'
+                      : 'No employees registered yet. Click "Add employee" to begin.'}
+                  </p>
+                </div>
+              ) : (
+                filteredWorkers.map((worker) => (
+                  <div
+                    key={worker.index}
+                    onClick={() => setSelectedWorkerIndex(worker.index)}
+                    className={`bg-muted/40 rounded-xl p-4 border cursor-pointer transition-all hover:border-accent/40 ${
+                      selectedWorkerIndex === worker.index
+                        ? 'border-[#2d5016]/50 ring-2 ring-[#2d5016]/20'
+                        : 'border-border/60 hover:border-border/80'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <img
+                        src={worker.image}
+                        alt={worker.name}
+                        className="w-16 h-16 rounded-xl object-cover border border-border shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="mb-1 truncate font-bold text-foreground">{worker.name}</h4>
+                        <p className="text-sm text-[#2d5016] font-semibold mb-2">{worker.role}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <MapPin className="w-3 h-3 shrink-0" />
+                          <span className="truncate">{[worker.address, worker.barangay].filter(Boolean).join(', ')}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                          <Phone className="w-3 h-3" />
+                          <span>{worker.phone}</span>
+                        </div>
+                        {worker.accountEmail ? (
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{worker.accountEmail}</p>
+                        ) : null}
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span className="rounded-full bg-background/80 px-2 py-1 text-[11px] text-muted-foreground font-mono">
+                            ID {worker.workerId}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-1 text-[11px] font-bold ${
+                              worker.status === 'active'
+                                ? 'bg-[#2d5016] text-white'
+                                : 'bg-[#b0bec5] text-[#263238]'
+                            }`}
+                          >
+                            {worker.status}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                        <Phone className="w-3 h-3" />
-                        <span>{worker.phone}</span>
-                      </div>
-                      {worker.accountEmail ? (
-                        <p className="mt-1 truncate text-xs text-muted-foreground">{worker.accountEmail}</p>
-                      ) : null}
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <span className="rounded-full bg-white px-2 py-1 text-[11px] text-[#5d4037]">
-                          ID {worker.workerId}
-                        </span>
-                        <span
-                          className={`rounded-full px-2 py-1 text-[11px] ${
-                            worker.status === 'active'
-                              ? 'bg-[#2d5016] text-white'
-                              : 'bg-[#b0bec5] text-[#263238]'
-                          }`}
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditDialog(worker); }}
+                          aria-label={`Edit ${worker.name}`}
+                          className="w-8 h-8 rounded-lg bg-background/80 hover:bg-[#4a2c2a] hover:text-white transition-colors flex items-center justify-center cursor-pointer shadow-xs"
                         >
-                          {worker.status}
-                        </span>
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Make ${worker.name} inactive`}
+                          title="Make inactive"
+                          disabled={worker.status === 'inactive'}
+                          className="w-8 h-8 rounded-lg bg-background/80 hover:bg-[#8b6f47] hover:text-white transition-colors flex items-center justify-center disabled:opacity-40 disabled:hover:bg-background/80 disabled:hover:text-inherit cursor-pointer shadow-xs"
+                          onClick={(e) => removeWorker(e, worker.index)}
+                        >
+                          <UserX className="w-4 h-4" />
+                        </button>
                       </div>
-                    </div>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditDialog(worker); }}
-                        aria-label={`Edit ${worker.name}`}
-                        className="w-8 h-8 rounded-lg bg-white hover:bg-[#4a2c2a] hover:text-white transition-colors flex items-center justify-center"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Make ${worker.name} inactive`}
-                        title="Make inactive"
-                        disabled={worker.status === 'inactive'}
-                        className="w-8 h-8 rounded-lg bg-white hover:bg-[#8b6f47] hover:text-white transition-colors flex items-center justify-center disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-inherit"
-                        onClick={(e) => removeWorker(e, worker.index)}
-                      >
-                        <UserX className="w-4 h-4" />
-                      </button>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
 
         <div className="space-y-4">
           {selectedWorker ? (
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+            <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
               <div className="flex items-center justify-between gap-2 mb-4">
-                <h3>Employee Profile</h3>
+                <h3 className="font-bold text-base font-heading text-foreground">Employee Profile</h3>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="border-[#4a2c2a]/30"
+                  className="border-border/80 hover:bg-accent/10"
                   onClick={() => openEditDialog(selectedWorker)}
                 >
                   <Edit2 className="w-4 h-4 mr-1" />
@@ -2312,119 +3053,97 @@ export function FarmManagement() {
                 <img
                   src={selectedWorker.image}
                   alt={selectedWorker.name}
-                  className="w-24 h-24 rounded-2xl object-cover mx-auto mb-3"
+                  className="w-20 h-20 rounded-xl object-cover mx-auto mb-2 border border-border/60"
                 />
-                <h4>{selectedWorker.name}</h4>
-                <p className="text-sm text-[#2d5016]">{selectedWorker.role}</p>
+                <h4 className="font-bold text-base font-heading text-foreground">{selectedWorker.name}</h4>
+                <p className="text-xs font-mono font-bold text-emerald-500">{selectedWorker.role}</p>
               </div>
-              <div className="space-y-3">
-                <div className="bg-[#f5f1ed] rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Worker ID</p>
-                  <p className="text-sm font-medium">{selectedWorker.workerId}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Auto-generated and not manually editable.</p>
+              <div className="space-y-2.5">
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Worker ID</p>
+                  <p className="text-xs font-bold font-mono text-foreground">{selectedWorker.workerId}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">Auto-generated system identifier.</p>
                 </div>
-                <div className="bg-[#f5f1ed] rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Login email</p>
-                  <p className="text-sm font-medium break-all">{selectedWorker.accountEmail || '—'}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Used by the worker to sign in on the mobile app.
-                  </p>
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Login email</p>
+                  <p className="text-xs font-bold text-foreground break-all">{selectedWorker.accountEmail || '—'}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Used by worker to sign in on mobile app.</p>
                 </div>
-                <div className="bg-[#f5f1ed] rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Temporary password</p>
-                  <p className="font-mono text-sm font-medium break-all">{selectedWorker.accountPassword || '—'}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Shown only if this employee was created after password saving was enabled.
-                  </p>
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Temporary password</p>
+                  <p className="font-mono text-xs font-bold text-foreground break-all">{selectedWorker.accountPassword || '—'}</p>
                 </div>
-                <div className="bg-[#f5f1ed] rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Birthday / age</p>
-                  <p className="text-sm font-medium">
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Birthday / age</p>
+                  <p className="text-xs font-bold text-foreground">
                     {selectedWorker.birthday || '—'}{' '}
                     {selectedWorker.age != null ? `(${selectedWorker.age} years old)` : ''}
                   </p>
                 </div>
-                <div className="bg-[#f5f1ed] rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Sex</p>
-                  <p className="text-sm font-medium">{selectedWorker.sex}</p>
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Sex</p>
+                  <p className="text-xs font-bold text-foreground">{selectedWorker.sex}</p>
                 </div>
-                <div className="bg-[#f5f1ed] rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Address</p>
-                  <p className="text-sm font-medium">{selectedWorker.address}</p>
-                  <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                    <p>
-                      <span className="font-medium text-[#5d4037]">Barangay: </span>
-                      {selectedWorker.barangay}
-                    </p>
-                    <p>
-                      <span className="font-medium text-[#5d4037]">City / municipality: </span>
-                      {selectedWorker.municipality}
-                    </p>
-                    <p>
-                      <span className="font-medium text-[#5d4037]">Province: </span>
-                      {selectedWorker.province}
-                    </p>
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Address</p>
+                  <p className="text-xs font-bold text-foreground">{selectedWorker.address}</p>
+                  <div className="mt-2 space-y-1 text-xs text-muted-foreground font-mono">
+                    <p>Barangay: <span className="text-foreground font-bold">{selectedWorker.barangay}</span></p>
+                    <p>City / Town: <span className="text-foreground font-bold">{selectedWorker.municipality}</span></p>
+                    <p>Province: <span className="text-foreground font-bold">{selectedWorker.province}</span></p>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-[#4a2c2a]/10 flex items-start gap-1">
-                    <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
-                    <span>
-                      {selectedWorker.address}, {selectedWorker.barangay}, {selectedWorker.municipality},{' '}
-                      {selectedWorker.province}
-                    </span>
-                  </p>
                 </div>
-                <div className="bg-[#f5f1ed] rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Contact</p>
-                  <p className="text-sm font-medium">{selectedWorker.phone}</p>
-                  <div className="mt-3 border-t border-[#4a2c2a]/10 pt-3">
-                    <p className="text-xs text-muted-foreground mb-1">Emergency contact</p>
-                    <p className="text-sm font-medium">{selectedWorker.emergencyContactName}</p>
-                    <p className="text-xs text-muted-foreground">
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Contact & Emergency</p>
+                  <p className="text-xs font-bold text-foreground">{selectedWorker.phone}</p>
+                  <div className="mt-2 pt-2 border-t border-border/40 text-xs">
+                    <p className="text-[10px] text-muted-foreground font-mono">Emergency: {selectedWorker.emergencyContactName}</p>
+                    <p className="text-xs font-semibold text-foreground">
                       {selectedWorker.emergencyContactRelationship} · {selectedWorker.emergencyContactPhone}
                     </p>
                   </div>
                 </div>
-                <div className="bg-[#f5f1ed] rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Status</p>
-                  <div className="flex items-center gap-2">
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Status</p>
+                  <div className="flex items-center gap-2 mt-1">
                     <div
                       className={`w-2 h-2 rounded-full ${
-                        selectedWorker.status === 'active' ? 'bg-[#2d5016]' : 'bg-[#b0bec5]'
+                        selectedWorker.status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground'
                       }`}
                     />
-                    <p className="text-sm font-medium capitalize">{selectedWorker.status}</p>
+                    <p className="text-xs font-bold font-mono text-foreground capitalize">{selectedWorker.status}</p>
                   </div>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm text-center">
-              <User className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">Select an employee to view profile</p>
+            <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm text-center">
+              <User className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+              <p className="text-xs text-muted-foreground font-mono">Select an employee to view profile</p>
             </div>
           )}
 
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
-            <h3 className="mb-4">Recent Tasks</h3>
+          <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
+            <h3 className="font-bold text-base font-heading text-foreground mb-4">Recent Tasks</h3>
             <div className="space-y-3">
               {recentTasks.map((task, idx) => (
-                <div key={idx} className="bg-[#f5f1ed] rounded-lg p-3">
-                  <div className="flex items-start justify-between mb-2">
-                    <h4 className="text-sm">{task.title}</h4>
+                <div key={idx} className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <div className="flex items-start justify-between mb-1.5">
+                    <h4 className="text-xs font-bold font-heading text-foreground">{task.title}</h4>
                     <span
-                      className={`text-xs px-2 py-1 rounded-full ${
+                      className={`text-[9px] font-extrabold font-mono px-2 py-0.5 rounded-full uppercase ${
                         task.status === 'completed'
-                          ? 'bg-[#2d5016] text-white'
+                          ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
                           : task.status === 'in-progress'
-                          ? 'bg-[#d4a574] text-white'
-                          : 'bg-[#8b6f47] text-white'
+                          ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                          : 'bg-muted text-muted-foreground border border-border/40'
                       }`}
                     >
                       {task.status}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">{task.details}</p>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                  <div className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground mt-2">
                     <Calendar className="w-3 h-3" />
                     <span>{task.status}</span>
                   </div>
@@ -2434,6 +3153,170 @@ export function FarmManagement() {
           </div>
         </div>
       </div>
-    </div>
+      {/* Attendance Biometric Photo Proof Preview Dialog */}
+      <Dialog
+        open={Boolean(selectedAttendanceProof)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAttendanceProof(null);
+        }}
+      >
+        <DialogContent className="max-w-md bg-card text-card-foreground border-border/80 rounded-2xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold font-heading text-foreground">
+              Attendance Photo Proof & Verification
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Mobile GPS and live facial verification snapshot captured during time check-in.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedAttendanceProof && (
+            <div className="space-y-4 py-2">
+              <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-accent/40 aspect-4/3 flex items-center justify-center">
+                {selectedAttendanceProof.faceSnapshotBase64 ? (
+                  <img
+                    src={
+                      selectedAttendanceProof.faceSnapshotBase64.startsWith('data:')
+                        ? selectedAttendanceProof.faceSnapshotBase64
+                        : `data:image/jpeg;base64,${selectedAttendanceProof.faceSnapshotBase64}`
+                    }
+                    alt="Biometric Snapshot"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground">No snapshot recorded</p>
+                )}
+              </div>
+
+              <div className="rounded-xl bg-muted/40 p-3.5 border border-border/60 space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Employee:</span>
+                  <span className="font-bold text-foreground">{selectedAttendanceProof.workerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Date & Time In:</span>
+                  <span className="font-mono font-semibold text-emerald-500">
+                    {selectedAttendanceProof.date} · {selectedAttendanceProof.clockIn || '—'}
+                  </span>
+                </div>
+                {selectedAttendanceProof.clockOut && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Time Out:</span>
+                    <span className="font-mono font-semibold text-amber-500">
+                      {selectedAttendanceProof.clockOut}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Location:</span>
+                  <span className="font-semibold text-foreground text-right">
+                    {selectedAttendanceProof.timeInLocationName || 'Field Site'}
+                  </span>
+                </div>
+                {selectedAttendanceProof.timeInLatitude != null && selectedAttendanceProof.timeInLongitude != null && (
+                  <div className="flex justify-between pt-1 border-t border-border/40">
+                    <span className="text-muted-foreground">GPS Coordinates:</span>
+                    <a
+                      href={`https://www.google.com/maps?q=${selectedAttendanceProof.timeInLatitude},${selectedAttendanceProof.timeInLongitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono font-bold text-accent hover:underline flex items-center gap-1"
+                    >
+                      {selectedAttendanceProof.timeInLatitude.toFixed(5)}, {selectedAttendanceProof.timeInLongitude.toFixed(5)} ↗
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setSelectedAttendanceProof(null)}
+              className="w-full text-xs"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Timesheet Audit Trail Dialog for Manager */}
+      <Dialog
+        open={Boolean(selectedAuditCorrection)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAuditCorrection(null);
+        }}
+      >
+        <DialogContent className="max-w-md bg-card text-card-foreground border-border/80 rounded-2xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold font-heading text-foreground">
+              Timesheet Audit Trail: {selectedAuditCorrection?.correctionId}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Chronological log of submissions, reviews, modifications, and actor timestamps.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedAuditCorrection && (
+            <div className="space-y-3 py-2 text-xs max-h-80 overflow-y-auto pr-1">
+              <div className="rounded-xl bg-muted/40 p-3 border border-border/60 space-y-1.5">
+                <div className="flex justify-between text-[11px]">
+                  <span className="font-bold text-foreground">{selectedAuditCorrection.workerName}</span>
+                  <span className="text-muted-foreground font-mono">{selectedAuditCorrection.date}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                  <div>
+                    <span className="text-muted-foreground">Original: </span>
+                    <span className="font-mono font-bold text-foreground">
+                      {selectedAuditCorrection.originalClockIn || '--'} / {selectedAuditCorrection.originalClockOut || '--'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-amber-600 dark:text-amber-400">Requested: </span>
+                    <span className="font-mono font-bold text-foreground">
+                      {selectedAuditCorrection.requestedClockIn || '--'} / {selectedAuditCorrection.requestedClockOut || '--'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Audit History</p>
+                {selectedAuditCorrection.auditTrail && selectedAuditCorrection.auditTrail.length > 0 ? (
+                  selectedAuditCorrection.auditTrail.map((entry, index) => (
+                    <div key={index} className="p-3 rounded-xl bg-muted/25 border border-border/60 space-y-1">
+                      <div className="flex items-center justify-between text-muted-foreground text-[10px]">
+                        <span className="font-bold text-foreground">{entry.actorName}</span>
+                        <span>{entry.timestamp}</span>
+                      </div>
+                      <p className="font-semibold text-foreground text-xs">{entry.action}</p>
+                      {entry.remarks && (
+                        <p className="text-muted-foreground italic">Remarks: "{entry.remarks}"</p>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-muted-foreground py-2 text-center">No additional audit entries recorded.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setSelectedAuditCorrection(null)}
+              className="w-full text-xs"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </motion.div>
   );
 }

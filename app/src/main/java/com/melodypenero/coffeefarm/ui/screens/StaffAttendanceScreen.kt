@@ -15,7 +15,12 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -137,6 +142,33 @@ fun StaffAttendanceScreen(session: AuthSession) {
     var showFaceScanDialog by remember { mutableStateOf(false) }
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
+    var showCorrectionDialog by remember { mutableStateOf(false) }
+    var showLeaveDialog by remember { mutableStateOf(false) }
+    var correctionDate by remember { mutableStateOf(today) }
+    var correctionClockIn by remember { mutableStateOf("08:00 AM") }
+    var correctionClockOut by remember { mutableStateOf("05:00 PM") }
+    var correctionReason by remember { mutableStateOf("") }
+    var leaveType by remember { mutableStateOf("Sick Leave") }
+    var leaveTypeMenuOpen by remember { mutableStateOf(false) }
+    val leaveTypeOptions = remember {
+        listOf("Sick Leave", "Vacation Leave", "Emergency Leave", "Bereavement", "Maternity / Paternity", "Official Business", "Unpaid Leave")
+    }
+    var leaveStartDate by remember { mutableStateOf(today) }
+    var leaveEndDate by remember { mutableStateOf(today) }
+    var leaveReason by remember { mutableStateOf("") }
+
+    val myCorrections = remember(state.timesheetCorrections, selectedWorker) {
+        state.timesheetCorrections.filter {
+            it.workerName.equals(selectedWorker, ignoreCase = true)
+        }
+    }
+
+    val myLeaves = remember(state.leaveRequests, selectedWorker) {
+        state.leaveRequests.filter {
+            it.workerName.equals(selectedWorker, ignoreCase = true)
+        }
+    }
+
     fun bitmapToBase64(bitmap: Bitmap): String {
         val baos = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos)
@@ -162,6 +194,8 @@ fun StaffAttendanceScreen(session: AuthSession) {
         )
         cameraLauncher.launch(null)
     }
+
+    fun nowClock(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("hh:mm a"))
 
     fun submitTimeInWithScan() {
         val facePhoto = capturedBitmap?.let { bitmapToBase64(it) } ?: ""
@@ -218,6 +252,54 @@ fun StaffAttendanceScreen(session: AuthSession) {
                 }
             )
         }
+
+        // Missing Time In Alert Notice
+        if (!hasTimedInToday && selectedWorker.isNotBlank()) {
+            item {
+                FarmCard {
+                    Text(
+                        text = "⚠️ Missing Time In",
+                        color = Color(0xFFF3B562),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "Date: $today · Employee: $selectedWorker\nStatus: Requires Correction (Forgot to clock in or on leave)",
+                        color = palette.textSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextButton(
+                            onClick = {
+                                correctionDate = today
+                                showCorrectionDialog = true
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(1.dp, Color(0xFFF3B562), RoundedCornerShape(12.dp))
+                        ) {
+                            Text("Request Correction", color = Color(0xFFF3B562), fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = {
+                                leaveStartDate = today
+                                leaveEndDate = today
+                                showLeaveDialog = true
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(1.dp, Color(0xFF84B626), RoundedCornerShape(12.dp))
+                        ) {
+                            Text("File Leave", color = Color(0xFF84B626), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             FarmCard {
                 Text(
@@ -304,6 +386,32 @@ fun StaffAttendanceScreen(session: AuthSession) {
                     onClick = { timeOut() },
                     enabled = hasTimedInToday && !hasTimedOutToday
                 )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            correctionDate = today
+                            showCorrectionDialog = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Request Correction", color = palette.accent, fontWeight = FontWeight.SemiBold)
+                    }
+                    TextButton(
+                        onClick = {
+                            leaveStartDate = today
+                            leaveEndDate = today
+                            showLeaveDialog = true
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("File Leave", color = palette.accent, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
                 Text(
                     text = if (hasTimedOutToday) {
                         "Today's attendance is saved. Tomorrow the buttons reset for a new record."
@@ -321,6 +429,101 @@ fun StaffAttendanceScreen(session: AuthSession) {
                 )
             }
         }
+
+        // Timesheet Corrections Section
+        if (myCorrections.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Timesheet Correction Requests",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = palette.textPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            itemsIndexed(myCorrections) { _, c ->
+                FarmCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Date: ${c.date}", color = palette.textPrimary, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = c.status,
+                            color = if (c.status == "Approved") AccentGreenBright else if (c.status == "Rejected") Color(0xFFE57373) else Color(0xFFF3B562),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    Text(
+                        "Requested: ${c.requestedClockIn.ifBlank { "--" }} - ${c.requestedClockOut.ifBlank { "--" }}",
+                        color = palette.textSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "Reason: ${c.reason}",
+                        color = palette.textSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (c.managerRemarks.isNotBlank()) {
+                        Text(
+                            "Manager Remarks: ${c.managerRemarks}",
+                            color = AccentGreenBright,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
+        // Leave Requests Section
+        if (myLeaves.isNotEmpty()) {
+            item {
+                Text(
+                    text = "My Leave Requests",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = palette.textPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            itemsIndexed(myLeaves) { _, l ->
+                FarmCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(l.leaveType, color = palette.textPrimary, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = l.status,
+                            color = if (l.status == "Approved") AccentGreenBright else if (l.status == "Rejected") Color(0xFFE57373) else Color(0xFFF3B562),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    Text(
+                        "Dates: ${l.startDate} to ${l.endDate} (${l.leaveDays} days)",
+                        color = palette.textSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "Reason: ${l.reason}",
+                        color = palette.textSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (l.managerRemarks.isNotBlank()) {
+                        Text(
+                            "Manager Remarks: ${l.managerRemarks}",
+                            color = AccentGreenBright,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
         item {
             Text(
                 text = "Your recent submissions",
@@ -395,6 +598,204 @@ fun StaffAttendanceScreen(session: AuthSession) {
                 }
             }
         }
+    }
+
+    // Dialog for Timesheet Correction Request
+    if (showCorrectionDialog) {
+        AlertDialog(
+            onDismissRequest = { showCorrectionDialog = false },
+            containerColor = Color(0xFF2D211A),
+            title = {
+                Text("Request Timesheet Correction", color = Color(0xFFF4EDE6), fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Employee: $selectedWorker", color = Color(0xFFF3B562), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+
+                    OutlinedTextField(
+                        value = correctionDate,
+                        onValueChange = { correctionDate = it },
+                        label = { Text("Date (YYYY-MM-DD)", color = Color(0xFFB8A99E)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFF4EDE6),
+                            unfocusedTextColor = Color(0xFFF4EDE6)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = correctionClockIn,
+                        onValueChange = { correctionClockIn = it },
+                        label = { Text("Requested Time In (e.g. 08:00 AM)", color = Color(0xFFB8A99E)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFF4EDE6),
+                            unfocusedTextColor = Color(0xFFF4EDE6)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = correctionClockOut,
+                        onValueChange = { correctionClockOut = it },
+                        label = { Text("Requested Time Out (e.g. 05:00 PM)", color = Color(0xFFB8A99E)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFF4EDE6),
+                            unfocusedTextColor = Color(0xFFF4EDE6)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = correctionReason,
+                        onValueChange = { correctionReason = it },
+                        label = { Text("Reason for Correction", color = Color(0xFFB8A99E)) },
+                        placeholder = { Text("e.g. Forgot to clock in before morning harvesting briefing", color = Color(0xFF8C7E76)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFF4EDE6),
+                            unfocusedTextColor = Color(0xFFF4EDE6)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (selectedWorker.isNotBlank() && correctionReason.isNotBlank()) {
+                            store.addTimesheetCorrection(
+                                workerName = selectedWorker,
+                                date = correctionDate,
+                                requestedClockIn = correctionClockIn,
+                                requestedClockOut = correctionClockOut,
+                                reason = correctionReason,
+                                originalClockIn = todayAttendance?.clockIn ?: "",
+                                originalClockOut = todayAttendance?.clockOut ?: "",
+                                attendanceId = todayAttendance?.attendanceId ?: ""
+                            )
+                            showCorrectionDialog = false
+                            correctionReason = ""
+                        }
+                    },
+                    enabled = selectedWorker.isNotBlank() && correctionReason.isNotBlank()
+                ) {
+                    Text("Submit Request", color = Color(0xFF84B626), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCorrectionDialog = false }) {
+                    Text("Cancel", color = Color(0xFFB8A99E))
+                }
+            }
+        )
+    }
+
+    // Dialog for Leave Filing Request
+    if (showLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            containerColor = Color(0xFF2D211A),
+            title = {
+                Text("File Employee Leave", color = Color(0xFFF4EDE6), fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Employee: $selectedWorker", color = Color(0xFF84B626), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, Color(0xFFB8A99E), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                                .clickable { leaveTypeMenuOpen = true }
+                        ) {
+                            Text("Leave Type", color = Color(0xFFB8A99E), style = MaterialTheme.typography.labelSmall)
+                            Text(leaveType, color = Color(0xFFF4EDE6), fontWeight = FontWeight.SemiBold)
+                        }
+                        DropdownMenu(
+                            expanded = leaveTypeMenuOpen,
+                            onDismissRequest = { leaveTypeMenuOpen = false }
+                        ) {
+                            leaveTypeOptions.forEach { opt ->
+                                DropdownMenuItem(
+                                    text = { Text(opt) },
+                                    onClick = {
+                                        leaveType = opt
+                                        leaveTypeMenuOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = leaveStartDate,
+                        onValueChange = { leaveStartDate = it },
+                        label = { Text("Start Date (YYYY-MM-DD)", color = Color(0xFFB8A99E)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFF4EDE6),
+                            unfocusedTextColor = Color(0xFFF4EDE6)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = leaveEndDate,
+                        onValueChange = { leaveEndDate = it },
+                        label = { Text("End Date (YYYY-MM-DD)", color = Color(0xFFB8A99E)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFF4EDE6),
+                            unfocusedTextColor = Color(0xFFF4EDE6)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = leaveReason,
+                        onValueChange = { leaveReason = it },
+                        label = { Text("Reason for Leave", color = Color(0xFFB8A99E)) },
+                        placeholder = { Text("e.g. Medical check-up / Family emergency", color = Color(0xFF8C7E76)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFF4EDE6),
+                            unfocusedTextColor = Color(0xFFF4EDE6)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (selectedWorker.isNotBlank() && leaveReason.isNotBlank()) {
+                            store.addLeaveRequest(
+                                workerName = selectedWorker,
+                                leaveType = leaveType,
+                                startDate = leaveStartDate,
+                                endDate = leaveEndDate,
+                                leaveDays = 1,
+                                reason = leaveReason
+                            )
+                            showLeaveDialog = false
+                            leaveReason = ""
+                        }
+                    },
+                    enabled = selectedWorker.isNotBlank() && leaveReason.isNotBlank()
+                ) {
+                    Text("Submit Leave", color = Color(0xFF84B626), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveDialog = false }) {
+                    Text("Cancel", color = Color(0xFFB8A99E))
+                }
+            }
+        )
     }
 
     if (showFaceScanDialog) {

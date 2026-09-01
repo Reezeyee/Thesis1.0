@@ -57,6 +57,7 @@ import com.melodypenero.coffeefarm.ui.navigation.farmStaffMobileDestinations
 import com.melodypenero.coffeefarm.ui.screens.ChangePasswordScreen
 import com.melodypenero.coffeefarm.ui.screens.CoffeeCherryScreen
 import com.melodypenero.coffeefarm.ui.screens.EquipmentScreen
+import com.melodypenero.coffeefarm.ui.screens.FarmMapScreen
 import com.melodypenero.coffeefarm.ui.screens.HarvestReadinessScreen
 import com.melodypenero.coffeefarm.ui.screens.IrrigationScreen
 import com.melodypenero.coffeefarm.ui.screens.LoginScreen
@@ -303,6 +304,9 @@ fun CoffeeFarmApp() {
                             DashboardScreen(
                                 onNavigateToModule = navigateToDestination
                             )
+                        }
+                        composable(AppDestination.FarmMap.route) {
+                            FarmMapScreen()
                         }
                         composable(AppDestination.StaffAttendance.route) {
                             StaffAttendanceScreen(session = currentSession)

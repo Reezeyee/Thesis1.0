@@ -198,17 +198,17 @@ function FarmTooltipContent({
 
   const labelNode =
     labelFormatter && label !== undefined ? (
-      <div className="font-medium text-[#3e2723]">
+      <div className="font-medium text-foreground">
         {labelFormatter(label, payload)}
       </div>
     ) : label ? (
-      <div className="font-medium text-[#3e2723]">{String(label)}</div>
+      <div className="font-medium text-foreground">{String(label)}</div>
     ) : null;
 
   return (
     <div
       className={cn(
-        'grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-[#4a2c2a]/10 bg-white/95 px-2.5 py-1.5 text-xs shadow-xl backdrop-blur-sm',
+        'grid min-w-[8rem] items-start gap-1.5 rounded-lg border border-border/80 bg-card/95 px-2.5 py-1.5 text-xs text-card-foreground shadow-xl backdrop-blur-sm',
         className,
       )}
     >
@@ -396,7 +396,7 @@ export function ChartLegendList({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="mt-4 space-y-2 border-t border-[#4a2c2a]/10 pt-4">
+    <div className="mt-4 space-y-2 border-t border-border/60 pt-4">
       {items.map((item) => (
         <div key={item.name} className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2 min-w-0">
@@ -435,13 +435,13 @@ export function ChartPanel({
   legend,
 }: ChartPanelProps) {
   return (
-    <div className="farm-chart-panel bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
-      <h3 className="mb-1 text-[#3e2723] font-medium">{title}</h3>
+    <div className="farm-chart-panel bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
+      <h3 className="mb-1 text-foreground font-medium">{title}</h3>
       {subtitle ? <p className="text-xs text-muted-foreground mb-4">{subtitle}</p> : <div className="mb-4" />}
       <div className="w-full" style={{ height, minHeight: height }}>
         {empty ? (
           <div
-            className="flex items-center justify-center rounded-xl border border-dashed border-[#4a2c2a]/20 bg-[#f5f1ed]/50 px-4 text-center text-sm text-muted-foreground"
+            className="flex items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/40 px-4 text-center text-sm text-muted-foreground"
             style={{ height }}
           >
             {emptyMessage}

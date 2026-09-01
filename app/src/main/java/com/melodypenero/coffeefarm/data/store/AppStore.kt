@@ -27,6 +27,8 @@ import java.util.UUID
 data class AppState(
     val workers: List<WorkerRecord> = emptyList(),
     val attendance: List<AttendanceRecord> = emptyList(),
+    val timesheetCorrections: List<TimesheetCorrectionRequest> = emptyList(),
+    val leaveRequests: List<LeaveRequestRecord> = emptyList(),
     val tasks: List<TaskRecord> = emptyList(),
     @SerializedName(value = "sections", alternate = ["farmBlocks"])
     val sections: List<SectionRecord> = emptyList(),
@@ -54,6 +56,49 @@ data class AppState(
     val consumableSupplies: List<ConsumableSupplyRecord> = emptyList(),
     val consumableReports: List<ConsumableSupplyReportRecord> = emptyList(),
     val smsMessages: List<SmsMessageRecord> = emptyList()
+)
+
+data class TimesheetAuditEntry(
+    val actorName: String = "",
+    val action: String = "",
+    val remarks: String = "",
+    val timestamp: String = ""
+)
+
+data class TimesheetCorrectionRequest(
+    val correctionId: String = "",
+    val attendanceId: String = "",
+    val workerName: String = "",
+    val date: String = "",
+    val field: String = "both",
+    val originalClockIn: String = "",
+    val originalClockOut: String = "",
+    val requestedClockIn: String = "",
+    val requestedClockOut: String = "",
+    val reason: String = "",
+    val status: String = "Pending",
+    val submittedAt: String = "",
+    val submittedBy: String = "",
+    val reviewedAt: String = "",
+    val reviewedBy: String = "",
+    val managerRemarks: String = "",
+    val auditTrail: List<TimesheetAuditEntry> = emptyList()
+)
+
+data class LeaveRequestRecord(
+    val leaveId: String = "",
+    val workerName: String = "",
+    val leaveType: String = "Sick Leave",
+    val startDate: String = "",
+    val endDate: String = "",
+    val leaveDays: Int = 1,
+    val reason: String = "",
+    val status: String = "Pending",
+    val submittedAt: String = "",
+    val submittedBy: String = "",
+    val reviewedAt: String = "",
+    val reviewedBy: String = "",
+    val managerRemarks: String = ""
 )
 
 data class SmsMessageRecord(
@@ -1065,6 +1110,77 @@ class AppStore(context: Context) {
                     faceSnapshotBase64 = faceSnapshotBase64.trim(),
                     isGeofenceVerified = isGeofenceVerified
                 )
+            )
+        )
+    }
+
+    fun addTimesheetCorrection(
+        workerName: String,
+        date: String,
+        requestedClockIn: String,
+        requestedClockOut: String,
+        reason: String,
+        originalClockIn: String = "",
+        originalClockOut: String = "",
+        attendanceId: String = ""
+    ) {
+        val cid = "TC-${System.currentTimeMillis().toString().takeLast(7)}"
+        val now = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("M/d/yyyy, h:mm:ss a"))
+        val request = TimesheetCorrectionRequest(
+            correctionId = cid,
+            attendanceId = attendanceId,
+            workerName = workerName.trim(),
+            date = date.trim(),
+            field = if (requestedClockIn.isNotBlank() && requestedClockOut.isNotBlank()) "both" else if (requestedClockIn.isNotBlank()) "clockIn" else "clockOut",
+            originalClockIn = originalClockIn.trim(),
+            originalClockOut = originalClockOut.trim(),
+            requestedClockIn = requestedClockIn.trim(),
+            requestedClockOut = requestedClockOut.trim(),
+            reason = reason.trim(),
+            status = "Pending",
+            submittedAt = now,
+            submittedBy = workerName.trim(),
+            auditTrail = listOf(
+                TimesheetAuditEntry(
+                    actorName = workerName.trim(),
+                    action = "Submitted timesheet correction request",
+                    remarks = reason.trim(),
+                    timestamp = now
+                )
+            )
+        )
+        persist(
+            state.copy(
+                timesheetCorrections = listOf(request) + state.timesheetCorrections
+            )
+        )
+    }
+
+    fun addLeaveRequest(
+        workerName: String,
+        leaveType: String,
+        startDate: String,
+        endDate: String,
+        leaveDays: Int,
+        reason: String
+    ) {
+        val lid = "LV-${System.currentTimeMillis().toString().takeLast(7)}"
+        val now = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("M/d/yyyy, h:mm:ss a"))
+        val request = LeaveRequestRecord(
+            leaveId = lid,
+            workerName = workerName.trim(),
+            leaveType = leaveType.trim(),
+            startDate = startDate.trim(),
+            endDate = endDate.trim(),
+            leaveDays = leaveDays,
+            reason = reason.trim(),
+            status = "Pending",
+            submittedAt = now,
+            submittedBy = workerName.trim()
+        )
+        persist(
+            state.copy(
+                leaveRequests = listOf(request) + state.leaveRequests
             )
         )
     }

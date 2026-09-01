@@ -81,7 +81,7 @@ export function CoffeeFieldLandscapeMap({
   onSelectLocation,
   existingFields = [],
 }: CoffeeFieldLandscapeMapProps) {
-  const [activeLayer, setActiveLayer] = useState<'satellite' | 'topo' | 'street'>('satellite');
+  const [activeLayer, setActiveLayer] = useState<'satellite' | 'topo' | 'street'>('street');
 
   const center: [number, number] = useMemo(() => {
     if (selectedLat && selectedLng) return [selectedLat, selectedLng];
@@ -140,7 +140,7 @@ export function CoffeeFieldLandscapeMap({
         </div>
       </div>
 
-      <div className="relative h-[260px] w-full overflow-hidden rounded-xl border border-[#4a2c2a]/20 bg-[#1e2a1e] shadow-inner [&_.leaflet-container]:h-full [&_.leaflet-container]:w-full [&_.leaflet-container]:rounded-xl">
+      <div className="relative h-[260px] w-full overflow-hidden rounded-xl border border-[#4a2c2a]/20 bg-[#e4e8ec] shadow-inner [&_.leaflet-container]:h-full [&_.leaflet-container]:w-full [&_.leaflet-container]:rounded-xl">
         <MapContainer
           center={center}
           zoom={13}

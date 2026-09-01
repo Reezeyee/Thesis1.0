@@ -7,8 +7,10 @@ import {
   type EquipmentConditionReport,
   type HarvestReadinessReportRecord,
   type IrrigationDamageReportRecord,
+  type LeaveRequestRecord,
   type TreeRipenessScanRecord,
   type SmsMessageRecord,
+  type TimesheetCorrectionRequest,
 } from '../types/appState';
 
 function mergeByKey<T>(local: T[], remote: T[], keyFor: (item: T) => string): T[] {
@@ -76,6 +78,14 @@ function irrigationDamageReportKey(r: IrrigationDamageReportRecord): string {
   return [(r.irrigationId ?? '').trim(), r.zone ?? '', r.sprinklerLabel, r.reportedAt, r.reportedBy].join('\u0001');
 }
 
+function timesheetCorrectionKey(r: TimesheetCorrectionRequest): string {
+  return r.correctionId || [r.workerName, r.date, r.submittedAt, r.field].join('\u0001');
+}
+
+function leaveRequestKey(r: LeaveRequestRecord): string {
+  return r.leaveId || [r.workerName, r.leaveType, r.startDate, r.endDate, r.submittedAt].join('\u0001');
+}
+
 export function mergeEquipmentReports(
   local: EquipmentConditionReport[],
   remote: EquipmentConditionReport[],
@@ -107,6 +117,8 @@ export function mergeRemoteStatePreservingLocalGrades(
       (a.attendanceId ?? '').trim() ||
       [a.workerName, a.date ?? '', a.clockIn ?? '', a.clockOut ?? '', a.details].join('\u0001'),
     ),
+    timesheetCorrections: mergeByKey(local.timesheetCorrections, remote.timesheetCorrections, timesheetCorrectionKey),
+    leaveRequests: mergeByKey(local.leaveRequests, remote.leaveRequests, leaveRequestKey),
     tasks: preferLongerList(local.tasks, remote.tasks),
     sections: preferLongerList(local.sections, remote.sections),
     trees: mergeByKey(local.trees, remote.trees, (t) =>
@@ -165,6 +177,8 @@ export function mergeStateForCloudUpload(local: AppState, remote: AppState): App
   return normalizeAppState({
     ...mergeRemoteStatePreservingLocalGrades(local, remote),
     attendance: local.attendance,
+    timesheetCorrections: mergeByKey(remote.timesheetCorrections, local.timesheetCorrections, timesheetCorrectionKey),
+    leaveRequests: mergeByKey(remote.leaveRequests, local.leaveRequests, leaveRequestKey),
     workers: mergeByKey(remote.workers, local.workers, (w) =>
       (w.workerId ?? '').trim() || [w.name, w.roleRate, w.phoneNumber ?? ''].join('\u0001'),
     ),

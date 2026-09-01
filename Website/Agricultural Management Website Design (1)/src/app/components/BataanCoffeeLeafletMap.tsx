@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, CircleMarker, Popup, Marker, ZoomControl, useM
 import 'leaflet/dist/leaflet.css';
 
 import { BATAAN_BBOX, BATAAN_MAP_HUBS, BATAAN_REAL_CAFE_MARKERS } from '../data/bataanProvinceMap';
+import { formatCurrency } from '../lib/currencyFormat';
 
 /** Café pins driven by buyer state (synced with OSM nodes). */
 export interface CafeMapMarker {
@@ -153,8 +154,8 @@ export function BataanCoffeeLeafletMap({
                     </p>
                     <p className="mt-1 text-xs leading-snug text-[#5d4037]">{hub.role}</p>
                     <p className="mt-1.5 text-xs tabular-nums text-[#2d5016]">
-                      Illustrative volume: ₱
-                      {(hubVolumes?.[idx] ?? hub.volumePeso).toLocaleString()}
+                      Illustrative volume:{' '}
+                      {formatCurrency(hubVolumes?.[idx] ?? hub.volumePeso)}
                     </p>
                   </div>
                 </Popup>
@@ -191,7 +192,7 @@ export function BataanCoffeeLeafletMap({
                     ) : null}
                     <p className="text-xs text-muted-foreground mt-1">{cafe.municipality}, Bataan</p>
                     {vol != null && vol > 0 ? (
-                      <p className="mt-1.5 text-xs tabular-nums text-[#2d5016]">Tracked volume: ₱{vol.toLocaleString()}</p>
+                      <p className="mt-1.5 text-xs tabular-nums text-[#2d5016]">Tracked volume: {formatCurrency(vol)}</p>
                     ) : null}
                     <p className="mt-1.5 text-[11px] text-muted-foreground leading-snug">
                       Coordinates from OpenStreetMap <code className="text-[10px]">amenity=cafe</code>; confirm locally.
@@ -225,7 +226,7 @@ export function BataanCoffeeLeafletMap({
                   <p className="text-sm font-semibold text-[#3e2723]">Buyer (custom)</p>
                   <p className="text-sm font-medium leading-snug">{m.name}</p>
                   {m.salesVolumePeso != null && m.salesVolumePeso > 0 ? (
-                    <p className="mt-1.5 text-xs tabular-nums text-[#2d5016]">Volume: ₱{m.salesVolumePeso.toLocaleString()}</p>
+                    <p className="mt-1.5 text-xs tabular-nums text-[#2d5016]">Volume: {formatCurrency(m.salesVolumePeso)}</p>
                   ) : null}
                   <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
                     Coordinates from your buyer record; adjust via Edit buyer if needed.

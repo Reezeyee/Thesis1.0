@@ -97,9 +97,20 @@ fun FarmOperationsScreen() {
             }
             when (activeTab) {
                 "Workers" -> WorkersList(state.workers) { editingIndex = it }
-                "Attendance" -> AttendanceList(state.attendance) { editingIndex = it }
-                "Tasks" -> TasksList(state.tasks.map { Triple(it.title, it.details, it.status) }) { editingIndex = it }
-                "Sections" -> SectionsList(state.sections.map { it.name to it.details }) { editingIndex = it }
+                "Tasks" -> TasksList(
+                    tasks = state.tasks.map { Triple(it.title, it.details, it.status) },
+                    onToggleStatus = { idx ->
+                        val task = state.tasks.getOrNull(idx) ?: return@TasksList
+                        val next = when (task.status.lowercase()) {
+                            "pending" -> "in-progress"
+                            "in-progress" -> "done"
+                            else -> "pending"
+                        }
+                        store.updateTask(idx, task.title, task.details, next)
+                    },
+                    onEdit = { editingIndex = it }
+                )
+
                 "Trees" -> TreesList(state.trees.map { Triple(it.sectionName, it.details, it.stage) }) { editingIndex = it }
                 "Harvest Schedule" -> HarvestScheduleList(
                     state.harvestSchedules.map { schedule ->
@@ -389,22 +400,45 @@ private fun AttendanceList(attendance: List<AttendanceRecord>, onEdit: (Int) -> 
 }
 
 @Composable
-private fun TasksList(tasks: List<Triple<String, String, String>>, onEdit: (Int) -> Unit) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        itemsIndexed(tasks) { index, item ->
-            OpsCard(
-                icon = Icons.Default.TaskAlt,
-                title = item.first,
-                subtitle = item.second,
-                badge = item.third to statusBadgeColor(item.third)
-            ) { onEdit(index) }
+private fun TasksList(
+    tasks: List<Triple<String, String, String>>,
+    onToggleStatus: ((Int) -> Unit)? = null,
+    onEdit: (Int) -> Unit
+) {
+    if (tasks.isEmpty()) {
+        com.melodypenero.coffeefarm.ui.components.FarmEmptyState(
+            title = "No Tasks Assigned",
+            subtitle = "Tap the + button below to create a new coffee farm assignment.",
+            icon = Icons.Default.TaskAlt,
+            modifier = Modifier.padding(16.dp)
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            itemsIndexed(tasks) { index, item ->
+                val priority = when {
+                    item.first.contains("Urgent", ignoreCase = true) || item.first.contains("Harvest", ignoreCase = true) -> "High"
+                    item.first.contains("Check", ignoreCase = true) || item.first.contains("Repair", ignoreCase = true) -> "Medium"
+                    else -> "Normal"
+                }
+                com.melodypenero.coffeefarm.ui.components.FigmaTaskCard(
+                    title = item.first,
+                    subtitle = item.second,
+                    status = item.third,
+                    priority = priority,
+                    dueDate = "Today",
+                    assignee = "Field Team",
+                    onToggleStatus = { onToggleStatus?.invoke(index) },
+                    onClick = { onEdit(index) }
+                )
+            }
         }
     }
 }
+
 
 @Composable
 private fun SectionsList(sections: List<Pair<String, String>>, onEdit: (Int) -> Unit) {

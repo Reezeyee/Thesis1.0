@@ -23,8 +23,8 @@ export function SelectWithOther({
   placeholder,
   otherPlaceholder = 'Type custom value...',
   className = 'space-y-2',
-  selectClassName = 'flex h-9 w-full rounded-md border border-[#4a2c2a]/20 bg-white px-3 py-1 text-sm text-[#3e2723]',
-  inputClassName = 'flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-1 text-sm text-[#3e2723] focus:border-[#2d5016] focus:ring-2 focus:ring-[#2d5016]/20 transition-all',
+  selectClassName = 'flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm text-foreground',
+  inputClassName = 'flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm text-foreground focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all',
   id,
 }: SelectWithOtherProps) {
   const normalizedOptions = useMemo<{ value: string; label: string }[]>(() => {
@@ -78,7 +78,7 @@ export function SelectWithOther({
 
   return (
     <div className={className}>
-      {label ? <label className="text-sm font-medium text-[#3e2723] block">{label}</label> : null}
+      {label ? <label className="text-sm font-medium text-foreground block">{label}</label> : null}
       <select
         id={id}
         className={selectClassName}

@@ -18,12 +18,16 @@ export interface WorkerRecord {
 export interface SmsMessageRecord {
   messageId: string;
   senderName: string;
-  senderRole: string; // "Admin" | "Worker"
+  senderRole?: string; // "Admin" | "Worker"
+  senderPhone?: string;
   recipientName: string;
-  recipientPhoneNumber: string;
+  recipientPhoneNumber?: string;
+  recipientPhone?: string;
   messageBody: string;
   timestamp: number;
-  sentViaCellularSms: boolean;
+  sentViaCellularSms?: boolean;
+  status?: string;
+  viaGateway?: string;
 }
 
 export interface AttendanceRecord {
@@ -41,6 +45,52 @@ export interface AttendanceRecord {
   timeInLocationName?: string;
   faceSnapshotBase64?: string;
   isGeofenceVerified?: boolean | null;
+  timestampMillis?: number;
+}
+
+export type ApprovalStatus = 'Pending' | 'Approved' | 'Rejected';
+
+export interface TimesheetAuditEntry {
+  actorName: string;
+  action: string;
+  remarks?: string;
+  timestamp: string;
+}
+
+export interface TimesheetCorrectionRequest {
+  correctionId: string;
+  attendanceId?: string;
+  workerName: string;
+  date: string;
+  field: 'clockIn' | 'clockOut' | 'both';
+  originalClockIn?: string;
+  originalClockOut?: string;
+  requestedClockIn?: string;
+  requestedClockOut?: string;
+  reason: string;
+  status: ApprovalStatus;
+  submittedAt: string;
+  submittedBy: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  managerRemarks?: string;
+  auditTrail: TimesheetAuditEntry[];
+}
+
+export interface LeaveRequestRecord {
+  leaveId: string;
+  workerName: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  leaveDays: number;
+  reason: string;
+  status: ApprovalStatus;
+  submittedAt: string;
+  submittedBy: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  managerRemarks?: string;
 }
 
 export interface TaskRecord {
@@ -261,6 +311,38 @@ export interface ConsumableSupplyRecord {
   unit: string;
   status: string;
   lastRestocked: string;
+  referenceStock?: number;
+  lowStockThreshold?: number;
+}
+
+export function computeLowStockThreshold(item: Partial<ConsumableSupplyRecord>): number {
+  if (typeof item.lowStockThreshold === 'number' && item.lowStockThreshold >= 0) {
+    return item.lowStockThreshold;
+  }
+  const ref = item.referenceStock && item.referenceStock > 0 ? item.referenceStock : (item.stock && item.stock > 0 ? item.stock : 30);
+  return Math.ceil(ref * 0.3);
+}
+
+export function computeSupplyStatus(
+  inputOrStock: number | Partial<ConsumableSupplyRecord>,
+  referenceStock?: number,
+  threshold?: number,
+): string {
+  if (typeof inputOrStock === 'object' && inputOrStock !== null) {
+    const stock = inputOrStock.stock ?? 0;
+    if (stock <= 0) return 'Out of Stock';
+    const thresh = computeLowStockThreshold(inputOrStock);
+    if (stock <= thresh) return 'Low Stock';
+    return 'In Stock';
+  }
+  const stock = typeof inputOrStock === 'number' ? inputOrStock : 0;
+  if (stock <= 0) return 'Out of Stock';
+  const effectiveThreshold =
+    threshold !== undefined
+      ? threshold
+      : Math.ceil((referenceStock || Math.max(stock, 30)) * 0.3);
+  if (stock <= effectiveThreshold) return 'Low Stock';
+  return 'In Stock';
 }
 
 export interface ConsumableSupplyReportRecord {
@@ -280,6 +362,8 @@ export interface ConsumableSupplyReportRecord {
 export interface AppState {
   workers: WorkerRecord[];
   attendance: AttendanceRecord[];
+  timesheetCorrections: TimesheetCorrectionRequest[];
+  leaveRequests: LeaveRequestRecord[];
   tasks: TaskRecord[];
   sections: SectionRecord[];
   farmBlocks?: SectionRecord[];
@@ -318,6 +402,8 @@ export const defaultConsumableSupplies = (): ConsumableSupplyRecord[] => [
 export const emptyAppState = (): AppState => ({
   workers: [],
   attendance: [],
+  timesheetCorrections: [],
+  leaveRequests: [],
   tasks: [],
   sections: [],
   trees: [],
@@ -354,6 +440,45 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
     sections,
     workers: raw.workers ?? base.workers,
     attendance: raw.attendance ?? base.attendance,
+    timesheetCorrections: (raw.timesheetCorrections ?? base.timesheetCorrections).map((r) => ({
+      correctionId: r.correctionId ?? '',
+      attendanceId: r.attendanceId ?? '',
+      workerName: r.workerName ?? '',
+      date: r.date ?? '',
+      field: r.field ?? 'both',
+      originalClockIn: r.originalClockIn ?? '',
+      originalClockOut: r.originalClockOut ?? '',
+      requestedClockIn: r.requestedClockIn ?? '',
+      requestedClockOut: r.requestedClockOut ?? '',
+      reason: r.reason ?? '',
+      status: r.status ?? 'Pending',
+      submittedAt: r.submittedAt ?? '',
+      submittedBy: r.submittedBy ?? '',
+      reviewedAt: r.reviewedAt ?? '',
+      reviewedBy: r.reviewedBy ?? '',
+      managerRemarks: r.managerRemarks ?? '',
+      auditTrail: (r.auditTrail ?? []).map((entry) => ({
+        actorName: entry.actorName ?? '',
+        action: entry.action ?? '',
+        remarks: entry.remarks ?? '',
+        timestamp: entry.timestamp ?? '',
+      })),
+    })),
+    leaveRequests: (raw.leaveRequests ?? base.leaveRequests).map((r) => ({
+      leaveId: r.leaveId ?? '',
+      workerName: r.workerName ?? '',
+      leaveType: r.leaveType ?? 'Vacation Leave',
+      startDate: r.startDate ?? '',
+      endDate: r.endDate ?? '',
+      leaveDays: Number(r.leaveDays) || 0,
+      reason: r.reason ?? '',
+      status: r.status ?? 'Pending',
+      submittedAt: r.submittedAt ?? '',
+      submittedBy: r.submittedBy ?? '',
+      reviewedAt: r.reviewedAt ?? '',
+      reviewedBy: r.reviewedBy ?? '',
+      managerRemarks: r.managerRemarks ?? '',
+    })),
     tasks: raw.tasks ?? base.tasks,
     trees: raw.trees ?? base.trees,
     treeRipenessScans: raw.treeRipenessScans ?? base.treeRipenessScans,
@@ -416,15 +541,23 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
       reportedBy: p.reportedBy ?? '',
     })),
     consumableSupplies:
-      raw.consumableSupplies?.map((s) => ({
-        supplyId: s.supplyId ?? crypto.randomUUID(),
-        name: s.name ?? '',
-        category: s.category ?? 'Other',
-        stock: Math.max(0, Number(s.stock) || 0),
-        unit: s.unit ?? 'units',
-        status: s.status ?? 'In Stock',
-        lastRestocked: s.lastRestocked ?? '',
-      })) ?? defaultConsumableSupplies(),
+      raw.consumableSupplies?.map((s) => {
+        const stock = Math.max(0, Number(s.stock) || 0);
+        const referenceStock = typeof s.referenceStock === 'number' ? s.referenceStock : (stock > 0 ? Math.max(stock, 30) : 30);
+        const lowStockThreshold = typeof s.lowStockThreshold === 'number' ? s.lowStockThreshold : Math.ceil(referenceStock * 0.3);
+        const status = s.status || computeSupplyStatus(stock, referenceStock, lowStockThreshold);
+        return {
+          supplyId: s.supplyId ?? crypto.randomUUID(),
+          name: s.name ?? '',
+          category: s.category ?? 'Other',
+          stock,
+          unit: s.unit ?? 'units',
+          status,
+          lastRestocked: s.lastRestocked ?? '',
+          referenceStock,
+          lowStockThreshold,
+        };
+      }) ?? defaultConsumableSupplies(),
     consumableReports: (raw.consumableReports ?? base.consumableReports).map((r) => ({
       reportId: r.reportId ?? '',
       supplyId: r.supplyId ?? '',
@@ -455,6 +588,8 @@ export function totalItemCount(state: AppState): number {
   return (
     state.workers.length +
     state.attendance.length +
+    state.timesheetCorrections.length +
+    state.leaveRequests.length +
     state.tasks.length +
     state.sections.length +
     state.trees.length +

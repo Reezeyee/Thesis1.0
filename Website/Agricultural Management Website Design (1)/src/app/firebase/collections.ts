@@ -9,6 +9,8 @@ export const COLLECTIONS = {
   PASSWORD_RESET_REQUESTS: 'password_reset_requests',
   WORKERS: 'workers',
   ATTENDANCE: 'attendance',
+  TIMESHEET_CORRECTIONS: 'timesheet_corrections',
+  LEAVE_REQUESTS: 'leave_requests',
   TASKS: 'tasks',
   FARM_SECTIONS: 'farm_sections',
   TREES: 'trees',
@@ -38,6 +40,8 @@ export const COLLECTIONS = {
 export const MIRROR_COLLECTIONS: { key: string; name: string }[] = [
   { key: 'workers', name: COLLECTIONS.WORKERS },
   { key: 'attendance', name: COLLECTIONS.ATTENDANCE },
+  { key: 'timesheetCorrections', name: COLLECTIONS.TIMESHEET_CORRECTIONS },
+  { key: 'leaveRequests', name: COLLECTIONS.LEAVE_REQUESTS },
   { key: 'tasks', name: COLLECTIONS.TASKS },
   { key: 'sections', name: COLLECTIONS.FARM_SECTIONS },
   { key: 'trees', name: COLLECTIONS.TREES },

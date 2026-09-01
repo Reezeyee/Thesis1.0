@@ -1,196 +1,177 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --font-size: 16px;
-  --background: #fdfbf7;
-  --foreground: #2d2520;
-  --card: #ffffff;
-  --card-foreground: #2d2520;
-  --popover: #ffffff;
-  --popover-foreground: #2d2520;
-  --primary: #4a2c2a;
-  --primary-foreground: #fdfbf7;
-  --secondary: #2d5016;
-  --secondary-foreground: #fdfbf7;
-  --muted: #f5f1ed;
-  --muted-foreground: #6b5d56;
-  --accent: #e8d5c4;
-  --accent-foreground: #2d2520;
-  --destructive: #d4183d;
-  --destructive-foreground: #ffffff;
-  --border: rgba(77, 44, 42, 0.1);
-  --input: transparent;
-  --input-background: #f5f1ed;
-  --switch-background: #d4c4b8;
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --ring: #6b5d56;
-  --chart-1: #4a2c2a;
-  --chart-2: #2d5016;
-  --chart-3: #8b6f47;
-  --chart-4: #d4a574;
-  --chart-5: #a0826d;
+  --font-size: 14px;
+
+  /* HSL Coffee Farm Palette — Light Mode (Porcelain & Warm Parchment) */
+  --background: 30 25% 97%;          /* #faf7f3 Soft Parchment */
+  --foreground: 20 30% 12%;          /* #241913 Deep Roasted Coffee */
+
+  --card: 0 0% 100%;                 /* #ffffff Pure White */
+  --card-foreground: 20 30% 12%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 20 30% 12%;
+
+  --primary: 20 40% 18%;             /* #402416 Dark Coffee */
+  --primary-foreground: 30 25% 97%;
+
+  --secondary: 30 20% 93%;           /* #f3ede6 Warm Secondary */
+  --secondary-foreground: 20 30% 12%;
+
+  --muted: 30 18% 94%;               /* #f4eee7 Muted */
+  --muted-foreground: 20 15% 42%;    /* #78675c Warm Muted Text */
+
+  --accent: 38 92% 50%;              /* #f59e0b Amber Gold */
+  --accent-foreground: 20 40% 10%;
+
+  --destructive: 350 89% 60%;        /* #f43f5e Cherry Berry Red */
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 25 20% 88%;              /* #e8dfd6 Soft Border */
+  --input: 25 20% 88%;
+  --input-background: 30 20% 95%;
+  --ring: 38 92% 50%;
+
+  /* Telemetry Status Colors */
+  --status-success: 160 84% 39%;     /* Fresh Leaf Emerald */
+  --status-warning: 38 92% 50%;      /* Amber Gold */
+  --status-alert: 350 89% 60%;       /* Ripe Cherry Red */
+
+  /* Chart Palettes */
+  --chart-1: 38 92% 50%;             /* Amber Gold */
+  --chart-2: 160 84% 39%;            /* Leaf Emerald */
+  --chart-3: 20 45% 35%;             /* Roasted Espresso */
+  --chart-4: 262 83% 58%;            /* Berry Purple */
+  --chart-5: 350 89% 60%;            /* Cherry Red */
+
   --radius: 0.75rem;
-  --sidebar: #4a2c2a;
-  --sidebar-foreground: #fdfbf7;
-  --sidebar-primary: #2d5016;
-  --sidebar-primary-foreground: #fdfbf7;
-  --sidebar-accent: #5d3a38;
-  --sidebar-accent-foreground: #fdfbf7;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #8b6f47;
-  --coffee-espresso: #4a2c2a;
-  --coffee-green: #2d5016;
-  --coffee-cream: #f5f1ed;
-  --coffee-brown: #8b6f47;
-  --coffee-light: #d4a574;
+
+  --sidebar: 30 25% 98%;
+  --sidebar-foreground: 20 30% 12%;
+  --sidebar-primary: 38 92% 50%;
+  --sidebar-primary-foreground: 20 40% 10%;
+  --sidebar-accent: 30 20% 93%;
+  --sidebar-accent-foreground: 20 30% 12%;
+  --sidebar-border: 25 20% 88%;
+  --sidebar-ring: 38 92% 50%;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  /* HSL Coffee Farm Palette — Dark Mode (Deep Roasted Obsidian & Glowing Amber) */
+  --background: 20 25% 4%;           /* #0a0807 Deep Dark Roasted Obsidian */
+  --foreground: 30 20% 95%;          /* #f6f3ef Crisp Warm White */
+
+  --card: 20 22% 8%;                 /* #16110e Rich Dark Mocha Card */
+  --card-foreground: 30 20% 95%;
+
+  --popover: 20 22% 8%;
+  --popover-foreground: 30 20% 95%;
+
+  --primary: 38 92% 50%;             /* #f59e0b Glowing Amber Gold */
+  --primary-foreground: 20 25% 4%;
+
+  --secondary: 20 20% 13%;           /* #281f19 Warm Secondary Card */
+  --secondary-foreground: 30 20% 95%;
+
+  --muted: 20 20% 13%;
+  --muted-foreground: 25 15% 62%;    /* #a6988f Warm Gray */
+
+  --accent: 38 92% 50%;              /* Glowing Amber Gold */
+  --accent-foreground: 20 25% 4%;
+
+  --destructive: 350 89% 60%;        /* Bright Cherry Red */
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 20 18% 16%;              /* #31261f Roasted Border */
+  --input: 20 18% 16%;
+  --input-background: 20 18% 11%;
+  --ring: 38 92% 50%;
+
+  /* Telemetry Status Colors */
+  --status-success: 160 84% 45%;     /* Glowing Leaf Emerald */
+  --status-warning: 38 92% 50%;      /* Glowing Amber */
+  --status-alert: 350 89% 60%;       /* Glowing Cherry */
+
+  /* Chart Palettes (Neon Glows for Dark Mode) */
+  --chart-1: 38 92% 50%;             /* Glowing Amber Gold */
+  --chart-2: 160 84% 45%;            /* Neon Leaf Emerald */
+  --chart-3: 25 90% 60%;             /* Terracotta Orange */
+  --chart-4: 263 70% 65%;            /* Lavender Violet */
+  --chart-5: 350 89% 60%;            /* Ripe Cherry Red */
+
+  --sidebar: 20 24% 6%;              /* #100c0a Deep Sidebar */
+  --sidebar-foreground: 30 20% 95%;
+  --sidebar-primary: 38 92% 50%;
+  --sidebar-primary-foreground: 20 25% 4%;
+  --sidebar-accent: 20 20% 13%;
+  --sidebar-accent-foreground: 30 20% 95%;
+  --sidebar-border: 20 18% 16%;
+  --sidebar-ring: 38 92% 50%;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-input-background: var(--input-background);
-  --color-switch-background: var(--switch-background);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-input-background: hsl(var(--input-background));
+  --color-ring: hsl(var(--ring));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground transition-colors duration-200 antialiased;
   }
 
-  /**
-  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
-  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
-  */
-
-  html {
-    font-size: var(--font-size);
+  /* Custom subtle scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
   }
-
-  h1 {
-    font-size: var(--text-2xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
-
-  h2 {
-    font-size: var(--text-xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+  ::-webkit-scrollbar-thumb {
+    background: rgba(160, 130, 100, 0.25);
+    border-radius: 9999px;
   }
-
-  h3 {
-    font-size: var(--text-lg);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  h4 {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  label {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  button {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  input {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-normal);
-    line-height: 1.5;
-  }
-
-  /* Recharts: keep pie slice colors from data `fill`, readable axis labels. */
-  .farm-chart-panel .recharts-pie-sector path {
-    stroke: #fff;
-    stroke-width: 2px;
-  }
-
-  .farm-chart-panel .recharts-cartesian-axis-tick text {
-    fill: #292524;
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(160, 130, 100, 0.45);
   }
 }

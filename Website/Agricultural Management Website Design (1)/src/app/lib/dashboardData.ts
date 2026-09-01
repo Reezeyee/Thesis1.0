@@ -16,8 +16,9 @@ import {
   totalIncome,
 } from './farmFinance';
 import { accumulateMonthChartRows, padMonthChartRows } from './monthChartBuckets';
+import { formatCurrency } from './currencyFormat';
 
-const peso = (n: number) => `₱${n.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
+const peso = (n: number) => formatCurrency(n);
 
 function formatActivityDate(raw: string): string {
   const trimmed = (raw ?? '').trim();
@@ -48,7 +49,7 @@ export function buildDashboardStats(state: AppState) {
     { label: 'Active Workers', value: String(state.workers.length), change: 'synced', trend: 'up' as const, icon: 'Users', color: '#8b6f47' },
     { label: 'Equipment Status', value: `${activeEquipment}/${state.equipment.length}`, change: 'live', trend: 'up' as const, icon: 'Wrench', color: '#d4a574' },
     { label: 'Coffee Fields', value: String(state.coffeeFields.length), change: 'fields', trend: 'up' as const, icon: 'Package', color: '#2d5016' },
-    { label: 'AI Cherry Grades', value: String(state.cherryGrades.length), change: 'scans', trend: 'up' as const, icon: 'Coffee', color: '#8b6f47' },
+    { label: 'Cherry Grades', value: String(state.cherryGrades.length), change: 'scans', trend: 'up' as const, icon: 'Coffee', color: '#8b6f47' },
   ];
 }
 
@@ -101,27 +102,73 @@ export function hasClassificationScans(state: AppState): boolean {
 }
 
 export function buildRecentActivity(state: AppState) {
-  const items: { action: string; details: string; time: string; type: string }[] = [];
-  state.sales.slice(-3).forEach((s) => {
+  const items: { action: string; details: string; time: string; type: string; timestamp: number }[] = [];
+
+  // Recent cherry classification scans from mobile
+  state.cherryGrades.forEach((g) => {
+    const timeMillis = g.savedAtMillis ?? 0;
+    const worker = g.scannedByWorkerName || 'Mobile worker';
+    items.push({
+      action: 'Cherry Scan',
+      details: `${g.grade || 'Graded'} (${g.species || 'Coffee'}) by ${worker}`,
+      time: timeMillis > 0 ? formatActivityDate(new Date(timeMillis).toISOString()) : 'Recent',
+      type: 'success',
+      timestamp: timeMillis,
+    });
+  });
+
+  // Recent attendance
+  state.attendance.forEach((a) => {
+    const timeMillis = a.timestampMillis || (a.date ? Date.parse(a.date) : 0);
+    items.push({
+      action: 'Worker Attendance',
+      details: `${a.workerName || 'Staff'} clocked in at ${a.clockIn || '08:00 AM'}`,
+      time: a.date ? formatActivityDate(a.date) : 'Today',
+      type: 'info',
+      timestamp: timeMillis,
+    });
+  });
+
+  // Recent sales
+  state.sales.forEach((s) => {
+    const timeMillis = s.date ? Date.parse(s.date) : 0;
     items.push({
       action: 'Sale recorded',
-      details: `${s.buyer} — ${peso(saleLineTotal(s))}`,
+      details: `${s.buyer} — ${formatCurrency(saleLineTotal(s))}`,
       time: formatActivityDate(s.date),
       type: 'success',
+      timestamp: timeMillis,
     });
   });
-  state.expenses.slice(-2).forEach((e) => {
+
+  // Recent expenses
+  state.expenses.forEach((e) => {
+    const timeMillis = e.date ? Date.parse(e.date) : 0;
     items.push({
       action: 'Expense',
-      details: `${e.category}: ${peso(e.amount)}`,
+      details: `${e.category}: ${formatCurrency(e.amount)}`,
       time: formatActivityDate(e.date ?? ''),
       type: 'warning',
+      timestamp: timeMillis,
     });
   });
-  state.tasks.slice(-2).forEach((t) => {
-    items.push({ action: t.title, details: t.details, time: t.status, type: 'info' });
+
+  // Recent equipment condition reports
+  (state.equipmentReports ?? []).forEach((r) => {
+    const timeMillis = r.reportedAt ? Date.parse(r.reportedAt) : 0;
+    items.push({
+      action: r.isWrecked ? 'Equipment Issue' : 'Equipment Report',
+      details: `${r.equipmentName}: ${r.notes || 'Condition report'} (${r.reportedBy || 'Staff'})`,
+      time: formatActivityDate(r.reportedAt),
+      type: r.isWrecked ? 'warning' : 'info',
+      timestamp: timeMillis,
+    });
   });
-  return items.slice(0, 6);
+
+  return items
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 8)
+    .map(({ action, details, time, type }) => ({ action, details, time, type }));
 }
 
 /** Sales and net profit by month from Firebase records. */

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useFarmData } from '../store/FarmDataProvider';
 import { saleLineTotal, hourlyRateForWorkerRole } from '../lib/farmFinance';
+import { formatCurrency } from '../lib/currencyFormat';
 import { runSave, showSaveError } from '../lib/saveFeedback';
 import {
   buildBuyerSalesDataFromBuyers,
@@ -128,6 +129,13 @@ function dateLabel(d = new Date()): string {
 function parseOptionalCoord(raw: string): number | undefined {
   const n = Number.parseFloat(raw.trim());
   return Number.isFinite(n) ? n : undefined;
+}
+
+function parsePositivePesoAmount(raw: string): number | null {
+  const normalized = raw.replace(/[₱,\s]/g, '');
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return null;
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function clampToLuzonBBox(lat: number, lng: number): { lat: number; lng: number } | null {
@@ -362,11 +370,12 @@ export function ProfitManagement() {
   const buyerSalesData = useMemo(() => buildBuyerSalesDataFromBuyers(buyers), [buyers]);
 
   const addExpense = async () => {
-    const amount = Math.max(0, Math.round(Number.parseFloat(expenseForm.amount.replace(/,/g, '')) || 0));
-    if (!expenseForm.description.trim() || amount <= 0) {
+    const parsedAmount = parsePositivePesoAmount(expenseForm.amount);
+    if (!expenseForm.description.trim() || parsedAmount === null) {
       showSaveError('Enter a description and amount greater than zero.');
       return;
     }
+    const amount = Math.round(parsedAmount);
     const ok = await runSave('Expense', () =>
       updateState((prev) => ({
         ...prev,
@@ -404,9 +413,16 @@ export function ProfitManagement() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1>Profit Management</h1>
-          <p className="text-muted-foreground">
-            Typical coffee farm cash flow—parchment, green, and cherry sales vs payroll (monthly, paid every 1st) and other costs (~25–30% net margin in good months).
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
+              Profit & Finance Management
+            </h1>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live Ledger
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            Coffee sales deposits, operating input expenses, worker payroll disbursements, and net profit ledger.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
@@ -430,7 +446,7 @@ export function ProfitManagement() {
       />
 
       <Dialog open={addExpenseOpen} onOpenChange={setAddExpenseOpen}>
-        <DialogContent className="max-w-lg border-[#4a2c2a]/20 bg-[#fefdfb]">
+        <DialogContent className="max-w-lg border-border/80 bg-card text-card-foreground">
           <DialogHeader>
             <DialogTitle>Record expense</DialogTitle>
             <DialogDescription>Choose category (transport, marketing, warehousing, regulatory, …), describe the cost, enter amount.</DialogDescription>
@@ -442,7 +458,7 @@ export function ProfitManagement() {
               value={expenseForm.category}
               onChange={(val) => setExpenseForm((f) => ({ ...f, category: val }))}
               options={EXPENSE_CATEGORY_OPTIONS}
-              selectClassName="flex h-9 w-full rounded-md border border-[#4a2c2a]/25 bg-white px-3 py-2 text-sm text-[#3e2723] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              selectClassName="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               otherPlaceholder="Type custom expense category..."
             />
             <div className="space-y-2">
@@ -452,7 +468,7 @@ export function ProfitManagement() {
                 value={expenseForm.description}
                 onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))}
                 placeholder="e.g., Truck freight to Dumaguete"
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -464,7 +480,7 @@ export function ProfitManagement() {
                 value={expenseForm.amount}
                 onChange={(e) => setExpenseForm((f) => ({ ...f, amount: e.target.value }))}
                 placeholder="0"
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
             <div className="space-y-2">
@@ -474,12 +490,12 @@ export function ProfitManagement() {
                 value={expenseForm.date}
                 onChange={(e) => setExpenseForm((f) => ({ ...f, date: e.target.value }))}
                 placeholder={dateLabel()}
-                className="bg-white border-[#4a2c2a]/20"
+                className="bg-background/80 border-border/80"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setAddExpenseOpen(false)} className="border-[#4a2c2a]/30">
+            <Button type="button" variant="outline" onClick={() => setAddExpenseOpen(false)} className="border-border/80">
               Cancel
             </Button>
             <Button
@@ -488,7 +504,7 @@ export function ProfitManagement() {
               disabled={
                 saving ||
                 !expenseForm.description.trim() ||
-                Math.round(Number.parseFloat(expenseForm.amount.replace(/,/g, '')) || 0) <= 0
+                parsePositivePesoAmount(expenseForm.amount) === null
               }
               className="bg-[#2d5016] hover:bg-[#234010] text-white"
             >
@@ -499,50 +515,50 @@ export function ProfitManagement() {
       </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#2d5016]/20 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-[#2d5016]" />
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+              <TrendingUp className="w-5 h-5 text-emerald-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Income</p>
-              <p className="text-2xl">₱{totalIncome.toLocaleString()}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Income</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{formatCurrency(totalIncome)}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#d4a574]/20 flex items-center justify-center">
-              <TrendingDown className="w-5 h-5 text-[#d4a574]" />
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center">
+              <TrendingDown className="w-5 h-5 text-amber-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Expenses</p>
-              <p className="text-2xl">₱{totalExpenses.toLocaleString()}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Expenses</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{formatCurrency(totalExpenses)}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-[#4a2c2a]/20 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-[#4a2c2a]" />
+            <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
+              <DollarSign className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Net Profit</p>
-              <p className="text-2xl text-[#2d5016]">₱{netProfit.toLocaleString()}</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Net Profit</p>
+              <p className="text-2xl font-bold font-heading text-emerald-500 font-mono">{formatCurrency(netProfit)}</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+      <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between mb-4">
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-3 mb-1">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-lg bg-[#4a2c2a]/15 flex items-center justify-center">
-                  <Banknote className="w-5 h-5 text-[#4a2c2a]" />
+                  <Banknote className="w-5 h-5 text-foreground" />
                 </div>
                 <h3>Worker payroll</h3>
               </div>
@@ -564,19 +580,19 @@ export function ProfitManagement() {
           </div>
           <div className="flex flex-col sm:flex-row gap-3 shrink-0 items-stretch sm:items-start">
             <div className="rounded-xl border border-[#2d5016]/25 bg-[#2d5016]/8 px-4 py-3 text-sm min-w-[210px]">
-              <p className="font-medium text-[#3e2723] mb-2">Schedule</p>
+              <p className="font-medium text-foreground mb-2">Schedule</p>
               <div className="space-y-1.5 text-xs text-muted-foreground">
                 <p className="flex items-start gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-[#2d5016] shrink-0 mt-0.5" />
                   <span>
-                    <span className="font-medium text-[#5d4037]">Next due: </span>
+                    <span className="font-medium text-muted-foreground">Next due: </span>
                     {currentDue ? `${currentDue.paycheckDateLabel} (${currentDue.coverPeriodLabel})` : '—'}
                   </span>
                 </p>
                 <p className="flex items-start gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-[#2d5016] shrink-0 mt-0.5" />
                   <span>
-                    <span className="font-medium text-[#5d4037]">Last paid: </span>
+                    <span className="font-medium text-muted-foreground">Last paid: </span>
                     {payrollHistory[0]
                       ? `${payrollHistory[0].paycheckDateLabel} · ${payrollHistory[0].coverPeriodLabel}`
                       : '—'}
@@ -588,7 +604,7 @@ export function ProfitManagement() {
         </div>
 
         <div className="mb-4">
-          <p className="text-sm font-medium text-[#5d4037] mb-3">Pay roster</p>
+          <p className="text-sm font-medium text-muted-foreground mb-3">Pay roster</p>
           <div className="max-h-[380px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-[#4a2c2a]/25">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {payrollRoster.map((row) => {
@@ -598,12 +614,12 @@ export function ProfitManagement() {
                   <div
                     key={row.id}
                     className={`rounded-xl border p-4 flex flex-col gap-3 transition-colors ${
-                      paid ? 'border-[#2d5016]/45 bg-[#2d5016]/10' : 'border-[#4a2c2a]/12 bg-[#fefdfb]'
+                      paid ? 'border-[#2d5016]/45 bg-[#2d5016]/10' : 'border-border/60 bg-card'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-medium text-[#3e2723]">{row.name}</p>
+                        <p className="font-medium text-foreground">{row.name}</p>
                         <p className="text-xs text-muted-foreground mt-1 leading-snug">{row.role}</p>
                         {row.calculationType === 'attendance' ? (
                           <p className="text-xs text-[#2d5016] font-medium mt-1">
@@ -630,8 +646,8 @@ export function ProfitManagement() {
                         </span>
                       ) : null}
                     </div>
-                    <div className="flex flex-wrap items-end justify-between gap-2 pt-2 border-t border-[#4a2c2a]/10 mt-auto">
-                      <p className="text-lg tabular-nums font-semibold text-[#4a2c2a]">₱{row.monthlyGross.toLocaleString()}</p>
+                    <div className="flex flex-wrap items-end justify-between gap-2 pt-2 border-t border-border/60 mt-auto">
+                      <p className="text-lg tabular-nums font-semibold text-foreground">{formatCurrency(row.monthlyGross)}</p>
                       {currentDue && !paid && row.status !== 'inactive' ? (
                         <Button
                           type="button"
@@ -646,12 +662,12 @@ export function ProfitManagement() {
                     {paid ? (
                       <div className="text-xs text-muted-foreground space-y-0.5">
                         <p>
-                          Receipt <span className="font-mono font-medium text-[#5d4037]">{slip.slipRef}</span>
+                          Receipt <span className="font-mono font-medium text-muted-foreground">{slip.slipRef}</span>
                         </p>
                         {slip.paymentMethod ? (
                           <p>
                             Paid via{' '}
-                            <span className="font-medium text-[#3e2723]">
+                            <span className="font-medium text-foreground">
                               {payrollPaymentMethodLabel(slip.paymentMethod)}
                             </span>
                           </p>
@@ -672,17 +688,17 @@ export function ProfitManagement() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-[#4a2c2a]/15 bg-[#f5f1ed]/90 px-4 py-3 text-sm font-medium mb-6">
-          <span className="text-[#5d4037]">Typical roster total (this period)</span>
-          <span className="tabular-nums text-[#2d5016] text-lg">₱{monthlyPayrollTotal.toLocaleString()}</span>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-border/70 bg-muted/70 px-4 py-3 text-sm font-medium mb-6">
+          <span className="text-muted-foreground">Typical roster total (this period)</span>
+          <span className="tabular-nums text-[#2d5016] text-lg font-bold">{formatCurrency(monthlyPayrollTotal)}</span>
         </div>
 
-        <div className="border-t border-[#4a2c2a]/10 pt-6">
+        <div className="border-t border-border/60 pt-6">
           <h4 className="text-base font-medium mb-1">Pay history & payment transcripts</h4>
           <p className="text-sm text-muted-foreground mb-4">
-            Each worker pays out separately (<span className="font-medium text-[#5d4037]">Pay now</span>
-            ); their card shows <span className="font-medium text-[#5d4037]">Paid</span> with a wage receipt code. After the{' '}
-            <span className="font-medium text-[#5d4037]">last</span> worker on the roster is Paid, this run archives below and
+            Each worker pays out separately (<span className="font-medium text-muted-foreground">Pay now</span>
+            ); their card shows <span className="font-medium text-muted-foreground">Paid</span> with a wage receipt code. After the{' '}
+            <span className="font-medium text-muted-foreground">last</span> worker on the roster is Paid, this run archives below and
             all wage rows are already listed in Transaction history as individual Payroll &amp; wages lines plus one combined
             transcript per period.
           </p>
@@ -693,7 +709,7 @@ export function ProfitManagement() {
                 <div
                   key={pay.id}
                   className={`rounded-xl border transition-colors ${
-                    open ? 'border-[#2d5016]/40 bg-[#2d5016]/6' : 'border-[#4a2c2a]/12 bg-[#fefdfb]'
+                    open ? 'border-[#2d5016]/40 bg-[#2d5016]/6' : 'border-border/60 bg-card'
                   }`}
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4">
@@ -704,21 +720,21 @@ export function ProfitManagement() {
                       <div>
                         <div className="flex flex-wrap items-center gap-2 mb-0.5">
                           <span className="text-xs font-semibold uppercase tracking-wide text-[#2d5016]">Paid</span>
-                          <span className="text-sm font-medium text-[#3e2723]">{pay.coverPeriodLabel} wages</span>
+                          <span className="text-sm font-medium text-foreground">{pay.coverPeriodLabel} wages</span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Paycheck <span className="font-medium text-[#5d4037]">{pay.paycheckDateLabel}</span> · Recorded{' '}
-                          <span className="font-medium text-[#5d4037]">{pay.recordedAtLabel}</span> · Ref{' '}
-                          <span className="font-mono text-[#5d4037]">{pay.referenceNumber}</span>
+                          Paycheck <span className="font-medium text-muted-foreground">{pay.paycheckDateLabel}</span> · Recorded{' '}
+                          <span className="font-medium text-muted-foreground">{pay.recordedAtLabel}</span> · Ref{' '}
+                          <span className="font-mono text-muted-foreground">{pay.referenceNumber}</span>
                         </p>
-                        <p className="text-sm font-medium text-[#4a2c2a] mt-2 tabular-nums">₱{pay.total.toLocaleString()} total net to roster</p>
+                        <p className="text-sm font-medium text-foreground mt-2 tabular-nums">{formatCurrency(pay.total)} total net to roster</p>
                       </div>
                     </div>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="border-[#4a2c2a]/25 shrink-0 self-start sm:self-center"
+                      className="border-border/80 shrink-0 self-start sm:self-center"
                       onClick={() => setExpandedPayId((id) => (id === pay.id ? null : pay.id))}
                     >
                       {open ? 'Hide transcript' : 'View transcript'}
@@ -726,10 +742,10 @@ export function ProfitManagement() {
                   </div>
                   {open ? (
                     <div className="px-4 pb-4 pt-0 space-y-3">
-                      <div className="rounded-lg border border-[#4a2c2a]/12 overflow-hidden bg-white/90">
+                      <div className="rounded-lg border border-border/60 overflow-hidden bg-card/95">
                         <table className="w-full text-xs sm:text-sm">
                           <thead>
-                            <tr className="bg-[#f5f1ed] text-left border-b border-[#4a2c2a]/10">
+                            <tr className="bg-muted/40 text-left border-b border-border/60">
                               <th className="py-2 px-3 font-medium">Worker</th>
                               <th className="py-2 px-3 font-medium hidden sm:table-cell">Role</th>
                               <th className="py-2 px-3 font-medium text-right">Gross (₱)</th>
@@ -739,26 +755,26 @@ export function ProfitManagement() {
                           </thead>
                           <tbody>
                             {pay.transcriptLines.map((line) => (
-                              <tr key={line.workerId} className="border-b border-[#4a2c2a]/8 last:border-0">
+                              <tr key={line.workerId} className="border-b border-border/40 last:border-0">
                                 <td className="py-2 px-3 font-medium">{line.name}</td>
                                 <td className="py-2 px-3 text-muted-foreground hidden sm:table-cell">{line.role}</td>
-                                <td className="py-2 px-3 text-right tabular-nums">{line.amount.toLocaleString()}</td>
+                                <td className="py-2 px-3 text-right tabular-nums">{formatCurrency(line.amount, false)}</td>
                                 <td className="py-2 px-3 text-muted-foreground hidden md:table-cell text-xs">
                                   {line.paidAtLabel ?? '—'}
                                 </td>
-                                <td className="py-2 px-3 font-mono text-xs text-[#5d4037] hidden lg:table-cell">
+                                <td className="py-2 px-3 font-mono text-xs text-muted-foreground hidden lg:table-cell">
                                   {line.slipRef ?? '—'}
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                           <tfoot>
-                            <tr className="bg-[#f5f1ed] font-medium border-t border-[#4a2c2a]/10">
+                            <tr className="bg-muted/40 font-medium border-t border-border/60">
                               <td className="py-2 px-3" colSpan={2}>
                                 Period total (all workers)
                               </td>
-                              <td className="py-2 px-3 text-right tabular-nums text-[#2d5016]">
-                                ₱{pay.total.toLocaleString()}
+                              <td className="py-2 px-3 text-right tabular-nums text-[#2d5016] font-bold">
+                                {formatCurrency(pay.total)}
                               </td>
                               <td className="py-2 px-3 hidden md:table-cell text-xs text-muted-foreground" colSpan={2}>
                                 Completed pay run transcript
@@ -819,13 +835,13 @@ export function ProfitManagement() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <div className="flex h-[560px] flex-col bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+          <div className="flex h-[560px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
             <h3 className="mb-4">Transaction History</h3>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-[#8b6f47]/35 scrollbar-track-transparent">
               {transactions.map((transaction) => (
                 <div
                   key={transaction.id}
-                  className="bg-[#f5f1ed] rounded-xl p-4 border border-[#4a2c2a]/10 hover:border-[#4a2c2a]/30 transition-all"
+                  className="bg-muted/40 rounded-xl p-4 border border-border/60 hover:border-border/80 transition-all"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3 flex-1">
@@ -858,7 +874,7 @@ export function ProfitManagement() {
                           transaction.type === 'income' ? 'text-[#2d5016]' : 'text-[#d4a574]'
                         }`}
                       >
-                        {transaction.type === 'income' ? '+' : '-'}₱{transaction.amount.toLocaleString()}
+                        {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
                       </p>
                     </div>
                   </div>
@@ -884,32 +900,32 @@ export function ProfitManagement() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+          <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
             <h3 className="mb-4">Financial Summary</h3>
             <div className="space-y-3">
-              <div className="bg-[#f5f1ed] rounded-lg p-3">
+              <div className="bg-muted/40 rounded-lg p-3">
                 <p className="text-xs text-muted-foreground mb-1">Monthly payroll (roster)</p>
-                <p className="text-2xl text-[#4a2c2a]">₱{monthlyPayrollTotal.toLocaleString()}</p>
+                <p className="text-2xl text-foreground font-bold">{formatCurrency(monthlyPayrollTotal)}</p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Payday every <span className="font-medium text-[#5d4037]">1st</span>; next paycheck{' '}
-                  <span className="font-medium text-[#5d4037]">
+                  Payday every <span className="font-medium text-muted-foreground">1st</span>; next paycheck{' '}
+                  <span className="font-medium text-muted-foreground">
                     {currentDue ? currentDue.paycheckDateLabel : '—'}
                   </span>
                   {currentDue ? ` (${currentDue.coverPeriodLabel})` : ''}
                 </p>
               </div>
-              <div className="bg-[#f5f1ed] rounded-lg p-3">
+              <div className="bg-muted/40 rounded-lg p-3">
                 <p className="text-xs text-muted-foreground mb-1">Profit Margin</p>
                 <p className="text-2xl text-[#2d5016]">
                   {totalIncome > 0 ? Math.round((netProfit / totalIncome) * 100) : 0}
                   {'%'}
                 </p>
               </div>
-              <div className="bg-[#f5f1ed] rounded-lg p-3">
+              <div className="bg-muted/40 rounded-lg p-3">
                 <p className="text-xs text-muted-foreground mb-1">Avg Transaction</p>
-                <p className="text-2xl">₱{Math.round(totalIncome / (incomeCount || 1)).toLocaleString()}</p>
+                <p className="text-2xl font-bold">{formatCurrency(totalIncome / (incomeCount || 1))}</p>
               </div>
-              <div className="bg-[#f5f1ed] rounded-lg p-3">
+              <div className="bg-muted/40 rounded-lg p-3">
                 <p className="text-xs text-muted-foreground mb-1">Total Buyers</p>
                 <p className="text-2xl">{buyers.length}</p>
               </div>

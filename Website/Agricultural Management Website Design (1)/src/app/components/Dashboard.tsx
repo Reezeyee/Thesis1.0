@@ -80,7 +80,7 @@ export function Dashboard() {
           return (
           <div
             key={index}
-            className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm hover:shadow-md transition-shadow"
+            className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -194,11 +194,11 @@ export function Dashboard() {
           <FarmHarvestBarChart data={productionData} />
         </ChartPanel>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <h3 className="mb-4">Recent Activity</h3>
           <div className="space-y-3 max-h-[280px] overflow-y-auto">
             {recentActivity.map((activity, idx) => (
-              <div key={idx} className="flex gap-3 pb-3 border-b border-[#4a2c2a]/10 last:border-0">
+              <div key={idx} className="flex gap-3 pb-3 border-b border-border/60 last:border-0">
                 <div className={`w-2 h-2 rounded-full mt-2 ${
                   activity.type === 'success' ? 'bg-[#2d5016]' :
                   activity.type === 'warning' ? 'bg-[#d4a574]' : 'bg-[#8b6f47]'
@@ -214,11 +214,11 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-[#4a2c2a]/10 shadow-sm">
+      <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
         <h3 className="mb-4">Top Buyers</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {topBuyers.map((buyer, idx) => (
-            <div key={idx} className="bg-[#f5f1ed] rounded-xl p-4 border border-[#4a2c2a]/10">
+            <div key={idx} className="bg-muted/40 rounded-xl p-4 border border-border/60">
               <div className="flex items-start justify-between mb-3">
                 <div className="w-10 h-10 rounded-lg bg-[#4a2c2a] flex items-center justify-center">
                   <ShoppingCart className="w-5 h-5 text-white" />

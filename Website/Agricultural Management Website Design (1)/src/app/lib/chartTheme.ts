@@ -250,7 +250,8 @@ export function monthLabelFromDate(date: string | null | undefined): string {
 }
 
 export function pesoFormatter(value: number): string {
-  return `₱${value.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
+  if (!Number.isFinite(value)) return '₱0.00';
+  return `₱${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function kgFormatter(value: number): string {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Bell, CheckCircle2, ChevronRight, RefreshCw, Wrench, X } from 'lucide-react';
 import { useFarmData } from '../store/FarmDataProvider';
+import { computeLowStockThreshold } from '../types/appState';
 import type { AppModuleId } from '../App';
 
 export interface PendingReportItem {
@@ -125,6 +126,26 @@ export function usePendingReports() {
       }
     });
 
+    // 6. Low-stock inventory items
+    (state.consumableSupplies ?? []).forEach((s, idx) => {
+      const threshold = computeLowStockThreshold(s);
+      if (s.stock <= threshold) {
+        const rawId = s.supplyId || '';
+        const id = `low-stock-${rawId || idx}`;
+        list.push({
+          id,
+          type: 'supply',
+          title: `Low Stock Alert: ${s.name}`,
+          subtitle: s.stock === 0 ? 'Status: Out of Stock' : `Remaining: ${s.stock} ${s.unit} (Threshold: ${threshold})`,
+          details: `Consumable item "${s.name}" is low on stock (${s.stock} ${s.unit} remaining; 30% low-stock threshold is ${threshold} ${s.unit}). Restocking required.`,
+          reportedBy: 'Inventory Monitor',
+          reportedAt: s.lastRestocked || 'Recent',
+          timestamp: Date.now() - idx * 1000,
+          rawReportId: rawId,
+        });
+      }
+    });
+
     return list.sort((a, b) => b.timestamp - a.timestamp);
   }, [
     state.irrigationDamageReports,
@@ -132,6 +153,7 @@ export function usePendingReports() {
     state.consumableReports,
     state.pestControlLogs,
     state.harvestReadinessReports,
+    state.consumableSupplies,
   ]);
 
   return pendingList;
@@ -235,7 +257,7 @@ export function GlobalNotificationBanner({
 
   return (
     <div className="fixed top-6 right-6 z-50 max-w-md w-full animate-in slide-in-from-top-6 fade-in duration-300 pointer-events-auto">
-      <div className="bg-[#fdfbf7]/95 backdrop-blur-md border-2 border-[#d4183d]/40 rounded-2xl p-4 shadow-2xl ring-4 ring-[#d4183d]/15 relative overflow-hidden">
+      <div className="bg-card/95 backdrop-blur-md border-2 border-[#d4183d]/40 rounded-2xl p-4 shadow-2xl ring-4 ring-[#d4183d]/15 relative overflow-hidden">
         <div className="absolute -top-10 -right-10 w-28 h-28 bg-[#d4183d]/15 rounded-full blur-xl pointer-events-none animate-pulse" />
 
         <div className="flex items-start justify-between gap-3">
@@ -249,7 +271,7 @@ export function GlobalNotificationBanner({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h4 className="text-xs font-black text-[#3e2723] uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
+                <h4 className="text-xs font-black text-foreground uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
                   Worker Problem Reported!
                 </h4>
                 <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#d4183d] text-white uppercase animate-pulse">
@@ -257,7 +279,7 @@ export function GlobalNotificationBanner({
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5 font-medium">
-                <strong className="text-[#3e2723] font-bold">{latestPendingReport.title}</strong>
+                <strong className="text-foreground font-bold">{latestPendingReport.title}</strong>
                 {latestPendingReport.subtitle ? ` (${latestPendingReport.subtitle})` : ''}
               </p>
             </div>
@@ -275,11 +297,11 @@ export function GlobalNotificationBanner({
         </div>
 
         <div
-          className="mt-3 bg-[#f5f1ed] rounded-xl p-3 border border-[#4a2c2a]/10 text-xs text-[#3e2723] cursor-pointer hover:bg-[#eae3dc] transition-colors"
+          className="mt-3 bg-muted/40 rounded-xl p-3 border border-border/60 text-xs text-foreground cursor-pointer hover:bg-[#eae3dc] transition-colors"
           onClick={() => handleNavigateToReport(latestPendingReport)}
         >
-          <p className="font-semibold text-[#4a2c2a]/80 mb-1 text-[10px]">
-            Reported by: <span className="text-[#3e2723] font-bold">{latestPendingReport.reportedBy || 'Worker'}</span> • {latestPendingReport.reportedAt || 'Just now'}
+          <p className="font-semibold text-foreground/80 mb-1 text-[10px]">
+            Reported by: <span className="text-foreground font-bold">{latestPendingReport.reportedBy || 'Worker'}</span> • {latestPendingReport.reportedAt || 'Just now'}
           </p>
           <p className="text-xs font-medium text-[#2d2520] italic">
             "{latestPendingReport.details || 'No details provided'}"
@@ -297,7 +319,7 @@ export function GlobalNotificationBanner({
           <button
             type="button"
             onClick={() => dismissNotification(latestPendingReport.id)}
-            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-[#4a2c2a]/20 text-[#4a2c2a] hover:bg-[#4a2c2a]/10 transition-colors"
+            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-border/80 text-foreground hover:bg-[#4a2c2a]/10 transition-colors"
           >
             Mark as Read
           </button>
@@ -394,8 +416,8 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
       {/* Slide-out Drawer */}
-      <div className="relative w-full max-w-md bg-[#fdfbf7] h-full shadow-2xl flex flex-col border-l border-[#4a2c2a]/10 animate-in slide-in-from-right duration-300">
-        <div className="p-5 border-b border-[#4a2c2a]/10 bg-[#4a2c2a] text-[#fdfbf7] flex items-center justify-between">
+      <div className="relative w-full max-w-md bg-card h-full shadow-2xl flex flex-col border-l border-border/60 animate-in slide-in-from-right duration-300">
+        <div className="p-5 border-b border-border/60 bg-[#4a2c2a] text-[#fdfbf7] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#2d5016] flex items-center justify-center text-white">
               <Bell className="w-5 h-5" />
@@ -422,14 +444,14 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
               <div className="w-14 h-14 rounded-2xl bg-[#2d5016]/10 text-[#2d5016] mx-auto flex items-center justify-center">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
-              <h3 className="font-bold text-[#3e2723]">All caught up!</h3>
+              <h3 className="font-bold text-foreground">All caught up!</h3>
               <p className="text-xs text-muted-foreground max-w-xs mx-auto">
                 There are no pending worker reports requiring admin attention right now.
               </p>
               <button
                 type="button"
                 onClick={handleClearDismissed}
-                className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-[#f5f1ed] text-[#3e2723] hover:bg-[#eae3dc] border border-[#4a2c2a]/15 transition-all"
+                className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-muted/40 text-foreground hover:bg-[#eae3dc] border border-border/70 transition-all"
               >
                 <RefreshCw className="w-3.5 h-3.5" /> Reset Dismissed History
               </button>
@@ -442,7 +464,7 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
                   : item.type === 'equipment'
                   ? 'bg-[#8b6f47] text-white'
                   : item.type === 'supply'
-                  ? 'bg-[#d4a574] text-[#3e2723]'
+                  ? 'bg-[#d4a574] text-foreground'
                   : item.type === 'pest'
                   ? 'bg-[#b01230] text-white'
                   : 'bg-[#2d5016] text-white';
@@ -450,27 +472,27 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
               return (
                 <div
                   key={item.id}
-                  className="bg-white rounded-2xl p-4 border border-[#4a2c2a]/10 shadow-sm hover:border-[#4a2c2a]/30 transition-all space-y-2"
+                  className="bg-background/80 rounded-2xl p-4 border border-border/60 shadow-sm hover:border-border/80 transition-all space-y-2"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${badgeClass}`}>
                         {item.type}
                       </span>
-                      <h4 className="font-bold text-sm text-[#3e2723] mt-1">{item.title}</h4>
+                      <h4 className="font-bold text-sm text-foreground mt-1">{item.title}</h4>
                       <p className="text-xs font-semibold text-[#2d5016]">{item.subtitle}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleNavigate(item)}
-                      className="p-1.5 rounded-lg bg-[#f5f1ed] text-[#3e2723] hover:bg-[#3e2723] hover:text-white transition-colors"
+                      className="p-1.5 rounded-lg bg-muted/40 text-foreground hover:bg-[#3e2723] hover:text-white transition-colors"
                       title="View on page"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <p className="text-xs text-[#2d2520] bg-[#f5f1ed] p-2.5 rounded-xl border border-[#4a2c2a]/5 italic">
+                  <p className="text-xs text-[#2d2520] bg-muted/40 p-2.5 rounded-xl border border-border/40 italic">
                     "{item.details}"
                   </p>
 
@@ -503,11 +525,11 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
         </div>
 
         {pendingReports.length > 0 ? (
-          <div className="p-4 border-t border-[#4a2c2a]/10 bg-[#f5f1ed] text-center">
+          <div className="p-4 border-t border-border/60 bg-muted/40 text-center">
             <button
               type="button"
               onClick={handleClearDismissed}
-              className="text-xs font-semibold text-[#5d4037] hover:text-[#3e2723] inline-flex items-center gap-1.5"
+              className="text-xs font-semibold text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Restore Previously Dismissed Popups
             </button>
