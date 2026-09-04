@@ -27,6 +27,7 @@ import {
   Check,
   XCircle,
   FileText,
+  Camera,
 } from 'lucide-react';
 import { SelectWithOther } from './ui/SelectWithOther';
 import { CoffeeFieldLandscapeMap } from './CoffeeFieldLandscapeMap';
@@ -254,10 +255,37 @@ export function FarmManagement() {
   }, [state.attendance, attendanceSearchQuery, attendanceSortOrder]);
 
   const recentTasks = state.tasks.slice(0, 8);
-  const harvestReadinessReports = useMemo(
-    () => [...state.harvestReadinessReports].sort((a, b) => Date.parse(b.reportedAt || '') - Date.parse(a.reportedAt || '')),
-    [state.harvestReadinessReports],
-  );
+  const [harvestSearchQuery, setHarvestSearchQuery] = useState('');
+  const [harvestStatusFilter, setHarvestStatusFilter] = useState<'All' | 'Pending Review' | 'Confirmed' | 'Rejected'>('All');
+
+  const harvestReadinessReports = useMemo(() => {
+    let list = [...(state.harvestReadinessReports || [])].sort((a, b) => {
+      const timeB = b.timestampMillis || Date.parse(`${b.date} ${b.time}`) || Date.parse(b.reportedAt || '') || 0;
+      const timeA = a.timestampMillis || Date.parse(`${a.date} ${a.time}`) || Date.parse(a.reportedAt || '') || 0;
+      return timeB - timeA;
+    });
+
+    if (harvestStatusFilter !== 'All') {
+      list = list.filter((r) => {
+        if (harvestStatusFilter === 'Confirmed') return r.status === 'Confirmed' || r.status === 'Approved';
+        if (harvestStatusFilter === 'Rejected') return r.status === 'Rejected';
+        return r.status === 'Pending Review' || (!r.status?.includes('Confirmed') && !r.status?.includes('Approved') && !r.status?.includes('Rejected'));
+      });
+    }
+
+    if (harvestSearchQuery.trim()) {
+      const q = harvestSearchQuery.toLowerCase();
+      list = list.filter((r) =>
+        (r.workerName || r.reportedBy || '').toLowerCase().includes(q) ||
+        (r.section || r.zone || '').toLowerCase().includes(q) ||
+        (r.readinessStatus || '').toLowerCase().includes(q) ||
+        (r.reportId || '').toLowerCase().includes(q) ||
+        (r.notes || '').toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [state.harvestReadinessReports, harvestStatusFilter, harvestSearchQuery]);
   const timesheetCorrections = useMemo(
     () => [...(state.timesheetCorrections || [])].sort((a, b) => Date.parse(b.submittedAt || '') - Date.parse(a.submittedAt || '')),
     [state.timesheetCorrections],
@@ -328,9 +356,38 @@ export function FarmManagement() {
   const [sprinklerAddCoverage, setSprinklerAddCoverage] = useState('100%');
   const [pestDialogOpen, setPestDialogOpen] = useState(false);
   const [pestEditIndex, setPestEditIndex] = useState<number | null>(null);
+  const [previewPestPhoto, setPreviewPestPhoto] = useState<string | null>(null);
+  const [pestSearchQuery, setPestSearchQuery] = useState('');
+  const [pestStatusFilter, setPestStatusFilter] = useState<'All' | 'Pending' | 'Under Treatment' | 'Resolved'>('All');
   const [coffeeForm, setCoffeeForm] = useState<CoffeeFieldRecord | null>(null);
   const [irrigationForm, setIrrigationForm] = useState<IrrigationSystemRecord | null>(null);
   const [pestForm, setPestForm] = useState<PestControlRecord | null>(null);
+
+  const filteredPestControlLogs = useMemo(() => {
+    let list = [...(state.pestControlLogs || [])].sort((a, b) => {
+      const timeB = b.timestampMillis || Date.parse(b.date) || 0;
+      const timeA = a.timestampMillis || Date.parse(a.date) || 0;
+      return timeB - timeA;
+    });
+
+    if (pestStatusFilter !== 'All') {
+      list = list.filter((r) => r.status === pestStatusFilter);
+    }
+
+    if (pestSearchQuery.trim()) {
+      const q = pestSearchQuery.toLowerCase();
+      list = list.filter((r) =>
+        (r.issue || '').toLowerCase().includes(q) ||
+        (r.field || '').toLowerCase().includes(q) ||
+        (r.treeNumber || '').toLowerCase().includes(q) ||
+        (r.reportedBy || '').toLowerCase().includes(q) ||
+        (r.notes || '').toLowerCase().includes(q) ||
+        (r.treatment || '').toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [state.pestControlLogs, pestStatusFilter, pestSearchQuery]);
   const [deleteSprinklerTarget, setDeleteSprinklerTarget] = useState<{
     type: 'single' | 'section';
     index?: number;
@@ -784,51 +841,35 @@ export function FarmManagement() {
     setSelectedWorkerIndex(index);
   };
 
-  const createHarvestReadinessReport = async () => {
-    const weight = `${Math.floor(Math.random() * 200 + 150)} kg`;
-    const randomZone = coffeeFields[Math.floor(Math.random() * coffeeFields.length)]?.name || 'Block A';
-    const newReport: HarvestReadinessReportRecord = {
-      reportId: `HR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
-      zone: randomZone,
-      expectedWeight: weight,
-      reportedBy: activeWorkers[Math.floor(Math.random() * activeWorkers.length)]?.name || 'Field Worker',
-      reportedAt: new Date().toISOString().slice(0, 10),
-      status: 'Pending Review',
-      notes: 'Submitted from the web simulation button.',
-    };
-    const ok = await runSave('Harvest readiness report', () =>
-      updateState((prev) => ({
-        ...prev,
-        harvestReadinessReports: [newReport, ...prev.harvestReadinessReports],
-      })),
-    );
-    if (ok) {
-      alert(`[Worker Simulation Triggered]\n\nA new harvest readiness report has been submitted to the admin:\n\n- Report ID: ${newReport.reportId}\n- Zone: ${newReport.zone}\n- Expected Yield: ${newReport.expectedWeight}\n- Submitted By: ${newReport.reportedBy}`);
-    }
-  };
+  const reviewHarvestReadinessReport = async (reportId: string, action: 'Confirmed' | 'Rejected') => {
+    logUiAction(`Admin clicked "${action === 'Confirmed' ? 'Confirm' : 'Reject'}" for harvest readiness report ${reportId}`);
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const formattedTime = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const payload = { reportId, status: action, reviewedAt: `${formattedDate} ${formattedTime}`, reviewedBy: managerName };
 
-  const reviewHarvestReadinessReport = async (reportId: string, status: 'Approved' | 'Rejected') => {
-    await runSave('Harvest readiness review', () =>
-      updateState((prev) => ({
-        ...prev,
-        harvestReadinessReports: prev.harvestReadinessReports.map((report) =>
-          report.reportId === reportId
-            ? {
-                ...report,
-                status,
-                reviewedAt: new Date().toISOString().slice(0, 10),
-                reviewedBy: 'Admin',
-              }
-            : report,
-        ),
-      })),
+    await runSave(`Harvest readiness ${action.toLowerCase()}`, () =>
+      logStateApiActivity(
+        'POST',
+        `/api/harvest-readiness/${encodeURIComponent(reportId)}/${action === 'Confirmed' ? 'confirm' : 'reject'}`,
+        payload,
+        () =>
+          updateState((prev) => ({
+            ...prev,
+            harvestReadinessReports: (prev.harvestReadinessReports || []).map((report) =>
+              report.reportId === reportId
+                ? {
+                    ...report,
+                    status: action,
+                    reviewedAt: `${formattedDate} ${formattedTime}`,
+                    reviewedBy: managerName,
+                  }
+                : report,
+            ),
+          })),
+        200,
+      ),
     );
-    if (status === 'Approved') {
-      const report = state.harvestReadinessReports.find((r) => r.reportId === reportId);
-      if (report) {
-        alert(`Harvest Report ${report.reportId} Approved!\n\nA harvest schedule task has been automatically scheduled for ${report.zone}.`);
-      }
-    }
   };
 
   const reviewTimesheetCorrection = async (request: TimesheetCorrectionRequest, status: ApprovalStatus) => {
@@ -1735,29 +1776,67 @@ export function FarmManagement() {
       <Dialog open={pestDialogOpen} onOpenChange={(o) => { if (!o) closePestDialog(); else setPestDialogOpen(true); }}>
         <DialogContent className="sm:max-w-lg bg-card border-border/70">
           <DialogHeader>
-            <DialogTitle>Assign Treatment</DialogTitle>
+            <DialogTitle>Assign Pest Treatment & Review</DialogTitle>
             <DialogDescription>
-              Review the worker's report and assign treatment. Update status as the issue is handled.
+              Review the worker's photographic report and assign a treatment prescription.
             </DialogDescription>
           </DialogHeader>
           {pestForm ? (
             <div className="grid gap-3 py-2">
-              <div className="bg-muted/40 rounded-lg p-3 space-y-1">
-                <p className="text-xs text-muted-foreground">Worker Report</p>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className="text-xs text-muted-foreground">Zone:</span> <span className="font-medium">{pestForm.field || '—'}</span></div>
-                  <div><span className="text-xs text-muted-foreground">Tree #:</span> <span className="font-medium">{pestForm.treeNumber || '—'}</span></div>
-                  <div><span className="text-xs text-muted-foreground">Issue:</span> <span className="font-medium">{pestForm.issue || '—'}</span></div>
-                  <div><span className="text-xs text-muted-foreground">Date:</span> <span className="font-medium">{pestForm.date || '—'}</span></div>
+              <div className="bg-muted/40 rounded-xl p-3.5 space-y-2 border border-border/60">
+                <div className="flex items-center justify-between text-xs font-bold text-foreground">
+                  <span>Worker: {pestForm.reportedBy || 'Field Worker'}</span>
+                  <span className="font-mono text-muted-foreground">{pestForm.date} {pestForm.time ? `· ${pestForm.time}` : ''}</span>
                 </div>
-                {pestForm.photoUrl && (
-                  <div className="mt-2">
-                    <img src={pestForm.photoUrl} alt={pestForm.issue} className="w-20 h-20 rounded-lg object-cover border border-border/70" />
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div><span className="text-muted-foreground">Section:</span> <strong className="text-foreground">{pestForm.field || '—'}</strong></div>
+                  <div><span className="text-muted-foreground">Tree #:</span> <strong className="text-foreground">{pestForm.treeNumber || '—'}</strong></div>
+                  <div className="col-span-2"><span className="text-muted-foreground">Diagnosed Issue:</span> <strong className="text-rose-500">{pestForm.issue || '—'}</strong></div>
+                </div>
+
+                {pestForm.notes && (
+                  <p className="text-xs text-muted-foreground bg-background/60 p-2.5 rounded-lg border border-border/50">
+                    <strong>Worker observations:</strong> {pestForm.notes}
+                  </p>
+                )}
+
+                {(pestForm.photoUrl || pestForm.photoBase64) && (
+                  <div className="mt-2 flex items-center gap-3">
+                    <img
+                      src={pestForm.photoUrl || pestForm.photoBase64}
+                      alt={pestForm.issue}
+                      className="w-20 h-20 rounded-xl object-cover border border-border/70 shadow-xs cursor-pointer"
+                      onClick={() => setPreviewPestPhoto(pestForm.photoUrl || pestForm.photoBase64 || null)}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      <p className="font-semibold text-foreground">Tree Photo Attached</p>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewPestPhoto(pestForm.photoUrl || pestForm.photoBase64 || null)}
+                        className="text-amber-500 underline text-[11px] cursor-pointer"
+                      >
+                        Click to view full image
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="pest-treatment-plan" className="text-xs font-bold text-foreground">
+                  Treatment / Action Prescription
+                </Label>
+                <Input
+                  id="pest-treatment-plan"
+                  value={pestForm.treatment || ''}
+                  onChange={(e) => setPestForm({ ...pestForm, treatment: e.target.value })}
+                  placeholder="e.g., Spray Organic Neem Oil extract or Copper-based fungicide..."
+                  className="bg-background border-border/80 h-10 rounded-xl text-xs"
+                />
+              </div>
+
               <SelectWithOther
-                label="Status"
+                label="Treatment Status"
                 value={pestForm.status}
                 onChange={(val) => setPestForm({ ...pestForm, status: val })}
                 options={[
@@ -1774,9 +1853,26 @@ export function FarmManagement() {
           <DialogFooter>
             <Button variant="outline" onClick={closePestDialog}>Cancel</Button>
             <Button className="bg-[#2d5016] text-white" disabled={saving} onClick={() => void savePestLog()}>
-              {saving ? 'Saving…' : 'Update Treatment'}
+              {saving ? 'Saving…' : 'Save Prescription'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Full Photo Modal for Pest Reports */}
+      <Dialog open={!!previewPestPhoto} onOpenChange={(open) => !open && setPreviewPestPhoto(null)}>
+        <DialogContent className="max-w-2xl bg-card border-border/80 p-4">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold flex items-center gap-2">
+              <Camera className="w-4 h-4 text-amber-500" />
+              Pest & Tree Evidence Photo (Worker Submission)
+            </DialogTitle>
+          </DialogHeader>
+          {previewPestPhoto && (
+            <div className="rounded-xl overflow-hidden border border-border/60 bg-black/90 max-h-[70vh] flex items-center justify-center">
+              <img src={previewPestPhoto} alt="Evidence full size" className="max-w-full max-h-[65vh] object-contain" />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -2391,125 +2487,224 @@ export function FarmManagement() {
 
 
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
-                  <Bell className="w-5 h-5 text-accent" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base font-heading text-foreground">Harvest Readiness Board</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">Workers report crop readiness; admins review and confirm</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => void createHarvestReadinessReport()}
-                disabled={saving}
-                className="text-[10px] font-bold font-mono px-2.5 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 hover:bg-accent/25 transition-colors cursor-pointer"
-              >
-                Simulate Worker Report
-              </button>
+      {/* Harvest Readiness Board */}
+      <div id="harvest-readiness-reports-section" className="bg-card/95 border border-border/80 rounded-2xl p-6 shadow-sm space-y-5 mb-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 className="w-6 h-6" />
             </div>
-
-            <div id="harvest-readiness-reports-section" className="space-y-3 mb-4 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
-              {harvestReadinessReports.length === 0 ? (
-                <p className="text-xs font-mono text-muted-foreground py-2">No readiness reports logged.</p>
-              ) : (
-                harvestReadinessReports.map((report) => {
-                  const isPending = report.status === 'Pending Review';
-                  const isApproved = report.status === 'Approved';
-
-                  return (
-                    <div key={report.reportId} id={report.reportId ? `harvest-${report.reportId}` : undefined} className="rounded-xl border border-border/60 bg-muted/40 p-3 text-xs flex items-center justify-between gap-3 shadow-xs hover:border-border transition-all">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold font-heading text-foreground">{report.zone}</span>
-                          <span className={`text-[9px] font-extrabold font-mono px-2 py-0.5 rounded-full uppercase ${
-                            isApproved ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30' : report.status === 'Rejected' ? 'bg-rose-500/15 text-rose-500 border border-rose-500/30' : 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
-                          }`}>
-                            {report.status}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">
-                          Estimated yield: <span className="font-bold text-foreground">{report.expectedWeight}</span> · By {report.reportedBy}
-                        </p>
-                        <p className="text-[10px] font-mono text-muted-foreground">Submitted: {report.reportedAt} · ID: {report.reportId}</p>
-                        {report.notes ? (
-                          <p className="text-[11px] text-muted-foreground italic">{report.notes}</p>
-                        ) : null}
-                      </div>
-
-                      {isPending && (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={saving}
-                            onClick={() => void reviewHarvestReadinessReport(report.reportId, 'Approved')}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] disabled:opacity-60 cursor-pointer shadow-2xs"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            disabled={saving}
-                            onClick={() => void reviewHarvestReadinessReport(report.reportId, 'Rejected')}
-                            className="border border-rose-500/40 hover:bg-rose-500/10 text-rose-500 font-bold px-2 py-1 rounded-lg text-[10px] disabled:opacity-60 cursor-pointer"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-lg font-heading text-foreground">Harvest Readiness Board</h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold">
+                  {state.harvestReadinessReports?.length || 0} Total
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Workers report crop readiness. Admins review and confirm.
+              </p>
             </div>
           </div>
 
-          <div className="rounded-xl bg-accent/10 border border-accent/20 p-3 space-y-2">
-            <p className="text-[10px] font-bold text-accent uppercase tracking-wider font-mono">Ready Crops Quick Indicators</p>
-            <div className="flex flex-wrap gap-2">
-              {readyFields.map((field) => (
-                <span key={field.fieldId || field.name} className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-bold font-mono text-emerald-500">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  {field.name}
-                </span>
-              ))}
-              {readyFields.length === 0 && (
-                <span className="text-[11px] text-muted-foreground font-mono">No crops marked harvestable after CNN scan confirmation.</span>
+          {/* Search & Filter Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[200px]">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={harvestSearchQuery}
+                onChange={(e) => setHarvestSearchQuery(e.target.value)}
+                placeholder="Filter worker or section..."
+                className="h-9 pl-8 text-xs bg-background/80 border-border/80 rounded-xl"
+              />
+              {harvestSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setHarvestSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               )}
+            </div>
+
+            <div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border/70 text-xs">
+              {(['All', 'Pending Review', 'Confirmed', 'Rejected'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setHarvestStatusFilter(filter)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                    harvestStatusFilter === filter
+                      ? 'bg-amber-500 text-black shadow-xs font-bold'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center">
-              <Calendar className="w-5 h-5 text-amber-500" />
-            </div>
-            <div>
-              <h3 className="font-bold text-base font-heading text-foreground">Schedule management</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Daily activities and assignments</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            {state.harvestSchedules.slice(0, 3).map((schedule, index) => (
-              <div key={`${schedule.sectionName}-${index}`} className="rounded-xl bg-muted/40 border border-border/60 p-3.5">
-                <p className="text-sm font-bold font-heading text-foreground">{schedule.sectionName}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{schedule.details}</p>
-                <span className="mt-2 inline-flex rounded-full bg-accent/20 border border-accent/30 px-2.5 py-0.5 text-xs font-mono font-bold text-accent">
-                  {schedule.status}
-                </span>
-              </div>
-            ))}
-            {state.harvestSchedules.length === 0 ? (
-              <p className="text-xs text-muted-foreground font-mono">
-                Add harvest schedules and task records to answer daily farm operation questions.
+        {/* Reports Table / Card List */}
+        <div className="space-y-3">
+          {harvestReadinessReports.length === 0 ? (
+            <div className="py-12 text-center rounded-xl border border-dashed border-border/80 bg-muted/20">
+              <CheckCircle2 className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+              <p className="text-xs font-bold text-foreground">No harvest readiness reports found</p>
+              <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
+                Worker submissions from the Field Worker Scanner & Attendance App will appear here in real-time for administrative review and confirmation.
               </p>
-            ) : null}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {harvestReadinessReports.map((report) => {
+                const isConfirmed = report.status === 'Confirmed' || report.status === 'Approved';
+                const isRejected = report.status === 'Rejected';
+                const isPending = !isConfirmed && !isRejected;
+                const isReady =
+                  (report.readinessStatus || '').toLowerCase().includes('ready') &&
+                  !(report.readinessStatus || '').toLowerCase().includes('not');
+
+                return (
+                  <div
+                    key={report.reportId}
+                    id={report.reportId ? `harvest-${report.reportId}` : undefined}
+                    className="rounded-xl border border-border/70 bg-card p-4 transition-all hover:border-border hover:shadow-xs space-y-3 flex flex-col justify-between"
+                  >
+                    <div className="space-y-2.5">
+                      {/* Top row: Section & Status Badges */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-extrabold text-sm font-heading text-foreground flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                              {report.section || report.zone || 'Section F'}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                isReady
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                  : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                              }`}
+                            >
+                              {report.readinessStatus || (isReady ? 'Ready for Harvest' : 'Not Ready for Harvest')}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Worker: <span className="font-semibold text-foreground">{report.workerName || report.reportedBy || 'Juan Dela Cruz'}</span>
+                          </p>
+                        </div>
+
+                        {/* Review Status Pill */}
+                        <span
+                          className={`text-[10px] font-extrabold font-mono px-2.5 py-1 rounded-xl uppercase tracking-wider border shrink-0 ${
+                            isConfirmed
+                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                              : isRejected
+                              ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                              : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                          }`}
+                        >
+                          {report.status || 'Pending Review'}
+                        </span>
+                      </div>
+
+                      {/* Notes / Details */}
+                      {report.notes && (
+                        <p className="text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-lg border border-border/50">
+                          {report.notes}
+                        </p>
+                      )}
+
+                      {/* Metadata row */}
+                      <div className="flex flex-wrap items-center justify-between text-[10px] font-mono text-muted-foreground gap-1 pt-1 border-t border-border/40">
+                        <span>Submitted: {report.date || 'September 4, 2026'} · {report.time || '8:30 AM'}</span>
+                        <span>ID: {report.reportId}</span>
+                      </div>
+                    </div>
+
+                    {/* Admin Actions */}
+                    <div className="pt-2 flex items-center justify-between gap-2 border-t border-border/40">
+                      {isPending ? (
+                        <div className="flex items-center gap-2 w-full">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={saving}
+                            onClick={() => void reviewHarvestReadinessReport(report.reportId, 'Confirmed')}
+                            className="flex-1 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs gap-1.5 cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            Confirm
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={saving}
+                            onClick={() => void reviewHarvestReadinessReport(report.reportId, 'Rejected')}
+                            className="flex-1 h-8 rounded-lg border-rose-500/40 hover:bg-rose-500/10 text-rose-500 font-bold text-xs gap-1.5 cursor-pointer"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            Reject
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between w-full text-xs">
+                          <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                            {isConfirmed ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                Confirmed by Admin ({report.reviewedAt || 'Reviewed'})
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                                Rejected by Admin ({report.reviewedAt || 'Reviewed'})
+                              </>
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => void reviewHarvestReadinessReport(report.reportId, isConfirmed ? 'Rejected' : 'Confirmed')}
+                            className="text-[10px] font-bold text-muted-foreground hover:text-foreground underline cursor-pointer"
+                          >
+                            Change to {isConfirmed ? 'Reject' : 'Confirm'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Ready Crops Quick Indicators */}
+        <div className="rounded-xl bg-accent/10 border border-accent/20 p-3.5 space-y-2">
+          <p className="text-[10px] font-bold text-accent uppercase tracking-wider font-mono flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Ready Crops Quick Indicators
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {readyFields.map((field) => (
+              <span
+                key={field.fieldId || field.name}
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-bold font-mono text-emerald-500"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                {field.name}
+              </span>
+            ))}
+            {readyFields.length === 0 && (
+              <span className="text-[11px] text-muted-foreground font-mono">
+                No crops marked harvestable after field inspection & scan confirmation.
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -2814,21 +3009,83 @@ export function FarmManagement() {
             </div>
           </div>
 
-          <div id="pest-reports-section" className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div>
-                <h3 className="font-bold text-base font-heading text-foreground">Pest and Disease Issues Report</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Reports are submitted by workers through the mobile app</p>
+          <div id="pest-reports-section" className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-500 flex items-center justify-center shrink-0">
+                  <Bug className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-base font-heading text-foreground">Pest and Disease Issues Report</h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-500 font-bold">
+                      {state.pestControlLogs?.length || 0} Total
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Reports are submitted by workers through the mobile app with photo evidence
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Filter Pills */}
+              <div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border/70 text-xs">
+                {(['All', 'Pending', 'Under Treatment', 'Resolved'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setPestStatusFilter(filter)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                      pestStatusFilter === filter
+                        ? 'bg-rose-500 text-white shadow-xs font-bold'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="space-y-3">
-              {pestControlLogs.length === 0 ? (
-                <p className="text-xs text-muted-foreground font-mono">No pest or disease reports from workers yet. Workers can submit reports from the mobile app.</p>
+
+            {/* Filter Search */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={pestSearchQuery}
+                onChange={(e) => setPestSearchQuery(e.target.value)}
+                placeholder="Search by issue, worker, zone, or tree number..."
+                className="h-9 pl-8 text-xs bg-background/80 border-border/80 rounded-xl"
+              />
+              {pestSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setPestSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1 scrollbar-thin">
+              {filteredPestControlLogs.length === 0 ? (
+                <div className="py-10 text-center rounded-xl border border-dashed border-border/80 bg-muted/20">
+                  <Bug className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-foreground">No pest or disease reports found</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 max-w-sm mx-auto">
+                    Workers can submit pest, infection, and tree disease reports with photos directly from the mobile app.
+                  </p>
+                </div>
               ) : null}
-              {pestControlLogs.map((record, idx) => {
+
+              {filteredPestControlLogs.map((record) => {
+                const originalIndex = (state.pestControlLogs || []).findIndex(
+                  (p) => (p.pestControlId && p.pestControlId === record.pestControlId) || (p.field === record.field && p.treeNumber === record.treeNumber && p.issue === record.issue)
+                );
                 const isPending = record.status === 'Pending';
                 const isResolved = record.status === 'Resolved';
                 const isTreatment = record.status === 'Under Treatment';
+                const photoSrc = record.photoUrl || record.photoBase64;
 
                 const statusBadge = isResolved
                   ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
@@ -2839,46 +3096,88 @@ export function FarmManagement() {
                   : 'bg-accent/15 text-accent border border-accent/30';
 
                 return (
-                  <div key={record.pestControlId || `${record.field}-${record.date}-${idx}`} id={record.pestControlId ? `pest-${record.pestControlId}` : undefined} className="bg-muted/40 rounded-xl p-3.5 border border-border/60">
+                  <div
+                    key={record.pestControlId || `${record.field}-${record.date}-${originalIndex}`}
+                    id={record.pestControlId ? `pest-${record.pestControlId}` : undefined}
+                    className="bg-card rounded-xl p-4 border border-border/70 shadow-xs hover:border-border transition-all space-y-3"
+                  >
                     <div className="flex items-start gap-3">
-                      {record.photoUrl ? (
-                        <div className="w-14 h-14 rounded-lg bg-background border border-border/60 overflow-hidden shrink-0">
-                          <img src={record.photoUrl} alt={record.issue} className="w-full h-full object-cover" />
+                      {photoSrc ? (
+                        <div
+                          className="w-16 h-16 rounded-xl bg-background border border-border/70 overflow-hidden shrink-0 cursor-pointer relative group"
+                          onClick={() => setPreviewPestPhoto(photoSrc)}
+                          title="Click to enlarge photo"
+                        >
+                          <img src={photoSrc} alt={record.issue} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <Eye className="w-4 h-4 text-white" />
+                          </div>
                         </div>
                       ) : (
-                        <div className="w-14 h-14 rounded-lg bg-background border border-border/60 flex items-center justify-center shrink-0 text-muted-foreground text-[9px] font-mono font-medium leading-none">
+                        <div className="w-16 h-16 rounded-xl bg-muted/60 border border-border/60 flex items-center justify-center shrink-0 text-muted-foreground text-[10px] font-mono">
                           No Photo
                         </div>
                       )}
 
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-start justify-between gap-2">
-                          <h4 className="text-sm font-bold text-foreground font-heading truncate leading-tight">{record.issue || 'Pest / Disease Issue'}</h4>
+                          <h4 className="text-sm font-bold text-foreground font-heading truncate leading-tight">
+                            {record.issue || 'Pest / Disease Issue'}
+                          </h4>
                           <span className={`text-[9px] font-extrabold font-mono px-2 py-0.5 rounded-full uppercase shrink-0 ${statusBadge}`}>
                             {record.status}
                           </span>
                         </div>
 
-                        <p className="text-xs font-mono font-bold text-emerald-500">
-                          Zone: {record.field} {record.treeNumber ? `· Tree #${record.treeNumber}` : ''}
+                        <p className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          {record.field} {record.treeNumber ? `· ${record.treeNumber}` : ''}
                         </p>
+
+                        {record.notes && (
+                          <p className="text-xs text-muted-foreground bg-muted/40 p-2 rounded-lg border border-border/40">
+                            <strong>Worker notes:</strong> {record.notes}
+                          </p>
+                        )}
+
                         {record.treatment ? (
-                          <p className="text-xs text-muted-foreground leading-snug truncate">
-                            Plan: {record.treatment}
+                          <p className="text-xs text-foreground bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20 font-medium">
+                            <strong className="text-emerald-600 dark:text-emerald-400">Treatment Plan:</strong> {record.treatment}
                           </p>
                         ) : null}
-                        <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono pt-1.5 border-t border-border/40">
-                          <span>Reported: {record.date}{record.reportedBy ? ` • ${record.reportedBy}` : ''}</span>
-                          <div className="flex items-center gap-1 shrink-0">
+
+                        <div className="flex flex-wrap items-center justify-between text-[10px] text-muted-foreground font-mono pt-2 border-t border-border/40 gap-2">
+                          <span>Reported: {record.date}{record.time ? ` · ${record.time}` : ''}{record.reportedBy ? ` • Worker: ${record.reportedBy}` : ''}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <button
                               type="button"
-                              aria-label="Assign treatment"
                               className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-accent/15 text-accent text-[10px] font-bold hover:bg-accent/25 transition-colors cursor-pointer"
-                              onClick={() => openEditPest(idx)}
+                              onClick={() => openEditPest(originalIndex >= 0 ? originalIndex : 0)}
                             >
                               <Edit2 className="w-3 h-3" />
-                              Assign Treatment
+                              {record.treatment ? 'Update Treatment' : 'Assign Treatment'}
                             </button>
+                            {!isResolved && (
+                              <button
+                                type="button"
+                                disabled={saving}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                                onClick={() =>
+                                  void updateState((prev) => ({
+                                    ...prev,
+                                    pestControlLogs: (prev.pestControlLogs || []).map((p) =>
+                                      (p.pestControlId && p.pestControlId === record.pestControlId) ||
+                                      (p.field === record.field && p.treeNumber === record.treeNumber && p.issue === record.issue)
+                                        ? { ...p, status: 'Resolved' }
+                                        : p,
+                                    ),
+                                  }))
+                                }
+                              >
+                                <Check className="w-3 h-3" />
+                                Mark Resolved
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>

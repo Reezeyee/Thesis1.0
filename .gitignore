@@ -40,3 +40,11 @@ Website_simple/
 
 # Accidental root npm lockfile; the website lockfile is tracked in Website/
 /package-lock.json
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.env
+*.env.local
+

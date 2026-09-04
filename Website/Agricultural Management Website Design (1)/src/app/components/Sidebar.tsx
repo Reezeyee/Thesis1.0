@@ -70,7 +70,7 @@ export function Sidebar({
           icon: Users,
           label: 'Farm HR',
           badge: null,
-          hint: 'Workers & schedules',
+          hint: 'Workers & HR',
         },
         {
           id: 'equipment',

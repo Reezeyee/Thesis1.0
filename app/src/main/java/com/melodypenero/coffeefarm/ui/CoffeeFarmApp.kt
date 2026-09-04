@@ -61,6 +61,7 @@ import com.melodypenero.coffeefarm.ui.screens.FarmMapScreen
 import com.melodypenero.coffeefarm.ui.screens.HarvestReadinessScreen
 import com.melodypenero.coffeefarm.ui.screens.IrrigationScreen
 import com.melodypenero.coffeefarm.ui.screens.LoginScreen
+import com.melodypenero.coffeefarm.ui.screens.PestDiseaseScreen
 import com.melodypenero.coffeefarm.ui.screens.SettingsScreen
 import com.melodypenero.coffeefarm.ui.screens.StaffAttendanceScreen
 import com.melodypenero.coffeefarm.ui.screens.SuppliesScreen
@@ -316,6 +317,9 @@ fun CoffeeFarmApp() {
                         }
                         composable(AppDestination.HarvestReadiness.route) {
                             HarvestReadinessScreen(reporterDisplayName = currentSession.displayName)
+                        }
+                        composable(AppDestination.PestDisease.route) {
+                            PestDiseaseScreen(reporterDisplayName = currentSession.displayName)
                         }
                         composable(AppDestination.Equipment.route) {
                             EquipmentScreen(reporterDisplayName = currentSession.displayName)

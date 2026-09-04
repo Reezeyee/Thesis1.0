@@ -8,6 +8,7 @@ import {
   type HarvestReadinessReportRecord,
   type IrrigationDamageReportRecord,
   type LeaveRequestRecord,
+  type PestControlRecord,
   type TreeRipenessScanRecord,
   type SmsMessageRecord,
   type TimesheetCorrectionRequest,
@@ -65,7 +66,38 @@ function equipmentReportKey(r: EquipmentConditionReport): string {
 
 function harvestReadinessReportKey(r: HarvestReadinessReportRecord): string {
   if (r.reportId) return r.reportId;
-  return [r.zone, r.expectedWeight, r.reportedBy, r.reportedAt].join('\u0001');
+  return [(r.section ?? r.zone ?? ''), (r.workerName ?? r.reportedBy ?? ''), (r.date ?? r.reportedAt ?? ''), (r.time ?? '')].join('\u0001');
+}
+
+export function mergeHarvestReadinessReports(
+  local: HarvestReadinessReportRecord[],
+  remote: HarvestReadinessReportRecord[],
+): HarvestReadinessReportRecord[] {
+  const merged = new Map(remote.map((r) => [harvestReadinessReportKey(r), r]));
+  local.forEach((r) => {
+    const key = harvestReadinessReportKey(r);
+    const remoteReport = merged.get(key);
+    merged.set(key, remoteReport ? { ...remoteReport, ...r } : r);
+  });
+  return Array.from(merged.values());
+}
+
+function pestControlLogKey(p: PestControlRecord): string {
+  if (p.pestControlId) return p.pestControlId;
+  return [(p.field ?? ''), (p.issue ?? ''), (p.date ?? ''), (p.reportedBy ?? ''), (p.treeNumber ?? '')].join('\u0001');
+}
+
+export function mergePestControlLogs(
+  local: PestControlRecord[],
+  remote: PestControlRecord[],
+): PestControlRecord[] {
+  const merged = new Map(remote.map((r) => [pestControlLogKey(r), r]));
+  local.forEach((r) => {
+    const key = pestControlLogKey(r);
+    const remoteReport = merged.get(key);
+    merged.set(key, remoteReport ? { ...remoteReport, ...r } : r);
+  });
+  return Array.from(merged.values());
 }
 
 function consumableReportKey(r: ConsumableSupplyReportRecord): string {
@@ -127,7 +159,7 @@ export function mergeRemoteStatePreservingLocalGrades(
     cherryGrades: mergeCherryGrades(local.cherryGrades, remote.cherryGrades),
     treeRipenessScans: mergeTreeRipenessScans(local.treeRipenessScans, remote.treeRipenessScans),
     harvestSchedules: preferLongerList(local.harvestSchedules, remote.harvestSchedules),
-    harvestReadinessReports: mergeByKey(local.harvestReadinessReports, remote.harvestReadinessReports, harvestReadinessReportKey),
+    harvestReadinessReports: mergeHarvestReadinessReports(local.harvestReadinessReports, remote.harvestReadinessReports),
     flowering: preferLongerList(local.flowering, remote.flowering),
     cherryHarvests: mergeByKey(local.cherryHarvests, remote.cherryHarvests, (h) =>
       (h.harvestId ?? '').trim() || [h.batchId, h.date ?? '', h.weightText, h.details].join('\u0001'),
@@ -156,9 +188,7 @@ export function mergeRemoteStatePreservingLocalGrades(
       (i.irrigationId ?? '').trim() || [i.zone, i.type, i.coverage].join('\u0001'),
     ),
     irrigationDamageReports: mergeByKey(local.irrigationDamageReports, remote.irrigationDamageReports, irrigationDamageReportKey),
-    pestControlLogs: mergeByKey(local.pestControlLogs, remote.pestControlLogs, (p) =>
-      (p.pestControlId ?? '').trim() || [p.date, p.field, p.issue, p.treatment].join('\u0001'),
-    ),
+    pestControlLogs: mergePestControlLogs(local.pestControlLogs, remote.pestControlLogs),
     consumableSupplies: mergeByKey(local.consumableSupplies, remote.consumableSupplies, (s) =>
       s.supplyId.trim() || [s.name, s.category, s.unit].join('\u0001'),
     ),
@@ -184,11 +214,11 @@ export function mergeStateForCloudUpload(local: AppState, remote: AppState): App
     ),
     cherryGrades: mergeCherryGrades(local.cherryGrades, remote.cherryGrades),
     treeRipenessScans: mergeTreeRipenessScans(local.treeRipenessScans, remote.treeRipenessScans),
-    harvestReadinessReports: mergeByKey(remote.harvestReadinessReports, local.harvestReadinessReports, harvestReadinessReportKey),
+    harvestReadinessReports: mergeHarvestReadinessReports(local.harvestReadinessReports, remote.harvestReadinessReports),
     coffeeFields: local.coffeeFields,
     irrigationSystems: local.irrigationSystems,
     irrigationDamageReports: mergeByKey(remote.irrigationDamageReports, local.irrigationDamageReports, irrigationDamageReportKey),
-    pestControlLogs: local.pestControlLogs,
+    pestControlLogs: mergePestControlLogs(local.pestControlLogs, remote.pestControlLogs),
     sales: local.sales,
     expenses: local.expenses,
     payroll: local.payroll,

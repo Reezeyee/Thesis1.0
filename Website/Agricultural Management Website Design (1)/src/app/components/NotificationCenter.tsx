@@ -115,12 +115,12 @@ export function usePendingReports() {
         list.push({
           id,
           type: 'harvest',
-          title: `Harvest Readiness: ${r.zone || 'Crop Zone'}`,
-          subtitle: `Estimated Yield: ${r.expectedWeight || 'N/A'}`,
+          title: `Harvest Readiness: ${r.section || r.zone || 'Crop Zone'}`,
+          subtitle: `Status: ${r.readinessStatus || r.expectedWeight || 'Ready for Harvest'}`,
           details: r.notes || 'Harvest readiness report submitted by worker',
-          reportedBy: r.reportedBy || 'Worker',
-          reportedAt: r.reportedAt || 'Just now',
-          timestamp: Date.parse(r.reportedAt || '') || (Date.now() - idx),
+          reportedBy: r.workerName || r.reportedBy || 'Worker',
+          reportedAt: r.date && r.time ? `${r.date} ${r.time}` : (r.reportedAt || 'Just now'),
+          timestamp: r.timestampMillis || Date.parse(r.reportedAt || '') || (Date.now() - idx),
           rawReportId: rawId,
         });
       }

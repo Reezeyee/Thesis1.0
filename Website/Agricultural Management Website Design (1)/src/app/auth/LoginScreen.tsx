@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Coffee, Sparkles, User, ShieldCheck, ArrowRight, Lock } from 'lucide-react';
+import { Coffee, ShieldCheck, Lock, ArrowRight } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -19,23 +19,7 @@ export function LoginScreen() {
     try {
       await signIn(username, password);
     } catch {
-      setLocalError(error ?? 'Sign-in failed. Check username and password.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleQuickWorkerSignIn = async () => {
-    setSubmitting(true);
-    setLocalError(null);
-    try {
-      await signIn('workerstaffacojido@gmail.com', 'Parm012345');
-    } catch {
-      try {
-        await signIn('acojidostaff@coffeefarm.local', 'acojid012345');
-      } catch {
-        setLocalError('Worker sign-in failed. Please enter credentials manually.');
-      }
+      setLocalError(error ?? 'Sign-in failed. Check administrator username and password.');
     } finally {
       setSubmitting(false);
     }
@@ -62,69 +46,48 @@ export function LoginScreen() {
             <Coffee className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold font-heading text-foreground tracking-tight">
-              Acojido Coffee Farm
-            </h1>
-            <p className="text-xs text-muted-foreground">Field Worker & Farm Operations Portal</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-extrabold font-heading text-foreground tracking-tight">
+                Acojido Coffee Farm
+              </h1>
+              <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-wider">
+                Admin
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">Farm Administrator Management Portal</p>
           </div>
         </div>
 
-        {/* Quick One-Tap Worker Access */}
-        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> Fast Worker Access
-            </span>
-            <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-              Demo Worker
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Sign in directly to the Field Worker Scanner & Attendance App
+        {/* Admin Isolation Notice */}
+        <div className="p-3.5 rounded-2xl bg-muted/40 border border-border/60 flex items-center gap-3 text-xs">
+          <ShieldCheck className="w-4 h-4 text-primary flex-shrink-0" />
+          <p className="text-muted-foreground">
+            Administrative access only. Field workers must use the dedicated Mobile Scanner & Attendance App.
           </p>
-          <Button
-            type="button"
-            disabled={submitting}
-            onClick={handleQuickWorkerSignIn}
-            className="w-full h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-extrabold text-xs shadow-sm flex items-center justify-center gap-2"
-          >
-            <User className="w-4 h-4" />
-            Sign In as Field Worker (Juan Dela Cruz)
-            <ArrowRight className="w-3.5 h-3.5 ml-auto" />
-          </Button>
-        </div>
-
-        {/* Divider */}
-        <div className="relative flex py-1 items-center">
-          <div className="flex-grow border-t border-border/70" />
-          <span className="flex-shrink mx-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            Or Sign In With Account
-          </span>
-          <div className="flex-grow border-t border-border/70" />
         </div>
 
         {/* Credentials Form */}
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="username" className="text-xs font-semibold text-foreground">
-              Username or email
+            <Label htmlFor="admin-username" className="text-xs font-semibold text-foreground">
+              Administrator Username or Email
             </Label>
             <Input
-              id="username"
+              id="admin-username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. worker, admin, or email"
+              placeholder="e.g. admin or farmacojido@gmail.com"
               autoComplete="username"
               className="bg-background border-border/80 h-11 rounded-xl text-xs"
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-xs font-semibold text-foreground">
+            <Label htmlFor="admin-password" className="text-xs font-semibold text-foreground">
               Password
             </Label>
             <Input
-              id="password"
+              id="admin-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -143,27 +106,26 @@ export function LoginScreen() {
           <Button
             type="submit"
             disabled={submitting}
-            className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-bold text-xs"
+            className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-bold text-xs cursor-pointer"
           >
-            {submitting ? 'Authenticating…' : 'Sign In'}
+            {submitting ? 'Authenticating Administrator…' : 'Sign In as Administrator'}
           </Button>
         </form>
 
-        {/* Admin Quick Switch Footer */}
+        {/* Admin Sign-in Quick Helper & Firebase Info */}
         <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
           <button
             type="button"
             onClick={handleQuickAdminSignIn}
-            className="hover:text-amber-500 transition-colors underline text-[11px]"
+            className="hover:text-amber-500 transition-colors underline text-[11px] cursor-pointer"
           >
-            Admin Sign-in
+            Auto-fill Admin Sign-in
           </button>
           <span className="text-[11px] font-mono text-muted-foreground/70">
-            Firebase: thesis-bbcde
+            Admin Portal
           </span>
         </div>
       </div>
     </div>
   );
 }
-

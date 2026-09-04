@@ -17,11 +17,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AssignmentTurnedIn
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -375,12 +378,14 @@ private fun parseWeightKg(weightText: String): Double {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ModulesGrid(onNavigateToModule: (AppDestination) -> Unit, isAdmin: Boolean) {
-    val modules = buildList {
+    val modules: List<Triple<String, ImageVector, AppDestination>> = buildList {
         if (!isAdmin) {
             add(Triple("My Attendance", Icons.Default.Schedule, AppDestination.StaffAttendance))
         }
         add(Triple("Farm Section Map", Icons.Default.Map, AppDestination.FarmMap))
         add(Triple("Cherry scanner", Icons.Default.Coffee, AppDestination.Cherry))
+        add(Triple("Harvest Reports", Icons.Default.AssignmentTurnedIn, AppDestination.HarvestReadiness))
+        add(Triple("Pest & Disease", Icons.Default.BugReport, AppDestination.PestDisease))
         add(Triple("Equipment", Icons.Default.Construction, AppDestination.Equipment))
         add(Triple("Irrigation", Icons.Default.WaterDrop, AppDestination.Irrigation))
     }
@@ -390,7 +395,7 @@ private fun ModulesGrid(onNavigateToModule: (AppDestination) -> Unit, isAdmin: B
         verticalArrangement = Arrangement.spacedBy(10.dp),
         maxItemsInEachRow = 2
     ) {
-        modules.forEach { (label, icon, destination) ->
+        for ((label, icon, destination) in modules) {
             FarmModuleTile(
                 label = label,
                 icon = icon,

@@ -128,11 +128,18 @@ export interface HarvestScheduleRecord {
 
 export interface HarvestReadinessReportRecord {
   reportId: string;
-  zone: string;
-  expectedWeight: string;
-  reportedBy: string;
-  reportedAt: string;
-  status: 'Pending Review' | 'Approved' | 'Rejected' | string;
+  workerName?: string;
+  section?: string;
+  readinessStatus?: 'Ready for Harvest' | 'Not Ready for Harvest' | string;
+  date?: string;
+  time?: string;
+  timestampMillis?: number;
+  status: 'Pending Review' | 'Confirmed' | 'Rejected' | 'Approved' | string;
+  // Backward compatibility fields
+  zone?: string;
+  expectedWeight?: string;
+  reportedBy?: string;
+  reportedAt?: string;
   notes?: string;
   reviewedAt?: string;
   reviewedBy?: string;
@@ -300,7 +307,13 @@ export interface PestControlRecord {
   status: string;
   treeNumber?: string;
   photoUrl?: string;
+  photoBase64?: string;
   reportedBy?: string;
+  time?: string;
+  notes?: string;
+  timestampMillis?: number;
+  reviewedAt?: string;
+  reviewedBy?: string;
 }
 
 export interface ConsumableSupplyRecord {
@@ -483,17 +496,32 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
     trees: raw.trees ?? base.trees,
     treeRipenessScans: raw.treeRipenessScans ?? base.treeRipenessScans,
     harvestSchedules: raw.harvestSchedules ?? base.harvestSchedules,
-    harvestReadinessReports: (raw.harvestReadinessReports ?? base.harvestReadinessReports).map((r, index) => ({
-      reportId: r.reportId || `HR-${index + 1}`,
-      zone: r.zone ?? '',
-      expectedWeight: r.expectedWeight ?? '',
-      reportedBy: r.reportedBy ?? '',
-      reportedAt: r.reportedAt ?? '',
-      status: r.status ?? 'Pending Review',
-      notes: r.notes ?? '',
-      reviewedAt: r.reviewedAt ?? '',
-      reviewedBy: r.reviewedBy ?? '',
-    })),
+    harvestReadinessReports: (raw.harvestReadinessReports ?? base.harvestReadinessReports).map((r, index) => {
+      const section = r.section ?? r.zone ?? 'Section F';
+      const workerName = r.workerName ?? r.reportedBy ?? 'Juan Dela Cruz';
+      const readinessStatus = r.readinessStatus ?? (r.expectedWeight ? 'Ready for Harvest' : 'Ready for Harvest');
+      const date = r.date ?? (r.reportedAt ? r.reportedAt.split('T')[0] : 'September 4, 2026');
+      const time = r.time ?? '8:30 AM';
+      const reportedAt = r.reportedAt ?? `${date} ${time}`;
+      return {
+        reportId: r.reportId || `HR-${index + 1}`,
+        workerName,
+        section,
+        readinessStatus,
+        date,
+        time,
+        timestampMillis: r.timestampMillis ?? (Date.parse(reportedAt) || Date.now() - index * 60000),
+        status: r.status ?? 'Pending Review',
+        // Backward compatibility
+        zone: section,
+        expectedWeight: r.expectedWeight ?? (readinessStatus === 'Ready for Harvest' ? 'Harvest Ready' : 'Maturing'),
+        reportedBy: workerName,
+        reportedAt,
+        notes: r.notes ?? '',
+        reviewedAt: r.reviewedAt ?? '',
+        reviewedBy: r.reviewedBy ?? '',
+      };
+    }),
     flowering: raw.flowering ?? base.flowering,
     cherryHarvests: raw.cherryHarvests ?? base.cherryHarvests,
     batches: raw.batches ?? base.batches,
@@ -531,14 +559,20 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
     })),
     pestControlLogs: (raw.pestControlLogs ?? base.pestControlLogs).map((p, index) => ({
       pestControlId: p.pestControlId || `PEST-${index + 1}`,
-      date: p.date ?? '',
-      field: p.field ?? 'General Field',
-      issue: p.issue ?? '',
+      date: p.date ?? new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      time: p.time ?? '8:30 AM',
+      field: p.field ?? 'Section F',
+      issue: p.issue ?? 'Pest / Disease Observed',
       treatment: p.treatment ?? '',
       status: p.status ?? 'Pending',
       treeNumber: p.treeNumber ?? '',
-      photoUrl: p.photoUrl ?? '',
-      reportedBy: p.reportedBy ?? '',
+      photoUrl: p.photoUrl ?? (p.photoBase64 ?? ''),
+      photoBase64: p.photoBase64 ?? (p.photoUrl ?? ''),
+      reportedBy: p.reportedBy ?? 'Juan Dela Cruz',
+      notes: p.notes ?? '',
+      timestampMillis: p.timestampMillis ?? (Date.parse(p.date || '') || Date.now() - index * 60000),
+      reviewedAt: p.reviewedAt ?? '',
+      reviewedBy: p.reviewedBy ?? '',
     })),
     consumableSupplies:
       raw.consumableSupplies?.map((s) => {

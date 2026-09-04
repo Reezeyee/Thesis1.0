@@ -15,7 +15,6 @@ import { AuthProvider, useRequireAdmin, useAuth } from './auth/AuthProvider';
 import { LoginScreen } from './auth/LoginScreen';
 import { FarmDataProvider, useFarmData } from './store/FarmDataProvider';
 import { GlobalNotificationBanner, NotificationDrawer, usePendingReports } from './components/NotificationCenter';
-import { WorkerAppShell } from './components/worker/WorkerAppShell';
 
 export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings';
 
@@ -179,34 +178,54 @@ function AdminAppShell() {
   );
 }
 
+import { ShieldAlert } from 'lucide-react';
+import { Button } from './components/ui/button';
+
 function AuthenticatedApp() {
-  const { session, loading } = useAuth();
+  const { session, loading, signOut } = useAuth();
 
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-          <p className="text-xs text-muted-foreground font-medium">Initializing Coffee Farm App…</p>
+          <p className="text-xs text-muted-foreground font-medium">Initializing Coffee Farm Admin Portal…</p>
         </div>
       </div>
     );
   }
 
+  // 1. Admin Login Screen
   if (!session) {
     return <LoginScreen />;
   }
 
-  // Field workers receive the dedicated Coffee Farm Worker Application
+  // 2. If a field worker account logs in on the website, restrict access
   if (session.role === 'FARM_STAFF') {
     return (
-      <FarmDataProvider>
-        <WorkerAppShell />
-      </FarmDataProvider>
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-card border border-border rounded-3xl p-6 sm:p-8 text-center space-y-4 shadow-xl">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold font-heading text-foreground">Admin Portal Access Only</h2>
+          <p className="text-xs text-muted-foreground">
+            This website is reserved for Farm Administrators only. Field workers must access the Coffee Farm Scanner & Operations tool through the Android mobile app.
+          </p>
+          <div className="pt-2 flex flex-col gap-2">
+            <Button
+              onClick={signOut}
+              className="w-full h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-bold text-xs cursor-pointer"
+            >
+              Sign Out
+            </Button>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  // Administrators receive the Admin App Shell
+  // 3. Administrators receive the Admin App Shell
   return (
     <FarmDataProvider>
       <AdminAppShell />

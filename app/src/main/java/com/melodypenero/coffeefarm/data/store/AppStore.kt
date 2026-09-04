@@ -341,11 +341,20 @@ data class IrrigationDamageReportRecord(
 
 data class PestControlRecord(
     val pestControlId: String = "",
-    val date: String,
-    val field: String,
-    val issue: String,
-    val treatment: String,
-    val status: String
+    val date: String = "",
+    val field: String = "",
+    val issue: String = "",
+    val treatment: String = "",
+    val status: String = "Pending",
+    val treeNumber: String = "",
+    val photoUrl: String = "",
+    val photoBase64: String = "",
+    val reportedBy: String = "",
+    val time: String = "",
+    val notes: String = "",
+    val timestampMillis: Long = 0L,
+    val reviewedAt: String = "",
+    val reviewedBy: String = ""
 )
 
 data class ConsumableSupplyRecord(
@@ -1347,18 +1356,32 @@ class AppStore(context: Context) {
         date: String,
         field: String,
         issue: String,
-        treatment: String,
-        status: String,
+        treatment: String = "",
+        status: String = "Pending",
+        treeNumber: String = "",
+        photoUrl: String = "",
+        photoBase64: String = "",
+        reportedBy: String = "",
+        time: String = "",
+        notes: String = "",
+        timestampMillis: Long = System.currentTimeMillis(),
         pestControlId: String = ""
     ) = persist(
         state.copy(
             pestControlLogs = state.pestControlLogs + PestControlRecord(
-                pestControlId = pestControlId.ifBlank { UUID.randomUUID().toString() },
+                pestControlId = pestControlId.ifBlank { "PEST-" + UUID.randomUUID().toString().take(8).uppercase() },
                 date = date,
                 field = field,
                 issue = issue,
                 treatment = treatment,
-                status = status
+                status = status,
+                treeNumber = treeNumber,
+                photoUrl = photoUrl,
+                photoBase64 = photoBase64,
+                reportedBy = reportedBy,
+                time = time,
+                notes = notes,
+                timestampMillis = timestampMillis
             )
         )
     )

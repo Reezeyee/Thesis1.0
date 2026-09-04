@@ -1,6 +1,7 @@
 package com.melodypenero.coffeefarm.ui.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Grass
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
@@ -23,6 +24,7 @@ sealed class AppDestination(
     data object FarmMap : AppDestination("farm_map", "Farm section map", Icons.Default.Map)
     data object Cherry : AppDestination("cherry", "Cherry scanner", Icons.Default.Grass)
     data object HarvestReadiness : AppDestination("harvest_readiness", "Harvest Reports", Icons.Default.AssignmentTurnedIn)
+    data object PestDisease : AppDestination("pest_disease", "Pest & Disease", Icons.Default.BugReport)
     data object Equipment : AppDestination("equipment", "Equipment", Icons.Default.PrecisionManufacturing)
     data object Supplies : AppDestination("supplies", "Supplies", Icons.Default.Inventory2)
     data object Irrigation : AppDestination("irrigation", "Irrigation", Icons.Default.WaterDrop)
@@ -32,13 +34,14 @@ sealed class AppDestination(
     data object Settings : AppDestination("settings", "Settings", Icons.Default.Settings)
 }
 
-/** Worker mobile drawer: attendance, CNN scanner, equipment. */
+/** Worker mobile drawer: attendance, CNN scanner, harvest reports, pest reports, equipment. */
 val farmStaffMobileDestinations = listOf(
     AppDestination.Dashboard,
     AppDestination.FarmMap,
     AppDestination.StaffAttendance,
     AppDestination.Cherry,
     AppDestination.HarvestReadiness,
+    AppDestination.PestDisease,
     AppDestination.Equipment,
     AppDestination.Supplies,
     AppDestination.Irrigation,
@@ -51,6 +54,8 @@ val administratorMobileDestinations = listOf(
     AppDestination.Dashboard,
     AppDestination.FarmMap,
     AppDestination.Cherry,
+    AppDestination.HarvestReadiness,
+    AppDestination.PestDisease,
     AppDestination.Equipment,
     AppDestination.Supplies,
     AppDestination.Irrigation,
