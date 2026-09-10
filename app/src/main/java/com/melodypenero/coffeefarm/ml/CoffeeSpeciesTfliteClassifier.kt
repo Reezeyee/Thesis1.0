@@ -12,6 +12,7 @@ data class CoffeeSpeciesPrediction(
     val speciesDisplay: String,
     val confidence: Float,
     val confidenceText: String,
+    val isConfident: Boolean = true,
 )
 
 /**
@@ -84,15 +85,16 @@ class CoffeeSpeciesTfliteClassifier(context: Context) {
                 margin < TreeRipeness.SPECIES_MIN_TOP1_TOP2_MARGIN
             val folder = SPECIES_FOLDER_ORDER.getOrNull(bestIdx)
                 ?: throw IllegalStateException("Invalid species index $bestIdx")
-            val bestGuess = folder.replaceFirstChar { it.uppercaseChar() }
-            val display = if (uncertain) "Uncertain" else bestGuess
+            val detectedSpecies = folder.replaceFirstChar { it.uppercaseChar() }
             val pct = (bestProb.coerceIn(0f, 1f) * 100.0).let { "%.1f%%".format(it) }
-            val confText = if (uncertain) "$pct (guess: $bestGuess)" else pct
+            val display = if (uncertain) "Undetermined" else detectedSpecies
+            val confText = pct
             Result.success(
                 CoffeeSpeciesPrediction(
                     speciesDisplay = display,
                     confidence = bestProb,
                     confidenceText = confText,
+                    isConfident = !uncertain,
                 )
             )
         } catch (t: Throwable) {

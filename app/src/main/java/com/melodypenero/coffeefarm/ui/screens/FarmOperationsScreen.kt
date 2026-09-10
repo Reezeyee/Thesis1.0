@@ -357,9 +357,12 @@ private fun WorkersList(workers: List<com.melodypenero.coffeefarm.data.store.Wor
                     if (worker.phoneNumber.isNotBlank()) append("\nPhone: ${worker.phoneNumber}")
                     if (worker.address.isNotBlank()) append("\nAddress: ${worker.address}")
                     if (worker.emergencyContact.isNotBlank()) append("\nEmergency: ${worker.emergencyContact}")
-                    if (worker.details.isNotBlank()) append("\nNotes: ${worker.details}")
                 },
-                badge = null
+                badge = if (worker.isActive) {
+                    "Active" to statusBadgeColor("done")
+                } else {
+                    "Inactive" to statusBadgeColor("pending")
+                }
             ) {
                 onEdit(index)
             }

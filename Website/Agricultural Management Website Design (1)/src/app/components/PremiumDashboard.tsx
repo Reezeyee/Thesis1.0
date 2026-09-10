@@ -33,6 +33,8 @@ import {
   saleLineTotal,
 } from '../lib/farmFinance';
 import { buildMonthlyProfitExpenses } from '../lib/dashboardData';
+import { formatCurrency } from '../lib/currencyFormat';
+import { isWorkerActive } from '../lib/workerUi';
 
 const revenueRangeMap: Record<'7d' | '30d' | '90d' | '1y', Array<{ month: string; revenue: number; expenses: number }>> = {
   '7d': [
@@ -136,15 +138,17 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
     () => state.equipment.filter((e) => e.status.toLowerCase() === 'active').length,
     [state.equipment]
   );
+  const activeWorkersCount = useMemo(
+    () => state.workers.filter(isWorkerActive).length,
+    [state.workers]
+  );
 
   const formattedSales = useMemo(() => {
-    const val = totalSalesVal > 0 ? totalSalesVal : 1284500;
-    return `₱${val.toLocaleString('en-PH')}`;
+    return formatCurrency(totalSalesVal);
   }, [totalSalesVal]);
 
   const formattedHarvest = useMemo(() => {
-    const kg = harvestTotalKg > 0 ? harvestTotalKg : 18450;
-    return `${kg.toLocaleString()} kg`;
+    return `${Math.round(harvestTotalKg).toLocaleString()} kg`;
   }, [harvestTotalKg]);
 
   // Dynamic Revenue & Expenses Chart Data scaled by timeRange
@@ -353,9 +357,9 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
           <GridItem span={{ default: 12, sm: 6, lg: 3 }}>
             <StatCard
               title="Net Farm Profit"
-              value={`₱${(netProfitVal > 0 ? netProfitVal : 204250).toLocaleString('en-PH')}`}
+              value={formatCurrency(netProfitVal)}
               change={netProfitVal >= 0 ? 12.8 : -4.2}
-              changeLabel="net earnings"
+              changeLabel={netProfitVal >= 0 ? 'net positive' : 'net deficit'}
               icon={TrendingUp}
               trend={netProfitVal >= 0 ? 'up' : 'down'}
               loading={isFarmLoading}
@@ -364,9 +368,9 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
           <GridItem span={{ default: 12, sm: 6, lg: 3 }}>
             <StatCard
               title="Active Fleet Equipment"
-              value={`${activeEquipmentCount || 5} / ${state.equipment.length || 6} Units`}
+              value={`${activeEquipmentCount} / ${state.equipment.length} Units`}
               change={0}
-              changeLabel="operational status"
+              changeLabel={`${activeWorkersCount} of ${state.workers.length} staff active`}
               icon={Wrench}
               trend="up"
               loading={isFarmLoading}
@@ -391,7 +395,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
               ]}
               action={
                 <Badge variant="outline" className="text-[11px] font-mono border-accent/40">
-                  YTD Net Profit: ₱{(netProfitVal !== 0 ? netProfitVal : 77580).toLocaleString('en-PH')}
+                  YTD Net Profit: {formatCurrency(netProfitVal)}
                 </Badge>
               }
             />

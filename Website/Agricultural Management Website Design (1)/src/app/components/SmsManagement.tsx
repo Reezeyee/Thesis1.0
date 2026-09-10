@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useFarmData } from '../store/FarmDataProvider';
 import { type SmsMessageRecord, type WorkerRecord } from '../types/appState';
+import { isWorkerActive } from '../lib/workerUi';
 import { 
   Search, 
   Send, 
@@ -34,6 +35,7 @@ const itemVariants = {
 export function SmsManagement() {
   const { state, updateState } = useFarmData();
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
   const [messageText, setMessageText] = useState('');
   
@@ -44,14 +46,19 @@ export function SmsManagement() {
   const workers = state.workers || [];
   const messages = state.smsMessages || [];
 
+  const activeWorkersCount = useMemo(() => workers.filter(isWorkerActive).length, [workers]);
+
   // Filter workers list
   const filteredWorkers = useMemo(() => {
     return workers.filter(w => {
+      const active = isWorkerActive(w);
+      if (statusFilter === 'active' && !active) return false;
+      if (statusFilter === 'inactive' && active) return false;
       const nameMatch = w.name.toLowerCase().includes(searchQuery.toLowerCase());
       const roleMatch = (w.roleRate || '').toLowerCase().includes(searchQuery.toLowerCase());
       return nameMatch || roleMatch;
     });
-  }, [workers, searchQuery]);
+  }, [workers, searchQuery, statusFilter]);
 
   // Set default selected worker if none selected
   const activeWorker = useMemo(() => {
@@ -181,7 +188,13 @@ export function SmsManagement() {
         
         {/* Left Pane: Workers list */}
         <div className="w-[320px] border-r border-border/60 flex flex-col shrink-0">
-          <div className="p-3 border-b border-border/60">
+          <div className="p-3 border-b border-border/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold font-heading text-foreground">Staff Directory</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold">
+                {activeWorkersCount} Active / {workers.length} Total
+              </span>
+            </div>
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -191,6 +204,22 @@ export function SmsManagement() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-background border border-border/80 focus:border-accent rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none text-foreground placeholder:text-muted-foreground font-sans"
               />
+            </div>
+            <div className="flex items-center gap-1">
+              {(['all', 'active', 'inactive'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setStatusFilter(mode)}
+                  className={`flex-1 py-1 rounded-md text-[10px] font-mono font-medium transition-all ${
+                    statusFilter === mode
+                      ? 'bg-accent text-accent-foreground font-bold'
+                      : 'bg-muted/60 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -202,6 +231,7 @@ export function SmsManagement() {
             ) : (
               filteredWorkers.map(w => {
                 const isActive = activeWorker?.workerId === w.workerId;
+                const isStaffActive = isWorkerActive(w);
                 
                 const workerMsgs = messages.filter(m => {
                   const wName = (w.name || '').toLowerCase();
@@ -225,8 +255,9 @@ export function SmsManagement() {
                         : 'hover:bg-muted/60 border border-transparent text-foreground'
                     }`}
                   >
-                    <div className="w-9 h-9 rounded-lg bg-accent/10 text-accent flex items-center justify-center font-bold text-xs shrink-0 font-mono">
+                    <div className="w-9 h-9 rounded-lg bg-accent/10 text-accent flex items-center justify-center font-bold text-xs shrink-0 font-mono relative">
                       {w.name ? w.name.split(' ').map(p => p[0]).join('').substring(0, 2).toUpperCase() : '?'}
+                      <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${isStaffActive ? 'bg-emerald-500' : 'bg-muted-foreground'}`} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
@@ -237,7 +268,12 @@ export function SmsManagement() {
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-muted-foreground font-mono leading-none mt-0.5 truncate">{w.roleRate || 'Field Staff'}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="text-[10px] text-muted-foreground font-mono leading-none truncate">{w.roleRate || 'Field Staff'}</p>
+                        <span className={`text-[9px] font-mono px-1 rounded ${isStaffActive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+                          {isStaffActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
                       <p className="text-xs text-muted-foreground truncate mt-1 italic">
                         {lastMsg ? lastMsg.messageBody : 'No communication yet.'}
                       </p>
@@ -260,7 +296,16 @@ export function SmsManagement() {
                     {activeWorker.name ? activeWorker.name.split(' ').map(p => p[0]).join('').substring(0, 2).toUpperCase() : '?'}
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm font-heading text-foreground">{activeWorker.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-sm font-heading text-foreground">{activeWorker.name}</h3>
+                      <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full border ${
+                        isWorkerActive(activeWorker)
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                          : 'bg-muted text-muted-foreground border-border'
+                      }`}>
+                        {isWorkerActive(activeWorker) ? 'Active Staff' : 'Inactive'}
+                      </span>
+                    </div>
                     <p className="text-xs text-muted-foreground font-mono">
                       {activeWorker.roleRate || 'Worker'} • {activeWorker.phoneNumber || 'No phone number linked'}
                     </p>

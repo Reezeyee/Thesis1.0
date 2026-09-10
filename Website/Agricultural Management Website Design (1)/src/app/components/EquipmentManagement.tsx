@@ -58,7 +58,7 @@ import {
 } from './charts/FarmCharts';
 import { useFarmData } from '../store/FarmDataProvider';
 import { runSave, showSaveError } from '../lib/saveFeedback';
-import { parseWorkerDetails } from '../lib/workerUi';
+import { parseWorkerDetails, isWorkerActive } from '../lib/workerUi';
 import {
   computeLowStockThreshold,
   computeSupplyStatus,
@@ -918,11 +918,20 @@ export function EquipmentManagement() {
                   onChange={(e) => setActivityUsageWorker(e.target.value)}
                   className="w-full h-9 px-3 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
                 >
-                  {state.workers.map((w) => (
-                    <option key={w.workerId || w.name} value={`${w.name} (${w.roleRate})`}>
-                      {w.name} ({w.roleRate})
-                    </option>
-                  ))}
+                  {[...state.workers]
+                    .sort((a, b) => {
+                      const aActive = isWorkerActive(a) ? 1 : 0;
+                      const bActive = isWorkerActive(b) ? 1 : 0;
+                      return bActive - aActive;
+                    })
+                    .map((w) => {
+                      const active = isWorkerActive(w);
+                      return (
+                        <option key={w.workerId || w.name} value={`${w.name} (${w.roleRate})`}>
+                          {w.name} ({w.roleRate}){active ? '' : ' — (Inactive)'}
+                        </option>
+                      );
+                    })}
                   <option value="Admin / Inventory Manager">Admin / Inventory Manager</option>
                 </select>
               </div>

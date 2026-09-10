@@ -88,11 +88,11 @@ export function Dashboard() {
                 <p className="text-2xl mb-2 font-bold" style={{ color: stat.color }}>{stat.value}</p>
                 <div className="flex items-center gap-1">
                   {stat.trend === 'up' ? (
-                    <TrendingUp className="w-4 h-4 text-[#2d5016]" />
+                    <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   ) : (
-                    <TrendingDown className="w-4 h-4 text-[#d4183d]" />
+                    <TrendingDown className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                   )}
-                  <span className={`text-sm font-medium ${stat.trend === 'up' ? 'text-[#2d5016]' : 'text-[#d4183d]'}`}>
+                  <span className={`text-sm font-semibold ${stat.trend === 'up' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                     {stat.change}
                   </span>
                 </div>
@@ -200,11 +200,11 @@ export function Dashboard() {
             {recentActivity.map((activity, idx) => (
               <div key={idx} className="flex gap-3 pb-3 border-b border-border/60 last:border-0">
                 <div className={`w-2 h-2 rounded-full mt-2 ${
-                  activity.type === 'success' ? 'bg-[#2d5016]' :
-                  activity.type === 'warning' ? 'bg-[#d4a574]' : 'bg-[#8b6f47]'
+                  activity.type === 'success' ? 'bg-emerald-500' :
+                  activity.type === 'warning' ? 'bg-amber-500' : 'bg-muted-foreground'
                 }`} />
                 <div className="flex-1">
-                  <p className="text-sm font-medium">{activity.action}</p>
+                  <p className="text-sm font-medium text-foreground">{activity.action}</p>
                   <p className="text-xs text-muted-foreground">{activity.details}</p>
                   <p className="text-xs text-muted-foreground mt-1">{activity.time}</p>
                 </div>
@@ -215,18 +215,18 @@ export function Dashboard() {
       </div>
 
       <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-        <h3 className="mb-4">Top Buyers</h3>
+        <h3 className="mb-4 text-foreground font-bold">Top Buyers</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {topBuyers.map((buyer, idx) => (
             <div key={idx} className="bg-muted/40 rounded-xl p-4 border border-border/60">
               <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 rounded-lg bg-[#4a2c2a] flex items-center justify-center">
-                  <ShoppingCart className="w-5 h-5 text-white" />
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <ShoppingCart className="w-5 h-5 text-primary" />
                 </div>
-                <span className="text-xs px-2 py-1 bg-[#2d5016] text-white rounded-full">{buyer.orders} orders</span>
+                <span className="text-xs px-2.5 py-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold rounded-full border border-emerald-500/25">{buyer.orders} orders</span>
               </div>
-              <h4 className="mb-1">{buyer.name}</h4>
-              <p className="text-2xl text-[#2d5016] mb-2">{buyer.amount}</p>
+              <h4 className="mb-1 text-foreground font-semibold">{buyer.name}</h4>
+              <p className="text-2xl text-emerald-600 dark:text-emerald-400 font-bold mb-2">{buyer.amount}</p>
               <p className="text-sm text-muted-foreground">{buyer.location}</p>
             </div>
           ))}

@@ -26,7 +26,7 @@ class YoloTfliteDetector(context: Context) {
     private val appContext = context.applicationContext
 
     private val interpreter: Interpreter? = runCatching {
-        val modelBuffer = loadModelBuffer("cherry_grade_model.tflite") ?: loadModelBuffer(MODEL_ASSET)
+        val modelBuffer = loadModelBuffer(MODEL_ASSET) ?: loadModelBuffer("cherry_grade_model.tflite")
         modelBuffer?.let {
             val options = Interpreter.Options().apply { setNumThreads(4) }
             Interpreter(it, options)

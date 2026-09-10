@@ -26,6 +26,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { useFarmData } from '../store/FarmDataProvider';
+import { isWorkerActive } from '../lib/workerUi';
 
 // Real-time AI Cherry Scans & Model Confidence data over time
 const scanTrendDataMap: Record<'1m' | '5m' | '1h' | '24h' | '7d', Array<{ time: string; scansCount: number; confidenceScore: number }>> = {
@@ -96,7 +97,7 @@ export function FarmMonitoringDashboard() {
 
   // Thesis Core Metrics Derived from AppState (CNN Scans & Ripeness)
   const totalScansCount = useMemo(() => {
-    return state.cherryGrades.length > 0 ? state.cherryGrades.length : 1420;
+    return state.cherryGrades.length;
   }, [state.cherryGrades]);
 
   const harvestReadinessRatio = useMemo(() => {
@@ -106,29 +107,53 @@ export function FarmMonitoringDashboard() {
       ).length;
       return `${((ripeCount / state.cherryGrades.length) * 100).toFixed(1)}% Ready to Harvest`;
     }
-    return '94.2% Ready to Harvest';
-  }, [state.cherryGrades]);
+    if (state.treeRipenessScans && state.treeRipenessScans.length > 0) {
+      const ripeScans = state.treeRipenessScans.filter((s) => (s.ripenessLabel ?? '').toLowerCase().includes('ripe')).length;
+      return `${((ripeScans / state.treeRipenessScans.length) * 100).toFixed(1)}% Ready to Harvest`;
+    }
+    return '0.0% Ready to Harvest';
+  }, [state.cherryGrades, state.treeRipenessScans]);
 
   const activeWorkersCount = useMemo(() => {
-    return state.workers.length > 0 ? state.workers.length : 18;
+    return state.workers.filter(isWorkerActive).length;
   }, [state.workers]);
 
   const speciesDistributionData = useMemo(() => {
-    const arabica = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('arabica')).length || 620;
-    const robusta = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('robusta')).length || 510;
-    const liberica = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('liberica') || (g.species ?? '').toLowerCase().includes('excelsa')).length || 290;
+    const arabica = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('arabica')).length;
+    const robusta = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('robusta')).length;
+    const liberica = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('liberica') || (g.species ?? '').toLowerCase().includes('excelsa')).length;
     const total = arabica + robusta + liberica;
 
+    if (total > 0) {
+      return [
+        { name: 'Arabica Variety', value: arabica, color: 'hsl(var(--chart-1))' },
+        { name: 'Robusta Variety', value: robusta, color: 'hsl(var(--chart-2))' },
+        { name: 'Liberica / Excelsa', value: liberica, color: 'hsl(var(--chart-3))' },
+      ];
+    }
+    const fieldArabica = state.coffeeFields.filter((f) => (f.variety ?? '').toLowerCase().includes('arabica')).reduce((s, f) => s + (f.trees || 0), 0);
+    const fieldRobusta = state.coffeeFields.filter((f) => (f.variety ?? '').toLowerCase().includes('robusta')).reduce((s, f) => s + (f.trees || 0), 0);
+    const fieldLiberica = state.coffeeFields.filter((f) => (f.variety ?? '').toLowerCase().includes('liberica') || (f.variety ?? '').toLowerCase().includes('excelsa')).reduce((s, f) => s + (f.trees || 0), 0);
+    const fieldTotal = fieldArabica + fieldRobusta + fieldLiberica;
+    if (fieldTotal > 0) {
+      return [
+        { name: 'Arabica Variety', value: fieldArabica, color: 'hsl(var(--chart-1))' },
+        { name: 'Robusta Variety', value: fieldRobusta, color: 'hsl(var(--chart-2))' },
+        { name: 'Liberica / Excelsa', value: fieldLiberica, color: 'hsl(var(--chart-3))' },
+      ];
+    }
     return [
-      { name: 'Arabica Variety', value: arabica, color: 'hsl(var(--chart-1))' },
-      { name: 'Robusta Variety', value: robusta, color: 'hsl(var(--chart-2))' },
-      { name: 'Liberica / Excelsa', value: liberica, color: 'hsl(var(--chart-3))' },
+      { name: 'Arabica Variety', value: 0, color: 'hsl(var(--chart-1))' },
+      { name: 'Robusta Variety', value: 0, color: 'hsl(var(--chart-2))' },
+      { name: 'Liberica / Excelsa', value: 0, color: 'hsl(var(--chart-3))' },
     ];
-  }, [state.cherryGrades]);
+  }, [state.cherryGrades, state.coffeeFields]);
 
   const monitoredTreesCount = useMemo(() => {
-    return state.trees.length > 0 ? state.trees.length : 450;
-  }, [state.trees]);
+    if (state.trees.length > 0) return state.trees.length;
+    const fieldTreeSum = state.coffeeFields.reduce((sum, f) => sum + (f.trees || 0), 0);
+    return fieldTreeSum > 0 ? fieldTreeSum : 0;
+  }, [state.trees, state.coffeeFields]);
 
   // Field Sectors Table with Harvest Readiness
   const sectorData = useMemo(() => {
@@ -245,9 +270,9 @@ export function FarmMonitoringDashboard() {
           <GridItem span={{ default: 12, sm: 6, lg: 3 }}>
             <StatCard
               title="Active Field Workers"
-              value={`${activeWorkersCount} Staff`}
+              value={`${activeWorkersCount} Active Staff`}
               change={0}
-              changeLabel="active farm personnel"
+              changeLabel={`${activeWorkersCount} of ${state.workers.length} active registered`}
               icon={Users}
               trend="up"
               loading={isFarmLoading}

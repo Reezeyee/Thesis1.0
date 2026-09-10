@@ -66,7 +66,10 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocalFlorist
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Warning
@@ -77,6 +80,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -108,6 +112,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -120,6 +125,7 @@ import com.melodypenero.coffeefarm.data.store.LocalAppStore
 import com.melodypenero.coffeefarm.data.store.TreeRipenessScanRecord
 import com.melodypenero.coffeefarm.data.store.isDeviceOnline
 import com.melodypenero.coffeefarm.ml.BitmapExifUtils
+import com.melodypenero.coffeefarm.ml.CoffeeSpeciesTfliteClassifier
 import com.melodypenero.coffeefarm.ml.YoloTfliteDetector
 import com.melodypenero.coffeefarm.ui.components.FarmTabRow
 import com.melodypenero.coffeefarm.ui.components.farmPalette
@@ -182,12 +188,76 @@ fun CoffeeCherryScreen(
                 onTabSelected = { activeTab = it }
             )
 
+            val availableSections = remember(state.coffeeFields, state.sections, state.trees) {
+                val items = mutableListOf<FarmSectionOption>()
+                
+                // 1. Mapped coffee fields from farm map
+                state.coffeeFields.forEach { f ->
+                    val name = f.name.trim()
+                    if (name.isNotBlank() && items.none { it.name.equals(name, ignoreCase = true) }) {
+                        val detailsList = listOfNotNull(
+                            f.variety.takeIf { it.isNotBlank() },
+                            if (f.trees > 0) "${f.trees} trees" else null,
+                            f.status.takeIf { it.isNotBlank() }
+                        )
+                        items.add(
+                            FarmSectionOption(
+                                name = name,
+                                details = if (detailsList.isNotEmpty()) detailsList.joinToString(" · ") else "Active Field Section",
+                                treeCount = f.trees
+                            )
+                        )
+                    }
+                }
+                
+                // 2. General farm sections
+                state.sections.forEach { s ->
+                    val name = s.name.trim()
+                    if (name.isNotBlank() && items.none { it.name.equals(name, ignoreCase = true) }) {
+                        items.add(
+                            FarmSectionOption(
+                                name = name,
+                                details = s.details.trim().ifBlank { "Farm Block Section" }
+                            )
+                        )
+                    }
+                }
+                
+                // 3. Mapped trees
+                state.trees.forEach { t ->
+                    val name = t.sectionName.trim()
+                    if (name.isNotBlank() && items.none { it.name.equals(name, ignoreCase = true) }) {
+                        val count = state.trees.count { it.sectionName.trim().equals(name, ignoreCase = true) }
+                        items.add(
+                            FarmSectionOption(
+                                name = name,
+                                details = "$count trees mapped",
+                                treeCount = count
+                            )
+                        )
+                    }
+                }
+                
+                if (items.isEmpty()) {
+                    listOf(
+                        FarmSectionOption("Section A", "North Plot · Arabica"),
+                        FarmSectionOption("Section B", "East Slope · Robusta"),
+                        FarmSectionOption("Section C", "South Ridge · Liberica"),
+                        FarmSectionOption("Section D", "West Terrace · Excelsa")
+                    )
+                } else {
+                    items
+                }
+            }
+
             when (activeTab) {
                 "Scanner" -> PremiumCherryScannerTab(
-                    suggestedBatchId = nextBatchId(
-                        state.cherryGrades.mapNotNull { it.batchId?.trim() }
-                    ),
-                    onSaveScan = { summary, bitmap, batchId ->
+                    availableSections = availableSections,
+                    onSaveScan = { summary, bitmap, section ->
+                        val generatedBatchId = nextBatchId(
+                            state.cherryGrades.mapNotNull { it.batchId?.trim() }
+                        )
+
                         store.addTreeRipenessScanWithCherryGrade(
                             TreeRipenessScanRecord(
                                 treeId = "branch_scan",
@@ -195,11 +265,12 @@ fun CoffeeCherryScreen(
                                 timestampMillis = summary.timestamp,
                                 sourceGrade = summary.harvestStatus
                             ),
-                            batchId = batchId,
+                            batchId = generatedBatchId,
                             grade = summary.harvestStatus,
                             confidence = "%.1f%%".format(summary.ripePercentage),
-                            species = "Arabica",
-                            speciesConfidence = "High",
+                            species = summary.detectedSpecies,
+                            speciesConfidence = summary.speciesConfidence,
+                            location = section,
                             scannedByWorkerName = session.displayName,
                             scannedByEmail = session.email,
                             scannedByAuthUid = session.userId
@@ -207,15 +278,21 @@ fun CoffeeCherryScreen(
 
                         // Also push to Firebase repository in background
                         coroutineScope.launch(Dispatchers.IO) {
-                            repository.saveBranchScan(summary, bitmap, session.userId)
+                            repository.saveBranchScan(
+                                summary = summary,
+                                bitmap = bitmap,
+                                userId = session.userId,
+                                batchId = generatedBatchId,
+                                location = section
+                            )
                         }
                     }
                 )
 
                 "Saved Scans" -> SavedScansTab(
                     records = state.cherryGrades.sortedByDescending { it.savedAtMillis ?: 0L },
-                    onDeleteRecord = { gradeKey ->
-                        store.deleteCherryGradeByKey(gradeKey)
+                    onDeleteRecord = { gradeRecord ->
+                        store.deleteCherryGradeByKey(store.stableKeyForCherryGrade(gradeRecord))
                     }
                 )
             }
@@ -223,10 +300,16 @@ fun CoffeeCherryScreen(
     }
 }
 
+data class FarmSectionOption(
+    val name: String,
+    val details: String = "",
+    val treeCount: Int = 0
+)
+
 @Composable
 private fun PremiumCherryScannerTab(
-    suggestedBatchId: String,
-    onSaveScan: (summary: BranchScanSummary, bitmap: Bitmap, batchId: String) -> Unit
+    availableSections: List<FarmSectionOption>,
+    onSaveScan: (summary: BranchScanSummary, bitmap: Bitmap, section: String) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -234,8 +317,8 @@ private fun PremiumCherryScannerTab(
 
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var selectedImageUri by remember { mutableStateOf<String?>(null) }
-    var batchId by remember { mutableStateOf(suggestedBatchId) }
-    var showBatchDialog by remember { mutableStateOf(false) }
+    var selectedSection by remember { mutableStateOf(availableSections.firstOrNull()?.name ?: "Section A") }
+    var showSectionDialog by remember { mutableStateOf(false) }
 
     var inferenceRunning by remember { mutableStateOf(false) }
     var scanResult by remember { mutableStateOf<BranchScanSummary?>(null) }
@@ -243,6 +326,7 @@ private fun PremiumCherryScannerTab(
     var showNoCherryDialog by remember { mutableStateOf(false) }
 
     val detector = remember { YoloTfliteDetector(context) }
+    val speciesClassifier = remember { CoffeeSpeciesTfliteClassifier(context) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val imageCapture = remember { ImageCapture.Builder().build() }
 
@@ -284,26 +368,32 @@ private fun PremiumCherryScannerTab(
         if (bmp != null) {
             capturedBitmap = bmp
             selectedImageUri = null
-            val res = withContext(Dispatchers.Default) {
-                val cloudRes = RoboflowApiClient.detect(bmp)
-                if (cloudRes.isSuccess && (cloudRes.getOrNull()?.totalCount ?: 0) > 0) {
-                    cloudRes
+            val (yoloRes, speciesPred) = withContext(Dispatchers.Default) {
+                val localRes = detector.detect(bmp)
+                val detectionResult = if (localRes.isSuccess && (localRes.getOrNull()?.totalCount ?: 0) > 0) {
+                    localRes
                 } else {
-                    val errMsg = cloudRes.exceptionOrNull()?.message ?: ""
-                    if (errMsg.contains("Training Pending")) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(context, errMsg, Toast.LENGTH_LONG).show()
-                        }
+                    val cloudRes = RoboflowApiClient.detect(bmp)
+                    if (cloudRes.isSuccess && (cloudRes.getOrNull()?.totalCount ?: 0) > 0) {
+                        cloudRes
+                    } else {
+                        localRes
                     }
-                    detector.detect(bmp)
                 }
+                val spec = speciesClassifier.classify(bmp).getOrNull()
+                detectionResult to spec
             }
 
-
-            res.fold(
+            yoloRes.fold(
                 onSuccess = { summary ->
-                    scanResult = summary
-                    if (summary.totalCount > 0) {
+                    val speciesName = speciesPred?.speciesDisplay ?: "Undetermined"
+                    val speciesConf = speciesPred?.confidenceText ?: "0.0%"
+                    val finalSummary = summary.copy(
+                        detectedSpecies = speciesName,
+                        speciesConfidence = speciesConf
+                    )
+                    scanResult = finalSummary
+                    if (finalSummary.totalCount > 0) {
                         showResultSheet = true
                     } else {
                         showNoCherryDialog = true
@@ -334,38 +424,66 @@ private fun PremiumCherryScannerTab(
             .fillMaxSize()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
 
-        // Top Control Card (Batch ID)
+        // Top Control: Active Farm Section Picker
         Surface(
             color = Color(0xFF1E1611),
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, Color(0xFF4A382C)),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showSectionDialog = true }
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { showBatchDialog = true }
-                    .padding(14.dp),
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.LocalFlorist,
-                        contentDescription = null,
-                        tint = Color(0xFF84B626),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("Active Batch / Lot ID", color = Color(0xFFB8A99E), style = MaterialTheme.typography.labelSmall)
-                        Text(batchId.ifBlank { "Tap to assign Batch ID" }, color = Color(0xFFF4EDE6), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFF2C2017), CircleShape)
+                            .border(1.dp, Color(0xFFD4AF37).copy(alpha = 0.6f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = Color(0xFFD4AF37),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Active Farm Section",
+                            color = Color(0xFFB8A99E),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            text = selectedSection.ifBlank { "Tap to select Farm Section" },
+                            color = Color(0xFFF4EDE6),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
-                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color(0xFF8F8177))
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = Color(0xFF8F8177)
+                )
             }
         }
 
@@ -523,19 +641,31 @@ private fun PremiumCherryScannerTab(
                                         inferenceRunning = true
                                     }
                                     cameraExecutor.execute {
-                                        val cloudRes = RoboflowApiClient.detect(bmp)
-                                        val res = if (cloudRes.isSuccess && (cloudRes.getOrNull()?.totalCount ?: 0) > 0) {
-                                            cloudRes
+                                        val localRes = detector.detect(bmp)
+                                        val res = if (localRes.isSuccess && (localRes.getOrNull()?.totalCount ?: 0) > 0) {
+                                            localRes
                                         } else {
-                                            detector.detect(bmp)
+                                            val cloudRes = RoboflowApiClient.detect(bmp)
+                                            if (cloudRes.isSuccess && (cloudRes.getOrNull()?.totalCount ?: 0) > 0) {
+                                                cloudRes
+                                            } else {
+                                                localRes
+                                            }
                                         }
-                                        mainExecutor.execute {
+                                        val speciesPred = speciesClassifier.classify(bmp).getOrNull()
 
+                                        mainExecutor.execute {
                                             inferenceRunning = false
                                             res.fold(
                                                 onSuccess = { summary ->
-                                                    scanResult = summary
-                                                    if (summary.totalCount > 0) {
+                                                    val speciesName = speciesPred?.speciesDisplay ?: "Undetermined"
+                                                    val speciesConf = speciesPred?.confidenceText ?: "0.0%"
+                                                    val finalSummary = summary.copy(
+                                                        detectedSpecies = speciesName,
+                                                        speciesConfidence = speciesConf
+                                                    )
+                                                    scanResult = finalSummary
+                                                    if (finalSummary.totalCount > 0) {
                                                         showResultSheet = true
                                                     } else {
                                                         showNoCherryDialog = true
@@ -593,11 +723,11 @@ private fun PremiumCherryScannerTab(
             BranchScanResultSheet(
                 summary = scanResult!!,
                 bitmap = capturedBitmap!!,
-                batchId = batchId,
+                section = selectedSection,
                 onSave = {
-                    onSaveScan(scanResult!!, capturedBitmap!!, batchId)
+                    onSaveScan(scanResult!!, capturedBitmap!!, selectedSection)
                     showResultSheet = false
-                    Toast.makeText(context, "Scan result saved under $batchId!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Scan result saved for $selectedSection!", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { showResultSheet = false }
             )
@@ -609,40 +739,165 @@ private fun PremiumCherryScannerTab(
         CherryNotVisibleDialog(onDismiss = { showNoCherryDialog = false })
     }
 
-    // BATCH ID SETTING DIALOG
-    if (showBatchDialog) {
-        AlertDialog(
-            onDismissRequest = { showBatchDialog = false },
-            containerColor = Color(0xFF2D211A),
-            title = { Text("Set Batch ID", color = Color(0xFFF4EDE6), fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = batchId,
-                    onValueChange = { batchId = it },
-                    label = { Text("Batch ID") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF84B626),
-                        unfocusedBorderColor = Color(0xFF4A382C),
-                        focusedTextColor = Color(0xFFF4EDE6),
-                        unfocusedTextColor = Color(0xFFF4EDE6)
-                    )
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showBatchDialog = false }) {
-                    Text("Save", color = Color(0xFF84B626), fontWeight = FontWeight.Bold)
-                }
+    // FARM SECTION PICKER DIALOG
+    if (showSectionDialog) {
+        SectionPickerDialog(
+            currentSection = selectedSection,
+            availableSections = availableSections,
+            onDismiss = { showSectionDialog = false },
+            onConfirm = { chosen ->
+                selectedSection = chosen.ifBlank { "Section A" }
+                showSectionDialog = false
             }
         )
     }
 }
 
 @Composable
+private fun SectionPickerDialog(
+    currentSection: String,
+    availableSections: List<FarmSectionOption>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var tempSection by remember { mutableStateOf(currentSection) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF241A14),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFFD4AF37), modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Select Farm Section", color = Color(0xFFF4EDE6), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Choose the accurate farm section or map sector for this coffee scan:",
+                    color = Color(0xFFB8A99E),
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                OutlinedTextField(
+                    value = tempSection,
+                    onValueChange = { tempSection = it },
+                    label = { Text("Selected Farm Section") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF84B626),
+                        unfocusedBorderColor = Color(0xFF4A382C),
+                        focusedTextColor = Color(0xFFF4EDE6),
+                        unfocusedTextColor = Color(0xFFF4EDE6)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = "Mapped Farm Sections (${availableSections.size}):",
+                    color = Color(0xFFD4AF37),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(availableSections) { sec ->
+                        val isSelected = tempSection.trim().equals(sec.name.trim(), ignoreCase = true)
+                        Surface(
+                            color = if (isSelected) Color(0xFF84B626).copy(alpha = 0.25f) else Color(0xFF1E1611),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) Color(0xFF84B626) else Color(0xFF3E2D22)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { tempSection = sec.name }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .background(if (isSelected) Color(0xFF84B626).copy(alpha = 0.3f) else Color(0xFF2C2017), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Place,
+                                            contentDescription = null,
+                                            tint = if (isSelected) Color(0xFF84B626) else Color(0xFFD4AF37),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = sec.name,
+                                            color = if (isSelected) Color(0xFF84B626) else Color(0xFFF4EDE6),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
+                                        )
+                                        if (sec.details.isNotBlank()) {
+                                            Text(
+                                                text = sec.details,
+                                                color = Color(0xFF9E8E81),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF84B626),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(tempSection.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF84B626))
+            ) {
+                Text("Confirm Section", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFFB8A99E))
+            }
+        }
+    )
+}
+
+@Composable
 private fun BranchScanResultSheet(
     summary: BranchScanSummary,
     bitmap: Bitmap,
-    batchId: String,
+    section: String,
     onSave: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -665,15 +920,15 @@ private fun BranchScanResultSheet(
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Header Row with Gold AI Badge
+        // Header Row with Gold AI Badge & Accurate Section Name
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f, fill = false)) {
                 Text("Cherry Detection Complete", color = Color(0xFFD4AF37), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Batch: $batchId · ${animatedCherryCount.value.toInt()} Cherries Found", color = Color(0xFFB8A99E), style = MaterialTheme.typography.bodySmall)
+                Text("Section: $section · ${animatedCherryCount.value.toInt()} Cherries Found", color = Color(0xFFB8A99E), style = MaterialTheme.typography.bodySmall)
             }
 
             IconButton(onClick = onDismiss) {
@@ -681,35 +936,62 @@ private fun BranchScanResultSheet(
             }
         }
 
-        // Bounding Box Rendered Image Canvas
+        // Bounding Box Rendered Image Canvas (Proper Aspect-Ratio Scaling)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(230.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color.Black)
+                .background(Color(0xFF0D0907))
                 .border(1.dp, Color(0xFF4A382C), RoundedCornerShape(16.dp))
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val scaleX = size.width / bitmap.width.toFloat()
-                val scaleY = size.height / bitmap.height.toFloat()
+                val imgW = bitmap.width.toFloat()
+                val imgH = bitmap.height.toFloat()
+                if (imgW <= 0 || imgH <= 0) return@Canvas
 
-                // Draw bitmap background
-                drawImage(bitmap.asImageBitmap(), dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()))
+                val imageAspect = imgW / imgH
+                val viewAspect = size.width / size.height
 
-                // Draw bounding boxes
+                val drawW: Float
+                val drawH: Float
+                val offX: Float
+                val offY: Float
+
+                if (imageAspect > viewAspect) {
+                    drawW = size.width
+                    drawH = size.width / imageAspect
+                    offX = 0f
+                    offY = (size.height - drawH) / 2f
+                } else {
+                    drawH = size.height
+                    drawW = size.height * imageAspect
+                    offX = (size.width - drawW) / 2f
+                    offY = 0f
+                }
+
+                val scale = drawW / imgW
+
+                // Draw background bitmap fitted with true proportions
+                drawImage(
+                    image = bitmap.asImageBitmap(),
+                    dstOffset = androidx.compose.ui.unit.IntOffset(offX.toInt(), offY.toInt()),
+                    dstSize = androidx.compose.ui.unit.IntSize(drawW.toInt(), drawH.toInt())
+                )
+
+                // Draw bounding boxes mapped accurately
                 summary.detections.forEach { det ->
                     val color = CLASS_COLORS[det.className] ?: Color.Red
                     val rect = det.rect
-                    val left = rect.left * scaleX
-                    val top = rect.top * scaleY
-                    val right = rect.right * scaleX
-                    val bottom = rect.bottom * scaleY
+                    val left = offX + rect.left * scale
+                    val top = offY + rect.top * scale
+                    val right = offX + rect.right * scale
+                    val bottom = offY + rect.bottom * scale
 
                     drawRect(
                         color = color,
                         topLeft = Offset(left, top),
-                        size = Size(right - left, bottom - top),
+                        size = Size((right - left).coerceAtLeast(0f), (bottom - top).coerceAtLeast(0f)),
                         style = Stroke(width = 4f)
                     )
                 }
@@ -739,21 +1021,174 @@ private fun BranchScanResultSheet(
             }
         }
 
-        // Harvest Recommendation Status Card
+        // Unified AI Diagnostic & Assessment Card (Merged Species + Ripeness)
+        val cardAccentColor = when {
+            summary.ripePercentage >= 75.0f -> Color(0xFF4CAF50)
+            summary.ripePercentage >= 40.0f -> Color(0xFFFFB300)
+            else -> Color(0xFFE57373)
+        }
+
         Surface(
-            color = when {
-                summary.ripePercentage >= 75.0f -> Color(0xFF1E3A1E)
-                summary.ripePercentage >= 40.0f -> Color(0xFF3D3210)
-                else -> Color(0xFF3E1E1E)
-            },
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color(0xFF84B626)),
+            color = Color(0xFF1C1510),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.5.dp, cardAccentColor.copy(alpha = 0.8f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Text("HARVEST RECOMMENDATION", color = Color(0xFFB8A99E), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Text(summary.harvestStatus, color = Color(0xFFF4EDE6), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Ripe Cherry Ratio: %.1f%%".format(animatedRipePct.value), color = Color(0xFF84B626), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Top Row: Botanical Species & Model Confidence
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color(0xFF2C2017), CircleShape)
+                                .border(1.dp, Color(0xFFD4AF37), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LocalFlorist,
+                                contentDescription = null,
+                                tint = Color(0xFFD4AF37),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "COFFEE SPECIES (CNN)",
+                                color = Color(0xFF9E8E81),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                            Text(
+                                text = summary.detectedSpecies,
+                                color = Color(0xFFF4EDE6),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    Surface(
+                        color = Color(0xFF261D15),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFFD4AF37).copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "Conf: ${summary.speciesConfidence}",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = Color(0xFFD4AF37),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color(0xFF382A20), thickness = 1.dp)
+
+                // Ripeness & Harvest Status Section
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f, fill = false),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(cardAccentColor, CircleShape)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = summary.harvestStatus,
+                                color = Color(0xFFF4EDE6),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Spacer(Modifier.width(10.dp))
+
+                        // Dedicated Non-Wrapping Ripe % Chip
+                        Surface(
+                            color = cardAccentColor.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, cardAccentColor.copy(alpha = 0.6f))
+                        ) {
+                            Text(
+                                text = "%.1f%% Ripe".format(animatedRipePct.value),
+                                color = cardAccentColor,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+
+                    // Ripeness Progress Bar
+                    LinearProgressIndicator(
+                        progress = { (animatedRipePct.value / 100f).coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = cardAccentColor,
+                        trackColor = Color(0xFF2C2017)
+                    )
+                }
+
+                // Summary Metric Badges (Total, Ripe, Developing)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val ripeCount = summary.classCounts["Ripe"] ?: 0
+                    val nonRipeCount = summary.totalCount - ripeCount
+
+                    MetricPill(
+                        modifier = Modifier.weight(1f),
+                        label = "Total",
+                        value = "${summary.totalCount}",
+                        tint = Color(0xFFF4EDE6)
+                    )
+                    MetricPill(
+                        modifier = Modifier.weight(1f),
+                        label = "Ripe",
+                        value = "$ripeCount",
+                        tint = Color(0xFF4CAF50)
+                    )
+                    MetricPill(
+                        modifier = Modifier.weight(1f),
+                        label = "Unripe / Other",
+                        value = "$nonRipeCount",
+                        tint = Color(0xFFFFB300)
+                    )
+                }
             }
         }
 
@@ -795,6 +1230,46 @@ private fun BranchScanResultSheet(
     }
 }
 
+@Composable
+private fun MetricPill(
+    label: String,
+    value: String,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = Color(0xFF241A14),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color(0xFF3E2D22)),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = label,
+                color = Color(0xFF9E8E81),
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = value,
+                color = tint,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
+        }
+    }
+}
+
 
 @Composable
 private fun CherryNotVisibleDialog(onDismiss: () -> Unit) {
@@ -831,7 +1306,7 @@ private fun CherryNotVisibleDialog(onDismiss: () -> Unit) {
 @Composable
 private fun SavedScansTab(
     records: List<com.melodypenero.coffeefarm.data.store.CherryGradeRecord>,
-    onDeleteRecord: (gradeKey: String) -> Unit
+    onDeleteRecord: (record: com.melodypenero.coffeefarm.data.store.CherryGradeRecord) -> Unit
 ) {
     var sortOption by remember { mutableStateOf("Newest First") }
 
@@ -905,13 +1380,35 @@ private fun SavedScansTab(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(r.batchId ?: "General Scan", color = Color(0xFFF4EDE6), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                    Text("Ripe Ratio / Confidence: ${r.confidence}", color = Color(0xFFB8A99E), style = MaterialTheme.typography.bodySmall)
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Place,
+                                            contentDescription = null,
+                                            tint = Color(0xFFD4AF37),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = r.location?.ifBlank { null } ?: "Farm Section",
+                                            color = Color(0xFFF4EDE6),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    val speciesInfo = if (!r.species.isNullOrBlank() && r.species != "Undetermined") {
+                                        "Species: ${r.species} (${r.speciesConfidence ?: "CNN"})"
+                                    } else {
+                                        "Species: ${r.species ?: "Unidentified"}"
+                                    }
+                                    Text(speciesInfo, color = Color(0xFFD4AF37), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    Text("Ripeness: ${r.confidence ?: "0.0%"}", color = Color(0xFFB8A99E), style = MaterialTheme.typography.bodySmall)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(r.grade ?: "Graded", color = Color(0xFF84B626), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                    IconButton(onClick = { onDeleteRecord(r.batchId ?: "") }) {
+                                    IconButton(onClick = { onDeleteRecord(r) }) {
                                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFFF7A70), modifier = Modifier.size(18.dp))
                                     }
                                 }

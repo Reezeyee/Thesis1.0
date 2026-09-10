@@ -267,27 +267,26 @@ export function CherryManagement() {
                   className="bg-muted/40 rounded-xl p-4 border border-border/60 hover:border-border/80 transition-all"
                 >
                   <div className="flex items-start gap-4">
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-background/80 text-[#2d5016] border border-border/60">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
                       <Coffee className="h-7 w-7" />
                     </div>
                     <div className="flex-1">
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <h4 className="mb-1">{record.batchNumber}</h4>
+                        <h4 className="mb-1 text-foreground font-bold">{record.location && record.location !== '—' ? record.location : 'Farm Section'}</h4>
                         <p className="text-xs text-muted-foreground">{record.date}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">Tree: {record.treeId}</p>
-                        {record.location && record.location !== '—' && (
-                          <p className="mt-1 text-xs text-muted-foreground">Location: {record.location}</p>
+                        {record.treeId && record.treeId !== 'branch_scan' && (
+                          <p className="mt-1 text-xs text-muted-foreground">Tree: {record.treeId}</p>
                         )}
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <span
-                          className={`text-xs px-3 py-1 rounded-full ${
+                          className={`text-xs px-3 py-1 rounded-full font-bold border ${
                             record.quality === 'excellent'
-                              ? 'bg-[#2d5016] text-white'
+                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
                               : record.quality === 'good'
-                              ? 'bg-[#8b6f47] text-white'
-                              : 'bg-[#d4a574] text-white'
+                              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                              : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
                           }`}
                         >
                           {record.quality}
@@ -299,25 +298,27 @@ export function CherryManagement() {
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
-                      <div className="bg-background/80 rounded-lg p-2">
-                        <p className="text-xs text-muted-foreground mb-1">Grade</p>
-                        <p className="text-sm font-medium text-[#2d5016]">{record.grade}</p>
+                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                        <p className="text-xs text-muted-foreground mb-1 font-semibold">Grade / Ripeness</p>
+                        <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{record.grade}</p>
                       </div>
-                      <div className="bg-background/80 rounded-lg p-2">
-                        <p className="text-xs text-muted-foreground mb-1">Species</p>
-                        <p className="text-sm font-medium text-muted-foreground">{record.species}</p>
+                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                        <p className="text-xs text-muted-foreground mb-1 font-semibold">Species (CNN)</p>
+                        <span className="inline-flex items-center text-xs font-extrabold px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                          {record.species}
+                        </span>
                       </div>
-                      <div className="bg-background/80 rounded-lg p-2">
-                        <p className="text-xs text-muted-foreground mb-1">Confidence</p>
-                        <p className="text-sm font-medium">{record.confidence}%</p>
+                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                        <p className="text-xs text-muted-foreground mb-1 font-semibold">Confidence</p>
+                        <p className="text-sm font-bold text-foreground">{record.confidence}%</p>
                       </div>
-                      <div className="bg-background/80 rounded-lg p-2">
-                        <p className="text-xs text-muted-foreground mb-1">Location</p>
-                        <p className="text-sm font-medium truncate" title={record.location}>{record.location}</p>
+                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                        <p className="text-xs text-muted-foreground mb-1 font-semibold">Location</p>
+                        <p className="text-sm font-medium text-foreground truncate" title={record.location}>{record.location}</p>
                       </div>
-                      <div className="bg-background/80 rounded-lg p-2">
-                        <p className="text-xs text-muted-foreground mb-1">Source</p>
-                        <p className="text-sm font-medium break-all">{record.source}</p>
+                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                        <p className="text-xs text-muted-foreground mb-1 font-semibold">Source</p>
+                        <p className="text-sm font-medium text-muted-foreground break-all">{record.source}</p>
                       </div>
                     </div>
                     </div>
@@ -379,8 +380,8 @@ export function CherryManagement() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-muted-foreground">Ripe Rate</span>
                   <div className="flex items-center gap-1">
-                    <TrendingUp className="w-4 h-4 text-[#2d5016]" />
-                    <span className="text-xl font-medium text-[#2d5016]">
+                    <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
                       {ripeRate}%
                     </span>
                   </div>

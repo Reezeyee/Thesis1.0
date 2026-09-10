@@ -220,6 +220,13 @@ export function parseWorkerDetails(details: string | undefined): WorkerMeta {
   }
 }
 
+/** Check whether a WorkerRecord has active status. */
+export function isWorkerActive(w: WorkerRecord | null | undefined): boolean {
+  if (!w) return false;
+  const meta = parseWorkerDetails(w.details);
+  return meta.status !== 'inactive';
+}
+
 export function parseEmergencyContact(raw: string | undefined): EmergencyContactMeta {
   if (!raw?.trim()) return {};
   try {

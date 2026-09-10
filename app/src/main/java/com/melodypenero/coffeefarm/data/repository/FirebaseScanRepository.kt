@@ -25,6 +25,9 @@ class FirebaseScanRepository(context: Context) {
         summary: BranchScanSummary,
         bitmap: Bitmap,
         userId: String? = "farm_user_demo",
+        batchId: String = "",
+        location: String = "",
+        treeId: String? = null,
     ): Result<String> {
         return try {
             val scanId = UUID.randomUUID().toString()
@@ -44,11 +47,17 @@ class FirebaseScanRepository(context: Context) {
             val scanDoc = mapOf(
                 "scanId" to scanId,
                 "userId" to userId,
+                "batchId" to batchId,
+                "location" to location,
+                "farmBlock" to location,
+                "treeId" to treeId,
                 "timestamp" to summary.timestamp,
                 "totalCount" to summary.totalCount,
                 "classCounts" to summary.classCounts,
                 "ripePercentage" to summary.ripePercentage,
                 "harvestStatus" to summary.harvestStatus,
+                "species" to summary.detectedSpecies,
+                "speciesConfidence" to summary.speciesConfidence,
                 "imageUrl" to uploadedUrl,
                 "verified" to summary.verified,
                 "detections" to summary.detections.map { d ->

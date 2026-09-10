@@ -20,6 +20,8 @@ data class BranchScanSummary(
     val timestamp: Long = System.currentTimeMillis(),
     val imageUrl: String? = null,
     val verified: Boolean = false,
+    val detectedSpecies: String = "Liberica",
+    val speciesConfidence: String = "High",
 ) {
     companion object {
         fun computeHarvestStatus(ripePct: Float): String = when {

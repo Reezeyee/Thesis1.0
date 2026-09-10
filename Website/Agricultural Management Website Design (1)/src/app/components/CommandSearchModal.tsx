@@ -28,6 +28,7 @@ import {
 import { useFarmData } from '../store/FarmDataProvider';
 import { formatCurrency } from '../lib/currencyFormat';
 import { computeLowStockThreshold } from '../types/appState';
+import { isWorkerActive } from '../lib/workerUi';
 import { AppModuleId } from '../App';
 
 interface CommandSearchModalProps {
@@ -62,11 +63,13 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
     onClose();
   };
 
+  const activeWorkersCount = useMemo(() => state.workers.filter(isWorkerActive).length, [state.workers]);
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="p-0 max-w-2xl overflow-hidden border border-border/80 shadow-2xl rounded-2xl bg-card">
-        <Command className="border-none rounded-none bg-transparent">
-          <div className="flex items-center border-b border-border/60 px-3">
+      <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden bg-card border-border/80 shadow-2xl rounded-2xl">
+        <Command className="border-none bg-transparent">
+          <div className="flex items-center px-3.5 border-b border-border/60">
             <Search className="w-4 h-4 text-muted-foreground mr-2 shrink-0" />
             <CommandInput
               placeholder="Search workers, inventory, sales, reports, or modules..."
@@ -74,7 +77,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/40 bg-muted/20 text-xs overflow-x-auto">
+          <div className="flex items-center gap-1 p-2 border-b border-border/40 text-xs overflow-x-auto bg-muted/20">
             <button
               type="button"
               onClick={() => setActiveCategory('all')}
@@ -91,7 +94,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                 activeCategory === 'workers' ? 'bg-[#2d5016] text-white' : 'text-muted-foreground hover:bg-muted'
               }`}
             >
-              Workers ({state.workers.length})
+              Workers ({activeWorkersCount} Active / {state.workers.length})
             </button>
             <button
               type="button"
@@ -129,27 +132,37 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
 
             {(activeCategory === 'all' || activeCategory === 'workers') && state.workers.length > 0 && (
               <CommandGroup heading="Registered Personnel & Workers">
-                {state.workers.slice(0, 10).map((w, idx) => (
-                  <CommandItem
-                    key={w.workerId || idx}
-                    value={`${w.name} ${w.roleRate} ${w.address || ''}`}
-                    onSelect={() => handleSelect('farm')}
-                    className="flex items-center justify-between gap-2.5 px-3 py-2 text-xs rounded-lg cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-6 h-6 rounded-full bg-emerald-500/15 text-emerald-600 flex items-center justify-center font-bold text-[10px] shrink-0">
-                        {w.name.slice(0, 2).toUpperCase()}
+                {state.workers.slice(0, 10).map((w, idx) => {
+                  const active = isWorkerActive(w);
+                  return (
+                    <CommandItem
+                      key={w.workerId || idx}
+                      value={`${w.name} ${w.roleRate} ${w.address || ''}`}
+                      onSelect={() => handleSelect('farm')}
+                      className="flex items-center justify-between gap-2.5 px-3 py-2 text-xs rounded-lg cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 ${
+                          active ? 'bg-emerald-500/15 text-emerald-600' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {w.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="truncate flex items-center gap-2">
+                          <span className="font-semibold text-foreground">{w.name}</span>
+                          <span className="text-muted-foreground">({w.roleRate})</span>
+                          <span className={`text-[9px] font-mono px-1 rounded ${
+                            active ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="truncate">
-                        <span className="font-semibold text-foreground">{w.name}</span>
-                        <span className="text-muted-foreground ml-2">({w.roleRate})</span>
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground font-mono shrink-0">
-                      ID: {w.workerId || `EMP-${idx}`}
-                    </span>
-                  </CommandItem>
-                ))}
+                      <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                        ID: {w.workerId || `EMP-${idx}`}
+                      </span>
+                    </CommandItem>
+                  );
+                })}
               </CommandGroup>
             )}
 
