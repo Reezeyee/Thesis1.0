@@ -18,37 +18,55 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './car
 import { Skeleton } from './skeleton';
 
 // Compact Currency / Number Formatter for Y-Axis
-const formatYAxisTick = (value: any): string => {
+const formatYAxisTick = (value: any, isCurrency: boolean = false): string => {
   const num = Number(value);
   if (isNaN(num)) return String(value);
   if (num === 0) return '0';
-  if (num >= 1000000) return `₱${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `₱${(num / 1000).toFixed(0)}k`;
-  return `₱${num}`;
+  const prefix = isCurrency ? '₱' : '';
+  if (num >= 1000000) return `${prefix}${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${prefix}${(num / 1000).toFixed(0)}k`;
+  return `${prefix}${num}`;
 };
 
 // Custom sleek Tooltip component matching Linear/Vercel aesthetic
-const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+interface CustomTooltipProps extends TooltipProps<number, string> {
+  isCurrency?: boolean;
+}
+
+const CustomTooltip = ({ active, payload, label, isCurrency = false }: CustomTooltipProps) => {
   if (!active || !payload || !payload.length) return null;
 
   return (
     <div className="bg-popover/95 border border-border/80 shadow-lg backdrop-blur-md rounded-lg p-3 text-xs min-w-[140px] z-50">
       {label && <p className="font-semibold text-foreground mb-1.5 pb-1 border-b border-border/40">{label}</p>}
       <div className="space-y-1">
-        {payload.map((entry, index) => (
-          <div key={`item-${index}`} className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <span
-                className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
-                style={{ backgroundColor: entry.color || entry.fill }}
-              />
-              <span>{entry.name}</span>
+        {payload.map((entry, index) => {
+          let formattedValue: React.ReactNode = entry.value;
+          if (typeof entry.value === 'number') {
+            if (isCurrency) {
+              formattedValue = `₱${entry.value.toLocaleString('en-PH')}`;
+            } else if (entry.name && entry.name.includes('%')) {
+              formattedValue = `${entry.value}%`;
+            } else {
+              formattedValue = entry.value.toLocaleString('en-US');
+            }
+          }
+
+          return (
+            <div key={`item-${index}`} className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <span
+                  className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                  style={{ backgroundColor: entry.color || entry.fill }}
+                />
+                <span>{entry.name}</span>
+              </div>
+              <span className="font-semibold font-mono text-foreground">
+                {formattedValue}
+              </span>
             </div>
-            <span className="font-semibold font-mono text-foreground">
-              {typeof entry.value === 'number' ? `₱${entry.value.toLocaleString('en-PH')}` : entry.value}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -74,6 +92,7 @@ export interface AreaChartCardProps extends BaseChartProps {
   data: Array<Record<string, any>>;
   xAxisKey: string;
   series: AreaSeries[];
+  isCurrency?: boolean;
 }
 
 export const AreaChartCard: React.FC<AreaChartCardProps> = ({
@@ -85,6 +104,7 @@ export const AreaChartCard: React.FC<AreaChartCardProps> = ({
   data,
   xAxisKey,
   series,
+  isCurrency = false,
   className = '',
 }) => {
   return (
@@ -121,14 +141,14 @@ export const AreaChartCard: React.FC<AreaChartCardProps> = ({
                 className="text-[11px] fill-muted-foreground font-mono"
               />
               <YAxis
-                width={55}
+                width={isCurrency ? 55 : 45}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tickFormatter={formatYAxisTick}
+                tickFormatter={(v) => formatYAxisTick(v, isCurrency)}
                 className="text-[11px] fill-muted-foreground font-mono"
               />
-              <RechartsTooltip content={<CustomTooltip />} />
+              <RechartsTooltip content={<CustomTooltip isCurrency={isCurrency} />} />
               {series.map((s) => (
                 <Area
                   key={s.key}
@@ -161,6 +181,7 @@ export interface BarChartCardProps extends BaseChartProps {
   data: Array<Record<string, any>>;
   xAxisKey: string;
   series: BarSeries[];
+  isCurrency?: boolean;
 }
 
 export const BarChartCard: React.FC<BarChartCardProps> = ({
@@ -172,6 +193,7 @@ export const BarChartCard: React.FC<BarChartCardProps> = ({
   data,
   xAxisKey,
   series,
+  isCurrency = false,
   className = '',
 }) => {
   return (
@@ -200,14 +222,14 @@ export const BarChartCard: React.FC<BarChartCardProps> = ({
                 className="text-[11px] fill-muted-foreground font-mono"
               />
               <YAxis
-                width={50}
+                width={isCurrency ? 55 : 45}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tickFormatter={(v) => typeof v === 'number' && v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                tickFormatter={(v) => formatYAxisTick(v, isCurrency)}
                 className="text-[11px] fill-muted-foreground font-mono"
               />
-              <RechartsTooltip content={<CustomTooltip />} />
+              <RechartsTooltip content={<CustomTooltip isCurrency={isCurrency} />} />
               {series.map((s) => (
                 <Bar
                   key={s.key}
@@ -236,6 +258,7 @@ export interface DonutChartCardProps extends BaseChartProps {
   data: DonutDataItem[];
   centerText?: string;
   centerSubtext?: string;
+  isCurrency?: boolean;
 }
 
 export const DonutChartCard: React.FC<DonutChartCardProps> = ({
@@ -247,6 +270,7 @@ export const DonutChartCard: React.FC<DonutChartCardProps> = ({
   data,
   centerText,
   centerSubtext,
+  isCurrency = false,
   className = '',
 }) => {
   const total = data.reduce((acc, curr) => acc + curr.value, 0);
@@ -274,7 +298,7 @@ export const DonutChartCard: React.FC<DonutChartCardProps> = ({
             <div className="relative w-48 h-48 shrink-0 flex items-center justify-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                  <RechartsTooltip content={<CustomTooltip />} />
+                  <RechartsTooltip content={<CustomTooltip isCurrency={isCurrency} />} />
                   <Pie
                     data={visibleData}
                     cx="50%"

@@ -329,10 +329,10 @@ private fun SectionMapPreview(
     val palette = farmPalette()
     val sectionLabels = when {
         appState.coffeeFields.isNotEmpty() -> appState.coffeeFields.mapIndexed { index, field ->
-            "Section ${('A'.code + index).toChar()}" to field.name
+            "Section ${('A'.code + (index % 26)).toChar()}" to (field.name.ifBlank { field.variety })
         }
         appState.sections.isNotEmpty() -> appState.sections.map { it.name to it.details }
-        else -> listOf("Section A" to "No mapped crops yet", "Section B" to "Add fields on the website")
+        else -> emptyList()
     }
     FarmCard(
         modifier = Modifier
@@ -341,28 +341,37 @@ private fun SectionMapPreview(
     ) {
         FarmSectionTitle(
             title = "Farm section map",
-            subtitle = "Visual location guide for Section A, Section B, and crop areas. Tap to open interactive map."
+            subtitle = "Visual location guide for registered coffee plots and crop areas. Tap to open interactive map."
         )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            maxItemsInEachRow = 2
-        ) {
-            sectionLabels.take(6).forEach { (section, detail) ->
-                FarmCard(modifier = Modifier.fillMaxWidth(0.48f)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = section.ifBlank { "Section" },
-                            color = palette.textPrimary,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = detail.ifBlank { "Crop location" },
-                            color = palette.textSecondary,
-                            style = MaterialTheme.typography.bodySmall
-                        )
+        if (sectionLabels.isEmpty()) {
+            Text(
+                text = "No farm sections registered yet. Configure fields via the admin portal.",
+                color = palette.textSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+        } else {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                maxItemsInEachRow = 2
+            ) {
+                sectionLabels.take(6).forEach { (section, detail) ->
+                    FarmCard(modifier = Modifier.fillMaxWidth(0.48f)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = section.ifBlank { "Section" },
+                                color = palette.textPrimary,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = detail.ifBlank { "Crop location" },
+                                color = palette.textSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }

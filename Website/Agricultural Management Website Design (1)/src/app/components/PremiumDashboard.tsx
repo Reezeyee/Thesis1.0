@@ -36,68 +36,130 @@ import { buildMonthlyProfitExpenses } from '../lib/dashboardData';
 import { formatCurrency } from '../lib/currencyFormat';
 import { isWorkerActive } from '../lib/workerUi';
 
-const revenueRangeMap: Record<'7d' | '30d' | '90d' | '1y', Array<{ month: string; revenue: number; expenses: number }>> = {
-  '7d': [
-    { month: 'Mon', revenue: 42000, expenses: 18000 },
-    { month: 'Tue', revenue: 48000, expenses: 21000 },
-    { month: 'Wed', revenue: 54000, expenses: 22000 },
-    { month: 'Thu', revenue: 61000, expenses: 24000 },
-    { month: 'Fri', revenue: 78000, expenses: 28000 },
-    { month: 'Sat', revenue: 65000, expenses: 25000 },
-    { month: 'Sun', revenue: 52000, expenses: 20000 },
-  ],
-  '30d': [
-    { month: 'Week 1', revenue: 85000, expenses: 42000 },
-    { month: 'Week 2', revenue: 102000, expenses: 54000 },
-    { month: 'Week 3', revenue: 118000, expenses: 61000 },
-    { month: 'Week 4', revenue: 126250, expenses: 70000 },
-  ],
-  '90d': [
-    { month: 'Month 1', revenue: 95000, expenses: 52000 },
-    { month: 'Month 2', revenue: 142000, expenses: 81000 },
-    { month: 'Month 3', revenue: 194250, expenses: 94000 },
-  ],
-  '1y': [
-    { month: 'Q1 2026', revenue: 85000, expenses: 42000 },
-    { month: 'Q2 2026', revenue: 102000, expenses: 54000 },
-    { month: 'Q3 2026', revenue: 118000, expenses: 61000 },
-    { month: 'Q4 2026', revenue: 126250, expenses: 70000 },
-  ],
-};
+// Dynamic Revenue and Operating Expenses calculator from real sales & expenses
+function buildDynamicRevenueData(
+  sales: any[],
+  expenses: any[],
+  timeRange: '7d' | '30d' | '90d' | '1y'
+): Array<{ month: string; revenue: number; expenses: number }> {
+  const now = new Date();
+  let binCount = 7;
+  let binDuration = 24 * 3600 * 1000;
+  let labelFormatter: (d: Date, idx: number) => string = (d) => d.toLocaleDateString([], { weekday: 'short' });
 
-const harvestRangeMap: Record<'7d' | '30d' | '90d' | '1y', Array<{ quarter: string; Arabica: number; Robusta: number; Liberica: number }>> = {
-  '7d': [
-    { quarter: 'Mon', Arabica: 420, Robusta: 680, Liberica: 210 },
-    { quarter: 'Tue', Arabica: 510, Robusta: 790, Liberica: 240 },
-    { quarter: 'Wed', Arabica: 680, Robusta: 920, Liberica: 310 },
-    { quarter: 'Thu', Arabica: 750, Robusta: 1040, Liberica: 360 },
-    { quarter: 'Fri', Arabica: 820, Robusta: 1120, Liberica: 390 },
-  ],
-  '30d': [
-    { quarter: 'W1', Arabica: 1100, Robusta: 1900, Liberica: 750 },
-    { quarter: 'W2', Arabica: 1250, Robusta: 2150, Liberica: 850 },
-    { quarter: 'W3', Arabica: 1400, Robusta: 2400, Liberica: 950 },
-    { quarter: 'W4', Arabica: 1600, Robusta: 2700, Liberica: 1400 },
-  ],
-  '90d': [
-    { quarter: 'M1', Arabica: 1400, Robusta: 2400, Liberica: 950 },
-    { quarter: 'M2', Arabica: 1600, Robusta: 2700, Liberica: 1050 },
-    { quarter: 'M3', Arabica: 2400, Robusta: 4200, Liberica: 1750 },
-  ],
-  '1y': [
-    { quarter: 'Q1 2026', Arabica: 1200, Robusta: 2100, Liberica: 850 },
-    { quarter: 'Q2 2026', Arabica: 1400, Robusta: 2400, Liberica: 950 },
-    { quarter: 'Q3 2026', Arabica: 1600, Robusta: 2700, Liberica: 1050 },
-    { quarter: 'Q4 2026', Arabica: 1200, Robusta: 2100, Liberica: 900 },
-  ],
-};
+  if (timeRange === '7d') {
+    binCount = 7;
+    binDuration = 24 * 3600 * 1000;
+    labelFormatter = (d) => d.toLocaleDateString([], { weekday: 'short' });
+  } else if (timeRange === '30d') {
+    binCount = 4;
+    binDuration = 7 * 24 * 3600 * 1000;
+    labelFormatter = (_, idx) => `Week ${idx + 1}`;
+  } else if (timeRange === '90d') {
+    binCount = 3;
+    binDuration = 30 * 24 * 3600 * 1000;
+    labelFormatter = (_, idx) => `Month ${idx + 1}`;
+  } else if (timeRange === '1y') {
+    binCount = 4;
+    binDuration = 91 * 24 * 3600 * 1000;
+    labelFormatter = (_, idx) => `Q${idx + 1} ${now.getFullYear()}`;
+  }
 
-const fallbackCropDistribution = [
-  { name: 'Arabica Variety', value: 42, color: 'hsl(var(--chart-1))' },
-  { name: 'Robusta Variety', value: 38, color: 'hsl(var(--chart-2))' },
-  { name: 'Liberica / Excelsa', value: 12, color: 'hsl(var(--chart-3))' },
-  { name: 'Nursery & Seedlings', value: 8, color: 'hsl(var(--chart-4))' },
-];
+  const startTime = now.getTime() - binCount * binDuration;
+  const bins = Array.from({ length: binCount }, (_, i) => {
+    const start = startTime + i * binDuration;
+    const end = start + binDuration;
+    return {
+      month: labelFormatter(new Date(end), i),
+      start,
+      end,
+      revenue: 0,
+      expenses: 0,
+    };
+  });
+
+  for (const s of sales) {
+    const saleDate = s.date ? new Date(s.date).getTime() : now.getTime();
+    const lineTotal = saleLineTotal(s);
+    const target = bins.find((b) => saleDate >= b.start && saleDate < b.end);
+    if (target) {
+      target.revenue += lineTotal;
+    }
+  }
+
+  for (const e of expenses) {
+    const expDate = e.date ? new Date(e.date).getTime() : now.getTime();
+    const amount = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount || 0));
+    const target = bins.find((b) => expDate >= b.start && expDate < b.end);
+    if (target) {
+      target.expenses += amount;
+    }
+  }
+
+  return bins.map(({ month, revenue, expenses }) => ({ month, revenue, expenses }));
+}
+
+// Dynamic Harvest Yield Bar Chart builder from real harvests
+function buildDynamicHarvestData(
+  harvests: any[],
+  timeRange: '7d' | '30d' | '90d' | '1y'
+): Array<{ quarter: string; Arabica: number; Robusta: number; Liberica: number }> {
+  const now = new Date();
+  let binCount = 5;
+  let binDuration = 24 * 3600 * 1000;
+  let labelFormatter: (d: Date, idx: number) => string = (d) => d.toLocaleDateString([], { weekday: 'short' });
+
+  if (timeRange === '7d') {
+    binCount = 5;
+    binDuration = 24 * 3600 * 1000;
+    labelFormatter = (d) => d.toLocaleDateString([], { weekday: 'short' });
+  } else if (timeRange === '30d') {
+    binCount = 4;
+    binDuration = 7 * 24 * 3600 * 1000;
+    labelFormatter = (_, idx) => `W${idx + 1}`;
+  } else if (timeRange === '90d') {
+    binCount = 3;
+    binDuration = 30 * 24 * 3600 * 1000;
+    labelFormatter = (_, idx) => `M${idx + 1}`;
+  } else if (timeRange === '1y') {
+    binCount = 4;
+    binDuration = 91 * 24 * 3600 * 1000;
+    labelFormatter = (_, idx) => `Q${idx + 1} ${now.getFullYear()}`;
+  }
+
+  const startTime = now.getTime() - binCount * binDuration;
+  const bins = Array.from({ length: binCount }, (_, i) => {
+    const start = startTime + i * binDuration;
+    const end = start + binDuration;
+    return {
+      quarter: labelFormatter(new Date(end), i),
+      start,
+      end,
+      Arabica: 0,
+      Robusta: 0,
+      Liberica: 0,
+    };
+  });
+
+  for (const h of harvests) {
+    const hDate = h.date ? new Date(h.date).getTime() : now.getTime();
+    const kg = parseHarvestKg(h);
+    const target = bins.find((b) => hDate >= b.start && hDate < b.end);
+    if (target) {
+      const details = (h.details || '').toLowerCase();
+      if (details.includes('robusta')) target.Robusta += kg;
+      else if (details.includes('liberica') || details.includes('excelsa')) target.Liberica += kg;
+      else target.Arabica += kg;
+    }
+  }
+
+  return bins.map(({ quarter, Arabica, Robusta, Liberica }) => ({
+    quarter,
+    Arabica,
+    Robusta,
+    Liberica,
+  }));
+}
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -153,40 +215,62 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
 
   // Dynamic Revenue & Expenses Chart Data scaled by timeRange
   const activeRevenueChartData = useMemo(() => {
-    const rows = buildMonthlyProfitExpenses(state);
-    if (rows && rows.length > 0 && timeRange === '1y') {
-      return rows.map((r: { month: string; profit: number; expenses: number }) => ({
-        month: r.month,
-        revenue: (r.profit || 0) + (r.expenses || 0),
-        expenses: r.expenses || 0,
-      }));
-    }
-    return revenueRangeMap[timeRange];
-  }, [state, timeRange]);
+    return buildDynamicRevenueData(state.sales, state.expenses, timeRange);
+  }, [state.sales, state.expenses, timeRange]);
 
   // Dynamic Harvest Yield Bar Chart scaled by timeRange
   const activeHarvestChartData = useMemo(() => {
-    return harvestRangeMap[timeRange];
-  }, [timeRange]);
+    return buildDynamicHarvestData(state.cherryHarvests, timeRange);
+  }, [state.cherryHarvests, timeRange]);
 
-  // Dynamic Crop Variety Distribution Chart Data
+  // Dynamic Crop Variety Distribution Chart Data computed from real farm data
   const dynamicCropDistribution = useMemo(() => {
-    if (state.coffeeFields.length > 0) {
-      const varietyMap = new Map<string, number>();
-      state.coffeeFields.forEach((f) => {
-        const v = f.variety || f.name || 'Arabica Variety';
-        varietyMap.set(v, (varietyMap.get(v) || 0) + (f.trees || 400));
-      });
+    const palette = [
+      'hsl(var(--chart-1))',
+      'hsl(var(--chart-2))',
+      'hsl(var(--chart-3))',
+      'hsl(var(--chart-4))',
+      'hsl(var(--chart-5))',
+    ];
+    const countMap = new Map<string, number>();
 
-      const colors = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))'];
-      return Array.from(varietyMap.entries()).map(([name, value], idx) => ({
+    if (state.coffeeFields.length > 0) {
+      state.coffeeFields.forEach((f) => {
+        const raw = (f.variety || f.name || '').trim() || 'Unspecified';
+        const formatted = raw.charAt(0).toUpperCase() + raw.slice(1);
+        const name = formatted.toLowerCase().includes('variety') || formatted.toLowerCase().includes('coffee') ? formatted : `${formatted} Variety`;
+        countMap.set(name, (countMap.get(name) || 0) + (f.trees || 1));
+      });
+    } else if (state.cherryGrades.length > 0) {
+      state.cherryGrades.forEach((g) => {
+        if (g.species && g.species.trim()) {
+          const raw = g.species.trim();
+          const formatted = raw.charAt(0).toUpperCase() + raw.slice(1);
+          const name = formatted.toLowerCase().includes('variety') || formatted.toLowerCase().includes('coffee') ? formatted : `${formatted} Variety`;
+          countMap.set(name, (countMap.get(name) || 0) + 1);
+        }
+      });
+    } else if (state.trees.length > 0) {
+      state.trees.forEach((t) => {
+        const raw = (t.variety || t.species || '').trim() || 'Unspecified';
+        const formatted = raw.charAt(0).toUpperCase() + raw.slice(1);
+        const name = formatted.toLowerCase().includes('variety') || formatted.toLowerCase().includes('coffee') ? formatted : `${formatted} Variety`;
+        countMap.set(name, (countMap.get(name) || 0) + 1);
+      });
+    }
+
+    if (countMap.size === 0) {
+      return [];
+    }
+
+    return Array.from(countMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value], idx) => ({
         name,
         value,
-        color: colors[idx % colors.length],
+        color: palette[idx % palette.length],
       }));
-    }
-    return fallbackCropDistribution;
-  }, [state.coffeeFields]);
+  }, [state.coffeeFields, state.cherryGrades, state.trees]);
 
   // Live Operation & Transaction Table Logs
   const liveTransactions = useMemo(() => {
@@ -197,7 +281,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
         id: s.saleId || `SALE-${idx + 1}`,
         type: `Sale — ${s.buyer || 'Direct Coffee Sale'}`,
         category: s.type || 'Sales Income',
-        date: s.date || '2026-08-27',
+        date: s.date || new Date().toISOString().slice(0, 10),
         amount: `₱${saleLineTotal(s).toLocaleString('en-PH')}`,
         status: 'completed',
       });
@@ -208,21 +292,11 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
         id: e.expenseId || `EXP-${idx + 1}`,
         type: e.description || e.category,
         category: 'Farm Expense',
-        date: e.date || '2026-08-26',
-        amount: `₱${e.amount.toLocaleString('en-PH')}`,
+        date: e.date || new Date().toISOString().slice(0, 10),
+        amount: `₱${(typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount || 0))).toLocaleString('en-PH')}`,
         status: 'completed',
       });
     });
-
-    if (items.length === 0) {
-      return [
-        { id: 'TXN-8942', type: 'Batch Sale — Specialty Arabica', category: 'Sales Income', date: '2026-08-27', amount: '₱245,000', status: 'completed' as const },
-        { id: 'TXN-8941', type: 'Tractor Fleet Fueling & Tuneup', category: 'Equipment Maint.', date: '2026-08-26', amount: '₱18,400', status: 'completed' as const },
-        { id: 'TXN-8940', type: 'CNN Scanner Cherry Scan Batch #402', category: 'Quality Grade A', date: '2026-08-26', amount: '1,420 kg', status: 'processing' as const },
-        { id: 'TXN-8939', type: 'Worker Bi-weekly Payroll Deposit', category: 'Labor Payroll', date: '2026-08-25', amount: '₱86,500', status: 'completed' as const },
-        { id: 'TXN-8938', type: 'Organic Fertilizer Bulk Order', category: 'Farm Inputs', date: '2026-08-24', amount: '₱34,200', status: 'pending' as const },
-      ];
-    }
 
     return items;
   }, [state.sales, state.expenses]);
@@ -388,6 +462,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
               description="Monthly comparison of coffee cherry sales vs farm input expenses (PHP)"
               data={activeRevenueChartData}
               xAxisKey="month"
+              isCurrency={true}
               loading={isFarmLoading}
               series={[
                 { key: 'revenue', name: 'Revenue (₱)', color: 'hsl(var(--chart-1))', fillOpacity: 0.25 },

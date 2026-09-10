@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { Bell, Cloud, Lock, Palette, User } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { collection, limit, onSnapshot, orderBy, query, type Timestamp } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, type Timestamp } from 'firebase/firestore';
 import { Switch } from './ui/switch';
 import { useAuth } from '../auth/AuthProvider';
 import { useFarmData } from '../store/FarmDataProvider';
@@ -52,6 +52,16 @@ export function WebsiteSettingsPanel() {
   const [pushOn, setPushOn] = useState(true);
   const [passwordResetRequests, setPasswordResetRequests] = useState<PasswordResetRequest[]>([]);
 
+  const handleResolveResetRequest = async (id: string) => {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, id), {
+        status: 'resolved',
+      });
+    } catch (err) {
+      console.error('Failed to resolve password reset request:', err);
+    }
+  };
+
   useEffect(() => {
     if (!session) {
       setPasswordResetRequests([]);
@@ -61,19 +71,19 @@ export function WebsiteSettingsPanel() {
     const resetQuery = query(
       collection(db, COLLECTIONS.PASSWORD_RESET_REQUESTS),
       orderBy('requestedAt', 'desc'),
-      limit(5),
+      limit(10),
     );
     return onSnapshot(
       resetQuery,
       (snapshot) => {
         setPasswordResetRequests(
-          snapshot.docs.map((doc) => {
-            const data = doc.data();
+          snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
             const requestedAt = data.requestedAt as Timestamp | undefined;
             return {
-              id: doc.id,
+              id: docSnap.id,
               email: String(data.email ?? ''),
-              displayName: String(data.displayName ?? 'Worker'),
+              displayName: String(data.displayName ?? data.username ?? 'Worker'),
               role: String(data.role ?? ''),
               status: String(data.status ?? 'pending'),
               requestedAt: requestedAt?.toDate?.() ?? null,
@@ -134,35 +144,57 @@ export function WebsiteSettingsPanel() {
           icon={Bell}
           title="Notifications"
           subtitle={
-            passwordResetRequests.length > 0
-              ? `${passwordResetRequests.length} recent password reset request${passwordResetRequests.length === 1 ? '' : 's'}`
+            passwordResetRequests.filter((r) => r.status === 'pending').length > 0
+              ? `${passwordResetRequests.filter((r) => r.status === 'pending').length} pending password reset request(s)`
               : 'Email and push-style alerts for harvest, equipment, and account access.'
           }
         >
           <Switch checked={pushOn} onCheckedChange={setPushOn} />
         </Row>
-        {passwordResetRequests.length > 0 ? (
-          <div className="rounded-xl bg-muted/40 border border-border/60 p-4 mb-2">
-            <p className="text-sm font-medium text-foreground mb-3">Password reset requests</p>
+        <div id="password-reset-requests-section" className="rounded-xl bg-muted/40 border border-border/60 p-4 mb-2">
+          <p className="text-sm font-medium text-foreground mb-3">Password Reset Requests (Worker Mobile App)</p>
+          {passwordResetRequests.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">No password reset requests at this time.</p>
+          ) : (
             <div className="space-y-2">
               {passwordResetRequests.map((request) => (
                 <div
                   key={request.id}
-                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 rounded-lg bg-background/80 px-3 py-2"
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg bg-background/80 px-3 py-2 border border-border/40"
                 >
                   <div>
-                    <p className="text-sm font-medium text-foreground">{request.displayName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-foreground">{request.displayName}</p>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                          request.status === 'pending'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-emerald-600 text-white'
+                        }`}
+                      >
+                        {request.status}
+                      </span>
+                    </div>
                     <p className="text-xs text-muted-foreground">{request.email}</p>
                   </div>
-                  <div className="text-xs text-muted-foreground sm:text-right">
-                    <p>{request.status}</p>
-                    <p>{request.requestedAt ? request.requestedAt.toLocaleString() : 'Just now'}</p>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground sm:text-right">
+                    <span>{request.requestedAt ? request.requestedAt.toLocaleString() : 'Just now'}</span>
+                    {request.status === 'pending' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-7 px-2.5 border-emerald-600/50 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                        onClick={() => void handleResolveResetRequest(request.id)}
+                      >
+                        Resolve
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-        ) : null}
+          )}
+        </div>
         <Row
           icon={Cloud}
           title="Cloud sync"

@@ -133,6 +133,42 @@ object AuthManager {
         return runCatching { UserRole.valueOf(r) }.getOrNull()
     }
 
+    /**
+     * Resolves the email address dynamically from Firestore or username formatting.
+     * Supports typing: full email, username, workerId, or predefined shortcuts.
+     */
+    suspend fun resolveEmail(username: String): String? {
+        val t = username.trim()
+        if (t.isEmpty()) return null
+        if (t.contains("@")) return t.lowercase()
+
+        val staticEmail = usernameToEmail(t)
+        if (staticEmail != null) return staticEmail
+
+        return runCatching {
+            val db = FirebaseFirestore.getInstance()
+            // 1. Try finding by workerId
+            val snapById = db.collection(FirebaseCollections.USERS)
+                .whereEqualTo("workerId", t)
+                .limit(1)
+                .get()
+                .await()
+            val emailById = snapById.documents.firstOrNull()?.getString("email")
+            if (!emailById.isNullOrBlank()) return@runCatching emailById
+
+            // 2. Try finding by displayName
+            val snapByName = db.collection(FirebaseCollections.USERS)
+                .whereEqualTo("displayName", t)
+                .limit(1)
+                .get()
+                .await()
+            val emailByName = snapByName.documents.firstOrNull()?.getString("email")
+            if (!emailByName.isNullOrBlank()) return@runCatching emailByName
+
+            null
+        }.getOrNull()
+    }
+
     private suspend fun buildSessionForUid(
         context: Context,
         uid: String,
@@ -143,12 +179,27 @@ object AuthManager {
         val fromPrefsEmail = p.getString(SessionEmailKey, null).orEmpty()
         val fromPrefsName = p.getString(SessionDisplayNameKey, null).orEmpty()
         val emailForRole = if (fromPrefsEmail.isNotBlank()) fromPrefsEmail else email
+
+        val userDoc = runCatching {
+            FirebaseFirestore.getInstance()
+                .collection(FirebaseCollections.USERS)
+                .document(uid)
+                .get()
+                .await()
+        }.getOrNull()
+
+        val firestoreRole = userDoc?.getString("role")?.let { r ->
+            runCatching { UserRole.valueOf(r) }.getOrNull()
+        }
+        val firestoreName = userDoc?.getString("displayName")
+
         val inferred = inferRoleFromEmail(emailForRole)
-        val fromFirestore = cachedRole ?: loadUserRoleFromFirestore(context, uid)
-        val role = roleForKnownEmailOrElse(emailForRole, fromFirestore, inferred)
-        val display = if (fromPrefsName.isNotBlank()) fromPrefsName else displayNameForEmail(
-            if (fromPrefsEmail.isNotBlank()) fromPrefsEmail else email
-        )
+        val role = roleForKnownEmailOrElse(emailForRole, firestoreRole ?: cachedRole, inferred)
+        val display = when {
+            !firestoreName.isNullOrBlank() -> firestoreName
+            fromPrefsName.isNotBlank() -> fromPrefsName
+            else -> displayNameForEmail(emailForRole)
+        }
         val mustChange = checkMustChangePassword(uid)
         val session = AuthSession(
             userId = uid,
@@ -188,8 +239,7 @@ object AuthManager {
     private fun inferRoleFromEmail(email: String): UserRole = roleForEmail(email)
 
     /**
-     * Email/password sign-in. Creates the account on first use when credentials match the bootstrap
-     * Acojido accounts, then stores profile in Firestore and appends login history.
+     * Email/password sign-in. Dynamically resolves worker emails from Firestore and updates profile.
      */
     suspend fun signInWithEmailPassword(context: Context, username: String, password: String): Result<AuthSession> {
         if (FirebaseApp.getApps(context).isEmpty()) {
@@ -197,11 +247,9 @@ object AuthManager {
         }
         val pass = password.trim()
         if (pass.isEmpty()) return Result.failure(IllegalArgumentException("Password required"))
-        val email = usernameToEmail(username)
+        val email = resolveEmail(username)
             ?: return Result.failure(
-                IllegalArgumentException(
-                    "Use admin ($AdminDisplayName or $AdminEmail), worker ($WorkerDisplayName, `worker`, or $WorkerStaffEmail), or legacy $StaffDisplayName."
-                )
+                IllegalArgumentException("Account not found for \"$username\". Enter your registered email or username.")
             )
         val auth = FirebaseAuth.getInstance()
         val role = roleForEmail(email)
@@ -210,8 +258,8 @@ object AuthManager {
             val result = auth.signInWithEmailAndPassword(email, pass).await()
             val u = result.user!!
             afterSuccessfulAuthWriteProfileAndHistory(u.uid, email, display, role)
-            val mustChange = checkMustChangePassword(u.uid)
-            val session = AuthSession(u.uid, email, display, role, mustChangePassword = mustChange)
+            val session = buildSessionForUid(context, u.uid, email, role)
+                ?: AuthSession(u.uid, email, display, role, mustChangePassword = false)
             saveSession(context, session)
             Result.success(session)
         } catch (e: FirebaseAuthInvalidUserException) {
@@ -257,25 +305,44 @@ object AuthManager {
         if (FirebaseApp.getApps(context).isEmpty()) {
             return Result.failure(IllegalStateException("Firebase is not configured (add google-services.json)."))
         }
-        val email = usernameToEmail(username)
-            ?: return Result.failure(IllegalArgumentException("Enter a valid username or email."))
+        val trimmed = username.trim()
+        if (trimmed.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Enter your username or email first."))
+        }
 
-        return runCatching {
-            FirebaseAuth.getInstance().sendPasswordResetEmail(email).await()
-            val adminNotified = runCatching {
-                FirebaseFirestore.getInstance()
-                    .collection(FirebaseCollections.PASSWORD_RESET_REQUESTS)
-                    .add(
-                        mapOf(
-                            "email" to email,
-                            "requestedAt" to FieldValue.serverTimestamp(),
-                            "source" to "android",
-                            "status" to "email_sent"
-                        )
+        val email = resolveEmail(trimmed) ?: if (trimmed.contains("@")) trimmed.lowercase() else null
+        val targetEmail = email ?: trimmed
+        val displayName = if (email != null) displayNameForEmail(email) else trimmed
+
+        // Store reset request in Firestore so the Website admin gets a real-time notification
+        val adminNotified = runCatching {
+            FirebaseFirestore.getInstance()
+                .collection(FirebaseCollections.PASSWORD_RESET_REQUESTS)
+                .add(
+                    mapOf(
+                        "email" to targetEmail,
+                        "username" to trimmed,
+                        "displayName" to displayName,
+                        "requestedAt" to FieldValue.serverTimestamp(),
+                        "source" to "android",
+                        "status" to "pending"
                     )
-                    .await()
+                )
+                .await()
+        }.isSuccess
+
+        val emailSent = if (email != null) {
+            runCatching {
+                FirebaseAuth.getInstance().sendPasswordResetEmail(email).await()
             }.isSuccess
-            PasswordResetRequestResult(email = email, adminNotified = adminNotified)
+        } else {
+            false
+        }
+
+        return if (adminNotified || emailSent) {
+            Result.success(PasswordResetRequestResult(email = targetEmail, adminNotified = adminNotified))
+        } else {
+            Result.failure(IllegalStateException("Unable to process password reset request right now. Please try again."))
         }
     }
 

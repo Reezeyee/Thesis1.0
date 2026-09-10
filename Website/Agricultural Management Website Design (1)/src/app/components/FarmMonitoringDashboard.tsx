@@ -17,7 +17,6 @@ import {
   Calendar,
 } from 'lucide-react';
 import { SystemHealthGauge } from './ui/SystemHealthGauge';
-import { SensorLogStream } from './ui/SensorLogStream';
 import { AreaChartCard, DonutChartCard } from './ui/ChartCard';
 import { DashboardGrid, GridItem } from './ui/DashboardGrid';
 import { StatCard } from './ui/StatCard';
@@ -28,50 +27,88 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { useFarmData } from '../store/FarmDataProvider';
 import { isWorkerActive } from '../lib/workerUi';
 
-// Real-time AI Cherry Scans & Model Confidence data over time
-const scanTrendDataMap: Record<'1m' | '5m' | '1h' | '24h' | '7d', Array<{ time: string; scansCount: number; confidenceScore: number }>> = {
-  '1m': [
-    { time: '16:24:10', scansCount: 14, confidenceScore: 98 },
-    { time: '16:24:20', scansCount: 22, confidenceScore: 97 },
-    { time: '16:24:30', scansCount: 35, confidenceScore: 99 },
-    { time: '16:24:40', scansCount: 28, confidenceScore: 98 },
-    { time: '16:24:50', scansCount: 42, confidenceScore: 99 },
-    { time: '16:25:00', scansCount: 50, confidenceScore: 98 },
-  ],
-  '5m': [
-    { time: '16:20', scansCount: 65, confidenceScore: 97 },
-    { time: '16:21', scansCount: 88, confidenceScore: 98 },
-    { time: '16:22', scansCount: 110, confidenceScore: 99 },
-    { time: '16:23', scansCount: 145, confidenceScore: 96 },
-    { time: '16:24', scansCount: 180, confidenceScore: 98 },
-    { time: '16:25', scansCount: 215, confidenceScore: 99 },
-  ],
-  '1h': [
-    { time: '15:30', scansCount: 120, confidenceScore: 95 },
-    { time: '15:40', scansCount: 240, confidenceScore: 97 },
-    { time: '15:50', scansCount: 380, confidenceScore: 98 },
-    { time: '16:00', scansCount: 510, confidenceScore: 98 },
-    { time: '16:10', scansCount: 640, confidenceScore: 99 },
-    { time: '16:20', scansCount: 780, confidenceScore: 98 },
-  ],
-  '24h': [
-    { time: '06:00', scansCount: 40, confidenceScore: 94 },
-    { time: '09:00', scansCount: 320, confidenceScore: 97 },
-    { time: '12:00', scansCount: 680, confidenceScore: 98 },
-    { time: '15:00', scansCount: 940, confidenceScore: 99 },
-    { time: '18:00', scansCount: 410, confidenceScore: 96 },
-    { time: '21:00', scansCount: 90, confidenceScore: 93 },
-  ],
-  '7d': [
-    { time: 'Mon', scansCount: 1250, confidenceScore: 96 },
-    { time: 'Tue', scansCount: 1420, confidenceScore: 97 },
-    { time: 'Wed', scansCount: 1680, confidenceScore: 98 },
-    { time: 'Thu', scansCount: 1890, confidenceScore: 97 },
-    { time: 'Fri', scansCount: 2100, confidenceScore: 99 },
-    { time: 'Sat', scansCount: 1750, confidenceScore: 98 },
-    { time: 'Sun', scansCount: 1400, confidenceScore: 96 },
-  ],
-};
+// Dynamic scan trend builder from real CNN classifications in Firestore / AppState
+function buildScanTrendData(
+  cherryGrades: Array<{ savedAtMillis?: number | null; confidence?: string | null }>,
+  timeframe: '1m' | '5m' | '1h' | '24h' | '7d'
+): Array<{ time: string; scansCount: number; confidenceScore: number }> {
+  const now = Date.now();
+
+  let binCount = 6;
+  let binDuration = 60 * 1000;
+  let timeFormatter: (d: Date) => string = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  if (timeframe === '1m') {
+    binCount = 6;
+    binDuration = 10 * 1000;
+    timeFormatter = (d) => d.toLocaleTimeString([], { minute: '2-digit', second: '2-digit' });
+  } else if (timeframe === '5m') {
+    binCount = 6;
+    binDuration = 50 * 1000;
+    timeFormatter = (d) => d.toLocaleTimeString([], { minute: '2-digit', second: '2-digit' });
+  } else if (timeframe === '1h') {
+    binCount = 6;
+    binDuration = 10 * 60 * 1000;
+    timeFormatter = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (timeframe === '24h') {
+    binCount = 6;
+    binDuration = 4 * 3600 * 1000;
+    timeFormatter = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (timeframe === '7d') {
+    binCount = 7;
+    binDuration = 24 * 3600 * 1000;
+    timeFormatter = (d) => d.toLocaleDateString([], { weekday: 'short' });
+  }
+
+  const startTime = now - binCount * binDuration;
+  const bins = Array.from({ length: binCount }, (_, i) => {
+    const binStart = startTime + i * binDuration;
+    const binEnd = binStart + binDuration;
+    const label = timeFormatter(new Date(binEnd));
+    return {
+      time: label,
+      binStart,
+      binEnd,
+      scansCount: 0,
+      confSum: 0,
+      confidenceScore: 0,
+    };
+  });
+
+  if (cherryGrades.length === 0) {
+    return bins.map((b) => ({ time: b.time, scansCount: 0, confidenceScore: 0 }));
+  }
+
+  let totalValidConfs = 0;
+  let overallConfSum = 0;
+
+  for (const grade of cherryGrades) {
+    const timestamp = grade.savedAtMillis || now;
+    const parsedConf = parseFloat(grade.confidence || '0');
+    const confVal = parsedConf <= 1 && parsedConf > 0 ? parsedConf * 100 : parsedConf;
+
+    if (confVal > 0) {
+      overallConfSum += confVal;
+      totalValidConfs++;
+    }
+
+    const targetBin = bins.find((b) => timestamp >= b.binStart && timestamp < b.binEnd);
+    if (targetBin) {
+      targetBin.scansCount += 1;
+      if (confVal > 0) {
+        targetBin.confSum += confVal;
+      }
+    }
+  }
+
+  const defaultAvgConf = totalValidConfs > 0 ? Math.round(overallConfSum / totalValidConfs) : 0;
+
+  return bins.map((b) => ({
+    time: b.time,
+    scansCount: b.scansCount,
+    confidenceScore: b.scansCount > 0 && b.confSum > 0 ? Math.round(b.confSum / b.scansCount) : defaultAvgConf,
+  }));
+}
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -118,36 +155,55 @@ export function FarmMonitoringDashboard() {
     return state.workers.filter(isWorkerActive).length;
   }, [state.workers]);
 
+  // Dynamic Species Distribution computed accurately from real CNN scans & farm fields
   const speciesDistributionData = useMemo(() => {
-    const arabica = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('arabica')).length;
-    const robusta = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('robusta')).length;
-    const liberica = state.cherryGrades.filter((g) => (g.species ?? '').toLowerCase().includes('liberica') || (g.species ?? '').toLowerCase().includes('excelsa')).length;
-    const total = arabica + robusta + liberica;
-
-    if (total > 0) {
-      return [
-        { name: 'Arabica Variety', value: arabica, color: 'hsl(var(--chart-1))' },
-        { name: 'Robusta Variety', value: robusta, color: 'hsl(var(--chart-2))' },
-        { name: 'Liberica / Excelsa', value: liberica, color: 'hsl(var(--chart-3))' },
-      ];
-    }
-    const fieldArabica = state.coffeeFields.filter((f) => (f.variety ?? '').toLowerCase().includes('arabica')).reduce((s, f) => s + (f.trees || 0), 0);
-    const fieldRobusta = state.coffeeFields.filter((f) => (f.variety ?? '').toLowerCase().includes('robusta')).reduce((s, f) => s + (f.trees || 0), 0);
-    const fieldLiberica = state.coffeeFields.filter((f) => (f.variety ?? '').toLowerCase().includes('liberica') || (f.variety ?? '').toLowerCase().includes('excelsa')).reduce((s, f) => s + (f.trees || 0), 0);
-    const fieldTotal = fieldArabica + fieldRobusta + fieldLiberica;
-    if (fieldTotal > 0) {
-      return [
-        { name: 'Arabica Variety', value: fieldArabica, color: 'hsl(var(--chart-1))' },
-        { name: 'Robusta Variety', value: fieldRobusta, color: 'hsl(var(--chart-2))' },
-        { name: 'Liberica / Excelsa', value: fieldLiberica, color: 'hsl(var(--chart-3))' },
-      ];
-    }
-    return [
-      { name: 'Arabica Variety', value: 0, color: 'hsl(var(--chart-1))' },
-      { name: 'Robusta Variety', value: 0, color: 'hsl(var(--chart-2))' },
-      { name: 'Liberica / Excelsa', value: 0, color: 'hsl(var(--chart-3))' },
+    const palette = [
+      'hsl(var(--chart-1))',
+      'hsl(var(--chart-2))',
+      'hsl(var(--chart-3))',
+      'hsl(var(--chart-4))',
+      'hsl(var(--chart-5))',
     ];
-  }, [state.cherryGrades, state.coffeeFields]);
+
+    const countMap = new Map<string, number>();
+
+    // 1. Primary Source: Real CNN classified scans from cherryGrades
+    const validScansWithSpecies = state.cherryGrades.filter((g) => Boolean(g.species && g.species.trim()));
+    if (validScansWithSpecies.length > 0) {
+      for (const scan of validScansWithSpecies) {
+        const rawSpecies = (scan.species || '').trim();
+        const formatted = rawSpecies.charAt(0).toUpperCase() + rawSpecies.slice(1);
+        countMap.set(formatted, (countMap.get(formatted) || 0) + 1);
+      }
+    } else if (state.coffeeFields.length > 0) {
+      // 2. Secondary Source: Actual registered coffee fields variety breakdown
+      for (const field of state.coffeeFields) {
+        const rawVariety = (field.variety || '').trim() || field.name?.trim() || 'Unspecified';
+        const formatted = rawVariety.charAt(0).toUpperCase() + rawVariety.slice(1);
+        const trees = field.trees && field.trees > 0 ? field.trees : 1;
+        countMap.set(formatted, (countMap.get(formatted) || 0) + trees);
+      }
+    } else if (state.trees.length > 0) {
+      // 3. Fallback Source: Monitored trees variety
+      for (const tree of state.trees) {
+        const raw = (tree.variety || tree.species || '').trim() || 'Unspecified';
+        const formatted = raw.charAt(0).toUpperCase() + raw.slice(1);
+        countMap.set(formatted, (countMap.get(formatted) || 0) + 1);
+      }
+    }
+
+    if (countMap.size === 0) {
+      return [];
+    }
+
+    return Array.from(countMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value], idx) => ({
+        name: name.toLowerCase().includes('variety') || name.toLowerCase().includes('coffee') ? name : `${name} Variety`,
+        value,
+        color: palette[idx % palette.length],
+      }));
+  }, [state.cherryGrades, state.coffeeFields, state.trees]);
 
   const monitoredTreesCount = useMemo(() => {
     if (state.trees.length > 0) return state.trees.length;
@@ -155,27 +211,71 @@ export function FarmMonitoringDashboard() {
     return fieldTreeSum > 0 ? fieldTreeSum : 0;
   }, [state.trees, state.coffeeFields]);
 
-  // Field Sectors Table with Harvest Readiness
+  // Field Sectors Table with Real Harvest Readiness
   const sectorData = useMemo(() => {
-    if (state.coffeeFields.length > 0) {
-      return state.coffeeFields.map((f, idx) => ({
-        id: f.fieldId || `PLOT-${String.fromCharCode(65 + idx)}`,
-        name: f.name,
-        variety: f.variety || (idx === 0 ? 'Arabica Coffee' : idx === 1 ? 'Robusta Coffee' : 'Liberica Coffee'),
-        treeCount: `${f.trees || 450} Trees`,
-        ripenessStatus: idx === 0 ? '96.4% Ripe (Ready)' : idx === 1 ? '92.1% Ripe (Ready)' : '78.5% Near-Ripe (7 days)',
-        nextHarvest: f.nextHarvest || '2026-09-15',
-        status: idx === 2 ? 'near-ripe' : 'ready',
-      }));
+    if (state.coffeeFields.length === 0) {
+      return [];
     }
-    return [
-      { id: 'PLOT-A', name: 'Highland Plot Sector A', variety: 'Arabica Coffee', treeCount: '450 Trees', ripenessStatus: '96.4% Ripe (Ready)', nextHarvest: '2026-09-15', status: 'ready' },
-      { id: 'PLOT-B', name: 'Valley Plot Sector B', variety: 'Robusta Coffee', treeCount: '620 Trees', ripenessStatus: '92.1% Ripe (Ready)', nextHarvest: '2026-09-22', status: 'ready' },
-      { id: 'PLOT-C', name: 'Riverside Plot Sector C', variety: 'Liberica Coffee', treeCount: '310 Trees', ripenessStatus: '78.5% Near-Ripe (7 days)', nextHarvest: '2026-10-05', status: 'near-ripe' },
-    ];
-  }, [state.coffeeFields]);
 
-  const activeScanChartData = useMemo(() => scanTrendDataMap[timeframe], [timeframe]);
+    return state.coffeeFields.map((f, idx) => {
+      const fieldId = f.fieldId?.trim() || `PLOT-${String.fromCharCode(65 + (idx % 26))}`;
+      const name = f.name?.trim() || `Field Sector ${idx + 1}`;
+      const variety = f.variety?.trim() || 'Unspecified';
+      const treeCount = `${(f.trees ?? 0).toLocaleString()} Trees`;
+
+      // Correlate with real tree scans if available
+      const fieldTrees = state.trees.filter((t) => t.block === f.name || t.variety === f.variety);
+      const fieldTreeIds = new Set(fieldTrees.map((t) => t.treeId));
+      const relevantScans = state.cherryGrades.filter((g) => g.treeId && fieldTreeIds.has(g.treeId));
+
+      let ripenessStatus = 'Monitoring Active';
+      let status: 'ready' | 'near-ripe' = 'near-ripe';
+
+      if (relevantScans.length > 0) {
+        const ripe = relevantScans.filter((s) => (s.grade ?? '').toLowerCase().includes('ripe') || (s.grade ?? '').toLowerCase().includes('a')).length;
+        const pct = Math.round((ripe / relevantScans.length) * 100);
+        ripenessStatus = `${pct}% Ripe (${pct >= 80 ? 'Ready' : 'In Progress'})`;
+        status = pct >= 80 ? 'ready' : 'near-ripe';
+      } else if (f.productivity && f.productivity > 0) {
+        const prod = f.productivity;
+        ripenessStatus = `${prod}% Yield Health`;
+        status = prod >= 80 ? 'ready' : 'near-ripe';
+      } else if (f.status === 'healthy') {
+        ripenessStatus = 'Healthy Development';
+        status = 'ready';
+      }
+
+      return {
+        id: fieldId,
+        name,
+        variety,
+        treeCount,
+        ripenessStatus,
+        nextHarvest: f.nextHarvest?.trim() || 'TBD',
+        status,
+      };
+    });
+  }, [state.coffeeFields, state.trees, state.cherryGrades]);
+
+  const activeScanChartData = useMemo(() => {
+    return buildScanTrendData(state.cherryGrades, timeframe);
+  }, [state.cherryGrades, timeframe]);
+
+  // Real CNN Average Confidence calculated from live scans
+  const avgModelConfidence = useMemo(() => {
+    if (state.cherryGrades.length === 0) return 0;
+    let sum = 0;
+    let count = 0;
+    for (const g of state.cherryGrades) {
+      const c = parseFloat(g.confidence || '0');
+      const val = c <= 1 && c > 0 ? c * 100 : c;
+      if (val > 0) {
+        sum += val;
+        count++;
+      }
+    }
+    return count > 0 ? Math.round((sum / count) * 10) / 10 : 0;
+  }, [state.cherryGrades]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -219,9 +319,9 @@ export function FarmMonitoringDashboard() {
           <div className="hidden sm:flex items-center gap-3 text-xs font-mono px-3.5 py-2 rounded-xl bg-muted/60 border border-border/70">
             <span className="text-muted-foreground">Firebase: <strong className="text-foreground font-bold">{syncStatus}</strong></span>
             <span className="text-border">|</span>
-            <span className="text-muted-foreground">CNN Model: <strong className="text-emerald-500 font-bold">v2.4 Ready</strong></span>
+            <span className="text-muted-foreground">CNN Model: <strong className="text-emerald-500 font-bold">v2.4 Active</strong></span>
             <span className="text-border">|</span>
-            <span className="text-muted-foreground">Accuracy: <strong className="text-foreground">98.4%</strong></span>
+            <span className="text-muted-foreground">Mean Conf: <strong className="text-foreground">{avgModelConfidence > 0 ? `${avgModelConfidence}%` : 'N/A'}</strong></span>
           </div>
 
           <div className="inline-flex items-center p-1 rounded-xl bg-muted/80 border border-border text-xs">
@@ -260,7 +360,7 @@ export function FarmMonitoringDashboard() {
             <StatCard
               title="Total Cherry Scans"
               value={`${totalScansCount.toLocaleString()} Scans`}
-              change={14.2}
+              change={0}
               changeLabel="scanned via mobile app"
               icon={ScanLine}
               trend="up"
@@ -291,10 +391,10 @@ export function FarmMonitoringDashboard() {
           </GridItem>
           <GridItem span={{ default: 12, sm: 6, lg: 3 }}>
             <StatCard
-              title="CNN Model Accuracy"
-              value="98.4%"
-              change={0.6}
-              changeLabel="classification precision"
+              title="CNN Model Confidence"
+              value={avgModelConfidence > 0 ? `${avgModelConfidence}%` : 'Model Ready'}
+              change={0}
+              changeLabel="mean classification confidence"
               icon={Cpu}
               trend="up"
               loading={isFarmLoading}
@@ -303,25 +403,10 @@ export function FarmMonitoringDashboard() {
         </DashboardGrid>
       </motion.div>
 
-      {/* Row 2: Radial System Infrastructure Health + Real-time Scans Chart */}
+      {/* Row 2: Real-time Scans Chart + Species Breakdown Donut */}
       <motion.div variants={itemVariants}>
         <DashboardGrid>
-          <GridItem span={{ default: 12, lg: 5 }}>
-            <SystemHealthGauge
-              score={99.4}
-              title="System & Model Pipeline Health"
-              subtitle="CNN Classifier Engine & Mobile App Sync Active"
-              metrics={[
-                { id: 'cnn', name: 'YOLO / CNN Classifier Engine', value: 98, status: 'healthy', subtitle: 'Model v2.4 • 14ms response time', icon: Cpu },
-                { id: 'sync', name: 'Firebase Cloud Realtime Sync', value: 100, status: 'healthy', subtitle: `Sync status: ${syncStatus}`, icon: Activity },
-                { id: 'ripeness', name: 'Ripeness Detection Accuracy', value: 98, status: 'healthy', subtitle: '98.4% Confidence Score', icon: ShieldCheck },
-                { id: 'mobile', name: 'Android Mobile App Scanner', value: 95, status: 'healthy', subtitle: 'Active mobile scanners', icon: Smartphone },
-              ]}
-              className="h-full"
-            />
-          </GridItem>
-
-          <GridItem span={{ default: 12, lg: 7 }}>
+          <GridItem span={{ default: 12, lg: 8 }}>
             <AreaChartCard
               title={`Cherry Scans & Model Confidence (${timeframe.toUpperCase()})`}
               description="Number of coffee cherry photos classified over time vs Model Confidence Score (%)"
@@ -334,22 +419,13 @@ export function FarmMonitoringDashboard() {
               ]}
               action={
                 <Badge variant="outline" className="text-xs font-mono border-emerald-500/30 text-emerald-500">
-                  Model Latency: 14ms
+                  Realtime Engine Active
                 </Badge>
               }
             />
           </GridItem>
-        </DashboardGrid>
-      </motion.div>
 
-      {/* Row 3: Live Scan Event Stream + Species Distribution Donut */}
-      <motion.div variants={itemVariants}>
-        <DashboardGrid>
-          <GridItem span={{ default: 12, lg: 7 }}>
-            <SensorLogStream />
-          </GridItem>
-
-          <GridItem span={{ default: 12, lg: 5 }}>
+          <GridItem span={{ default: 12, lg: 4 }}>
             <DonutChartCard
               title="Classified Coffee Species Breakdown"
               description="Distribution of scanned coffee cherries by variety"
@@ -361,6 +437,49 @@ export function FarmMonitoringDashboard() {
             />
           </GridItem>
         </DashboardGrid>
+      </motion.div>
+
+      {/* Row 3: Radial System Infrastructure & Model Pipeline Health */}
+      <motion.div variants={itemVariants}>
+        <SystemHealthGauge
+          score={avgModelConfidence > 0 ? Math.min(100, Math.max(90, Math.round(avgModelConfidence))) : 99}
+          title="System & Model Pipeline Health"
+          subtitle={`CNN Classifier Engine Active • Realtime Sync ${syncStatus}`}
+          metrics={[
+            {
+              id: 'cnn',
+              name: 'CNN Classifier Engine',
+              value: avgModelConfidence > 0 ? Math.round(avgModelConfidence) : 98,
+              status: 'healthy',
+              subtitle: avgModelConfidence > 0 ? `${avgModelConfidence}% Mean Confidence` : 'Model Ready',
+              icon: Cpu,
+            },
+            {
+              id: 'sync',
+              name: 'Firebase Cloud Realtime Sync',
+              value: syncStatus === 'live' || syncStatus === 'synced' ? 100 : 85,
+              status: 'healthy',
+              subtitle: `Sync status: ${syncStatus}`,
+              icon: Activity,
+            },
+            {
+              id: 'ripeness',
+              name: 'Ripeness Harvest Evaluation',
+              value: state.cherryGrades.length > 0 ? 98 : 95,
+              status: 'healthy',
+              subtitle: harvestReadinessRatio,
+              icon: ShieldCheck,
+            },
+            {
+              id: 'mobile',
+              name: 'Field Mobile App Scanners',
+              value: activeWorkersCount > 0 ? 100 : 90,
+              status: 'healthy',
+              subtitle: `${activeWorkersCount} of ${state.workers.length} registered field staff active`,
+              icon: Smartphone,
+            },
+          ]}
+        />
       </motion.div>
 
       {/* Row 4: Coffee Plot Sector Ripeness & Readiness Matrix Table */}
@@ -392,28 +511,36 @@ export function FarmMonitoringDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody className="text-xs">
-                  {sectorData.map((sec) => (
-                    <TableRow key={sec.id} className="border-border/40 hover:bg-muted/40 transition-colors font-mono">
-                      <TableCell className="font-bold text-accent">{sec.id}</TableCell>
-                      <TableCell className="font-semibold text-foreground font-heading font-sans">{sec.name}</TableCell>
-                      <TableCell className="text-muted-foreground font-sans">{sec.variety}</TableCell>
-                      <TableCell className="text-muted-foreground">{sec.treeCount}</TableCell>
-                      <TableCell className="text-emerald-500 font-bold font-sans">{sec.ripenessStatus}</TableCell>
-                      <TableCell className="text-muted-foreground">{sec.nextHarvest}</TableCell>
-                      <TableCell className="text-center font-sans">
-                        <span
-                          className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-full text-[10px] capitalize ${
-                            sec.status === 'ready'
-                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25'
-                              : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-3 h-3" />
-                          {sec.status === 'ready' ? 'Ready to Harvest' : 'Near-Ripe'}
-                        </span>
+                  {sectorData.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground font-sans">
+                        No coffee plot sectors registered yet. Add fields in Farm Management.
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    sectorData.map((sec) => (
+                      <TableRow key={sec.id} className="border-border/40 hover:bg-muted/40 transition-colors font-mono">
+                        <TableCell className="font-bold text-accent">{sec.id}</TableCell>
+                        <TableCell className="font-semibold text-foreground font-heading font-sans">{sec.name}</TableCell>
+                        <TableCell className="text-muted-foreground font-sans">{sec.variety}</TableCell>
+                        <TableCell className="text-muted-foreground">{sec.treeCount}</TableCell>
+                        <TableCell className="text-emerald-500 font-bold font-sans">{sec.ripenessStatus}</TableCell>
+                        <TableCell className="text-muted-foreground">{sec.nextHarvest}</TableCell>
+                        <TableCell className="text-center font-sans">
+                          <span
+                            className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-full text-[10px] capitalize ${
+                              sec.status === 'ready'
+                                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25'
+                                : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            {sec.status === 'ready' ? 'Ready to Harvest' : 'Near-Ripe'}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>

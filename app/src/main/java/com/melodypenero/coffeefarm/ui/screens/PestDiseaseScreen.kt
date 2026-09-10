@@ -127,11 +127,7 @@ fun PestDiseaseScreen(reporterDisplayName: String = "") {
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-            .toMutableList()
-        listOf("Section A", "Section B", "Section C", "Section D", "Section E", "Section F").forEach { s ->
-            if (!list.any { it.startsWith(s) }) list.add(s)
-        }
-        list
+        if (list.isEmpty()) listOf("General Farm") else list
     }
 
     val workerReports = remember(state.pestControlLogs, reporterDisplayName) {
@@ -139,7 +135,7 @@ fun PestDiseaseScreen(reporterDisplayName: String = "") {
         state.pestControlLogs
             .filter {
                 val rep = (it.reportedBy).trim().lowercase(Locale.ROOT)
-                name.isBlank() || rep.isBlank() || rep == name || rep.contains(name) || name.contains(rep) || name.contains("juan")
+                name.isBlank() || rep.isBlank() || rep == name || rep.contains(name) || name.contains(rep)
             }
             .asReversed()
     }
@@ -169,7 +165,7 @@ fun PestDiseaseScreen(reporterDisplayName: String = "") {
     if (showDialog) {
         PestReportFormDialog(
             zoneOptions = zoneOptions,
-            reporterName = reporterDisplayName.ifBlank { "Juan Dela Cruz" },
+            reporterName = reporterDisplayName.ifBlank { "Field Worker" },
             onDismiss = { showDialog = false },
             onSubmit = { field, treeNum, issue, notes, photoBase64 ->
                 val dateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.US))
@@ -184,7 +180,7 @@ fun PestDiseaseScreen(reporterDisplayName: String = "") {
                     status = "Pending",
                     photoUrl = photoBase64,
                     photoBase64 = photoBase64,
-                    reportedBy = reporterDisplayName.ifBlank { "Juan Dela Cruz" },
+                    reportedBy = reporterDisplayName.ifBlank { "Field Worker" },
                     notes = notes,
                     timestampMillis = System.currentTimeMillis()
                 )

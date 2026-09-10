@@ -240,10 +240,7 @@ fun CoffeeCherryScreen(
                 
                 if (items.isEmpty()) {
                     listOf(
-                        FarmSectionOption("Section A", "North Plot · Arabica"),
-                        FarmSectionOption("Section B", "East Slope · Robusta"),
-                        FarmSectionOption("Section C", "South Ridge · Liberica"),
-                        FarmSectionOption("Section D", "West Terrace · Excelsa")
+                        FarmSectionOption("General Farm", "Default harvest section", 0)
                     )
                 } else {
                     items

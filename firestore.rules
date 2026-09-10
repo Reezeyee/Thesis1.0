@@ -24,6 +24,11 @@ service cloud.firestore {
       allow read, create: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Password reset requests: allow workers to create and check status, and admins to approve
+    match /password_reset_requests/{requestId} {
+      allow create, read, write: if true;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

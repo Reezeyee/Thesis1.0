@@ -1,12 +1,15 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, Bell, CheckCircle2, ChevronRight, RefreshCw, Wrench, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Bell, CheckCircle2, ChevronRight, KeyRound, Lock, RefreshCw, Wrench, X } from 'lucide-react';
+import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, type Timestamp } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
 import { computeLowStockThreshold } from '../types/appState';
 import type { AppModuleId } from '../App';
 
 export interface PendingReportItem {
   id: string;
-  type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest';
+  type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest' | 'password_reset';
   title: string;
   subtitle: string;
   details: string;
@@ -24,9 +27,54 @@ interface NotificationCenterProps {
 
 export function usePendingReports() {
   const { state } = useFarmData();
+  const [passwordResetItems, setPasswordResetItems] = useState<PendingReportItem[]>([]);
+
+  // Real-time Firestore subscription to Password Reset Requests from worker mobile scanners
+  useEffect(() => {
+    return onSnapshot(
+      collection(db, COLLECTIONS.PASSWORD_RESET_REQUESTS),
+      (snapshot) => {
+        const items: PendingReportItem[] = snapshot.docs
+          .map((d) => {
+            const data = d.data();
+            const status = String(data.status ?? 'pending').toLowerCase();
+            const isResolved = status === 'resolved' || status === 'completed';
+            if (isResolved) return null;
+
+            const reqAt = data.requestedAt as Timestamp | undefined;
+            const dateObj = reqAt?.toDate?.() ?? new Date();
+            const displayName = String(data.displayName || data.username || data.email || 'Worker');
+            const email = String(data.email || data.username || '');
+            const isApproved = status === 'approved';
+
+            return {
+              id: `pw-reset-${d.id}`,
+              type: 'password_reset' as const,
+              title: `Password Reset Request: ${displayName}`,
+              subtitle: isApproved ? 'Status: Approved by Admin (Worker can now set new password)' : (email ? `Account: ${email}` : 'Pending Admin Approval'),
+              details: isApproved
+                ? `Password reset has been approved for ${displayName}. Worker can now enter their new password on the Android app.`
+                : `Worker "${displayName}" requested a password reset from the Android mobile app. Tap "Approve Reset" to allow them to create a new password.`,
+              reportedBy: displayName,
+              reportedAt: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }),
+              timestamp: dateObj.getTime() || Date.now(),
+              rawReportId: d.id,
+            };
+          })
+          .filter((item): item is PendingReportItem => item !== null)
+          .sort((a, b) => b.timestamp - a.timestamp);
+
+        setPasswordResetItems(items);
+      },
+      (err) => {
+        console.warn('Password reset listener error:', err);
+        setPasswordResetItems([]);
+      }
+    );
+  }, []);
 
   const pendingList = useMemo(() => {
-    const list: PendingReportItem[] = [];
+    const list: PendingReportItem[] = [...passwordResetItems];
 
     // 1. Irrigation / Sprinkler damage reports
     (state.irrigationDamageReports ?? []).forEach((r, idx) => {
@@ -148,6 +196,7 @@ export function usePendingReports() {
 
     return list.sort((a, b) => b.timestamp - a.timestamp);
   }, [
+    passwordResetItems,
     state.irrigationDamageReports,
     state.equipmentReports,
     state.consumableReports,
@@ -209,6 +258,9 @@ export function GlobalNotificationBanner({
     } else if (item.type === 'harvest') {
       targetModule = 'farm';
       targetElementId = item.rawReportId ? `harvest-${item.rawReportId}` : 'harvest-readiness-reports-section';
+    } else if (item.type === 'password_reset') {
+      targetModule = 'settings';
+      targetElementId = 'password-reset-requests-section';
     } else if (item.type === 'irrigation') {
       targetModule = 'farm';
       targetElementId = item.rawReportId ? `report-${item.rawReportId}` : 'sprinkler-damage-reports-section';
@@ -222,6 +274,17 @@ export function GlobalNotificationBanner({
 
   const handleResolveReport = async (item: PendingReportItem) => {
     dismissNotification(item.id);
+    if (item.type === 'password_reset' && item.rawReportId) {
+      try {
+        await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, item.rawReportId), {
+          status: 'resolved',
+        });
+      } catch (err) {
+        console.error('Failed to resolve password reset request:', err);
+      }
+      return;
+    }
+
     await updateState((prev) => {
       if (item.type === 'irrigation') {
         const next = (prev.irrigationDamageReports ?? []).map((r) =>
@@ -358,6 +421,9 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
     } else if (item.type === 'harvest') {
       targetModule = 'farm';
       targetElementId = item.rawReportId ? `harvest-${item.rawReportId}` : 'harvest-readiness-reports-section';
+    } else if (item.type === 'password_reset') {
+      targetModule = 'settings';
+      targetElementId = 'password-reset-requests-section';
     } else if (item.type === 'irrigation') {
       targetModule = 'farm';
       targetElementId = item.rawReportId ? `report-${item.rawReportId}` : 'sprinkler-damage-reports-section';
@@ -370,6 +436,17 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
   };
 
   const handleResolve = async (item: PendingReportItem) => {
+    if (item.type === 'password_reset' && item.rawReportId) {
+      try {
+        await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, item.rawReportId), {
+          status: 'resolved',
+        });
+      } catch (err) {
+        console.error('Failed to resolve password reset request:', err);
+      }
+      return;
+    }
+
     await updateState((prev) => {
       if (item.type === 'irrigation') {
         const next = (prev.irrigationDamageReports ?? []).map((r) =>
@@ -467,6 +544,8 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
                   ? 'bg-[#d4a574] text-foreground'
                   : item.type === 'pest'
                   ? 'bg-[#b01230] text-white'
+                  : item.type === 'password_reset'
+                  ? 'bg-[#6b21a8] text-white'
                   : 'bg-[#2d5016] text-white';
 
               return (

@@ -1,22 +1,28 @@
 package com.melodypenero.coffeefarm.ui.screens
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -24,13 +30,17 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import com.google.firebase.FirebaseApp
+import com.melodypenero.coffeefarm.auth.AuthManager
 import com.melodypenero.coffeefarm.auth.LocalUserRole
 import com.melodypenero.coffeefarm.auth.UserRole
 import com.melodypenero.coffeefarm.data.store.CloudSyncStatus
@@ -46,11 +56,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import com.melodypenero.coffeefarm.ui.components.FarmCard
 import com.melodypenero.coffeefarm.ui.components.farmPalette
+import com.melodypenero.coffeefarm.ui.components.farmTextFieldColors
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 private const val ThemeModeCoffee = "coffee"
 private const val ThemeModeLightCoffee = "light_coffee"
@@ -96,6 +110,16 @@ fun SettingsScreen(
     var mobileDataSync by remember { mutableStateOf(prefs.getBoolean("mobile_data_sync", true)) }
     var reminderTime by remember { mutableStateOf(prefs.getString("reminder_time", "07:00 AM") ?: "07:00 AM") }
 
+    val scope = rememberCoroutineScope()
+    var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var showNewPassword by remember { mutableStateOf(false) }
+    var showConfirmPassword by remember { mutableStateOf(false) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var passwordSuccess by remember { mutableStateOf<String?>(null) }
+    var isUpdatingPassword by remember { mutableStateOf(false) }
+
     fun saveString(key: String, value: String) {
         prefs.edit().putString(key, value).apply()
     }
@@ -103,6 +127,132 @@ fun SettingsScreen(
         prefs.edit().putBoolean(key, value).apply()
     }
     val palette = farmPalette()
+
+    if (showChangePasswordDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isUpdatingPassword) showChangePasswordDialog = false
+            },
+            title = {
+                Text(
+                    text = "Change Password",
+                    fontWeight = FontWeight.Bold,
+                    color = palette.textPrimary
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Enter a new password for your account (minimum 6 characters).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary
+                    )
+
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = {
+                            newPassword = it
+                            passwordError = null
+                        },
+                        label = { Text("New Password") },
+                        singleLine = true,
+                        visualTransformation = if (showNewPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showNewPassword = !showNewPassword }) {
+                                Icon(
+                                    imageVector = if (showNewPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showNewPassword) "Hide" else "Show"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = farmTextFieldColors()
+                    )
+
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = {
+                            confirmPassword = it
+                            passwordError = null
+                        },
+                        label = { Text("Confirm New Password") },
+                        singleLine = true,
+                        visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
+                                Icon(
+                                    imageVector = if (showConfirmPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showConfirmPassword) "Hide" else "Show"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = farmTextFieldColors()
+                    )
+
+                    passwordError?.let { err ->
+                        Text(
+                            text = err,
+                            color = Color(0xFFD32F2F),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val pass = newPassword.trim()
+                        val confirm = confirmPassword.trim()
+                        if (pass.length < 6) {
+                            passwordError = "Password must be at least 6 characters."
+                            return@Button
+                        }
+                        if (pass != confirm) {
+                            passwordError = "Passwords do not match."
+                            return@Button
+                        }
+                        scope.launch {
+                            isUpdatingPassword = true
+                            passwordError = null
+                            val result = AuthManager.updateUserPassword(context, pass)
+                            isUpdatingPassword = false
+                            result.fold(
+                                onSuccess = {
+                                    showChangePasswordDialog = false
+                                    passwordSuccess = "Password updated successfully!"
+                                },
+                                onFailure = { e ->
+                                    passwordError = e.message ?: "Failed to update password."
+                                }
+                            )
+                        }
+                    },
+                    enabled = !isUpdatingPassword && newPassword.trim().length >= 6 && newPassword.trim() == confirmPassword.trim(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.accent,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(if (isUpdatingPassword) "Saving…" else "Update Password")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showChangePasswordDialog = false },
+                    enabled = !isUpdatingPassword
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -250,7 +400,7 @@ fun SettingsScreen(
 
         item {
             SettingsSectionCard(
-                title = "Security",
+                title = "Security & Password",
                 icon = Icons.Default.Security
             ) {
                 SettingSwitchRow(
@@ -262,6 +412,37 @@ fun SettingsScreen(
                         saveBoolean("pin_lock_enabled", it)
                     }
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        newPassword = ""
+                        confirmPassword = ""
+                        passwordError = null
+                        passwordSuccess = null
+                        showChangePasswordDialog = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.accent,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text("Change Account Password")
+                }
+
+                passwordSuccess?.let { msg ->
+                    Text(
+                        text = msg,
+                        color = Color(0xFF2E7D32),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         }
 
