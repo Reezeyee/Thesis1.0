@@ -1,0 +1,9 @@
+{
+  "outputDirectory": "Website/Agricultural Management Website Design (1)/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
