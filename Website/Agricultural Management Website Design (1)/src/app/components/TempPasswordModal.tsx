@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Copy, KeyRound, MessageSquareText } from 'lucide-react';
+import { Check, Copy, KeyRound } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog';
 
 export interface TempPasswordReveal {
@@ -40,11 +40,6 @@ export function TempPasswordModal({
       // Clipboard API can fail (permissions, insecure context) -- the password is still visible
       // on screen, so this is a soft failure.
     }
-  };
-
-  const handleTextViaSms = () => {
-    if (!data?.phoneNumber) return;
-    window.open(`sms:${data.phoneNumber}?body=${encodeURIComponent(data.smsBody)}`, '_blank');
   };
 
   return (
@@ -90,24 +85,11 @@ export function TempPasswordModal({
               now. They'll be asked to set their own password right after logging in with it.
             </p>
 
-            <div className="mt-5 flex flex-col gap-2">
-              {data.phoneNumber ? (
-                <button
-                  type="button"
-                  onClick={handleTextViaSms}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2d5016] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all active:scale-95 hover:bg-[#1b3310]"
-                >
-                  <MessageSquareText className="h-4 w-4" /> Text to {data.phoneNumber}
-                </button>
-              ) : (
-                <p className="text-center text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                  No phone number on file -- copy the password above and relay it yourself.
-                </p>
-              )}
+            <div className="mt-5">
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex items-center justify-center rounded-xl border border-border/70 px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-[#2d5016] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all active:scale-95 hover:bg-[#1b3310]"
               >
                 Done
               </button>
