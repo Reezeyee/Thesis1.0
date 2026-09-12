@@ -562,11 +562,6 @@ export function ProfitManagement() {
               <p className="text-2xl font-bold font-heading text-foreground">{formatCurrency(accruedPayroll)}</p>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {accruedPayroll > 0
-              ? 'Earned this period, not yet paid out -- already subtracted from Net Profit.'
-              : `Roster is fully paid for ${currentPeriod}.`}
-          </p>
         </div>
 
         <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
@@ -581,9 +576,6 @@ export function ProfitManagement() {
               </p>
             </div>
           </div>
-          {accruedPayroll > 0 ? (
-            <p className="text-xs text-muted-foreground mt-1">After {formatCurrency(accruedPayroll)} in unpaid wages this period.</p>
-          ) : null}
         </div>
       </div>
 
@@ -959,15 +951,10 @@ export function ProfitManagement() {
               <div className="bg-muted/40 rounded-lg p-3">
                 <p className="text-xs text-muted-foreground mb-1">Margin per kg sold</p>
                 {kgSold > 0 ? (
-                  <>
-                    <p className={`text-2xl font-bold ${marginPerKg >= 0 ? 'text-[#2d5016]' : 'text-red-600'}`}>
-                      {formatCurrency(marginPerKg)}
-                      <span className="text-xs font-normal text-muted-foreground">/kg</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Sells {formatCurrency(avgSellPricePerKg)}/kg · costs {formatCurrency(avgCostPerKgValue)}/kg (blended, incl. unpaid wages)
-                    </p>
-                  </>
+                  <p className={`text-2xl font-bold ${marginPerKg >= 0 ? 'text-[#2d5016]' : 'text-red-600'}`}>
+                    {formatCurrency(marginPerKg)}
+                    <span className="text-xs font-normal text-muted-foreground">/kg</span>
+                  </p>
                 ) : (
                   <p className="text-sm text-muted-foreground italic">Log sale quantity (kg) to see this.</p>
                 )}
