@@ -727,6 +727,46 @@ private fun buildGoogleMapsHtml(fields: List<CoffeeFieldRecord>): String {
       </style>
     </head>
     <body>
+      <!--
+        Independent safety net, deliberately kept dead simple and self-contained so it still
+        works even if the big map script below fails to parse entirely (e.g. a JS SyntaxError
+        from bad embedded data) -- that kind of failure kills every timer/handler *inside* that
+        script too, which used to leave this screen stuck on the loading spinner forever with no
+        way to recover. This tiny script runs first and independently, so `window.onerror` and
+        this timeout still fire no matter what breaks below.
+      -->
+      <script>
+        (function () {
+          window.__farmMapResolved = false;
+          function forceStaticFallback() {
+            if (window.__farmMapResolved) return;
+            window.__farmMapResolved = true;
+            try {
+              var loader = document.getElementById('loading-overlay');
+              if (loader) loader.style.display = 'none';
+              var mapDiv = document.getElementById('map');
+              if (mapDiv) mapDiv.style.display = 'none';
+              var fb = document.getElementById('fallback-map');
+              if (fb) {
+                fb.style.display = 'block';
+                if (!fb.hasChildNodes() || fb.children.length === 0) {
+                  var img = document.createElement('img');
+                  img.alt = 'Satellite view';
+                  img.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;';
+                  var lat = $DEFAULT_LAT, lng = $DEFAULT_LNG, d = 0.03;
+                  img.src = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export' +
+                    '?bbox=' + (lng - d) + ',' + (lat - d) + ',' + (lng + d) + ',' + (lat + d) +
+                    '&bboxSR=4326&size=800,800&format=png&f=image';
+                  fb.appendChild(img);
+                }
+              }
+            } catch (e) {}
+          }
+          window.addEventListener('error', forceStaticFallback);
+          window.__farmMapSafetyTimer = setTimeout(forceStaticFallback, 5000);
+        })();
+      </script>
+
       <div id="loading-overlay">
         <div class="spinner"></div>
         <div style="font-size: 12px; color: #a3e635; font-weight: 600;">🛰️ Loading Google Satellite Map...</div>
@@ -782,6 +822,8 @@ private fun buildGoogleMapsHtml(fields: List<CoffeeFieldRecord>): String {
         }
 
         function hideLoading() {
+          window.__farmMapResolved = true;
+          if (window.__farmMapSafetyTimer) clearTimeout(window.__farmMapSafetyTimer);
           var loader = document.getElementById('loading-overlay');
           if (loader) {
             loader.style.opacity = '0';
@@ -1211,6 +1253,22 @@ private fun buildGoogleMapsHtml(fields: List<CoffeeFieldRecord>): String {
 }
 
 private fun jsonEscape(str: String): String {
-    val escaped = str.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
+    // Escapes everything that can break out of a JS double-quoted string literal embedded in
+    // this hand-built HTML page -- not just backslash/quote/newline. Field names, areas,
+    // varieties, and statuses are free-text entered by admins/workers, so a stray carriage
+    // return (common when pasting from Notes/Word), tab, U+2028/U+2029 line separator, or a
+    // literal "</script>" sequence would otherwise produce a JS SyntaxError that silently
+    // kills the *entire* inline <script> block -- including the timeout/fallback logic meant
+    // to catch failures -- leaving the map stuck on its loading spinner forever.
+    val escaped = str
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r\n", " ")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .replace("\t", " ")
+        .replace("\u2028", " ")
+        .replace("\u2029", " ")
+        .replace("</script", "<\\/script", ignoreCase = true)
     return "\"$escaped\""
 }
