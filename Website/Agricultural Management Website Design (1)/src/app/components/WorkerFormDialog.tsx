@@ -334,6 +334,8 @@ export function WorkerFormDialog({
                 <Input
                   id="worker-phone"
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={11}
                   value={form.phone}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }))
