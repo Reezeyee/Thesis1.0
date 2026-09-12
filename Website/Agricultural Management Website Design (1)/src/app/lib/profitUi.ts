@@ -349,6 +349,22 @@ export function isWorkerPaidForPeriod(payroll: PayrollRecord[], workerName: stri
   return payroll.some((p) => p.workerName === workerName && p.period === period && p.paid);
 }
 
+/**
+ * Wages already earned for the current pay period but not yet disbursed -- an accrued liability.
+ * Excludes inactive workers (no current obligation) and anyone already paid for the period.
+ * This is what keeps "Net Profit" honest: a big sale shouldn't look like pure profit if the
+ * labor that produced it is still owed.
+ */
+export function accruedUnpaidPayrollTotal(
+  roster: PayrollStaffRow[],
+  payroll: PayrollRecord[],
+  currentPeriod: string,
+): number {
+  return roster
+    .filter((r) => r.status !== 'inactive' && !isWorkerPaidForPeriod(payroll, r.name, currentPeriod))
+    .reduce((sum, r) => sum + r.monthlyGross, 0);
+}
+
 export function payrollPaymentMethodLabel(method: PayrollPaymentMethod): string {
   switch (method) {
     case 'cash':

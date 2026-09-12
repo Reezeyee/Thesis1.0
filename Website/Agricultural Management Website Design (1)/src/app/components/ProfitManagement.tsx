@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useFarmData } from '../store/FarmDataProvider';
-import { saleLineTotal, hourlyRateForWorkerRole } from '../lib/farmFinance';
+import { saleLineTotal, hourlyRateForWorkerRole, totalKgSold } from '../lib/farmFinance';
 import { formatCurrency } from '../lib/currencyFormat';
 import { runSave, showSaveError } from '../lib/saveFeedback';
 import {
+  accruedUnpaidPayrollTotal,
   buildBuyerSalesDataFromBuyers,
   buildExpensePieSlices,
   buyersFromSales,
@@ -183,6 +184,11 @@ export function ProfitManagement() {
     () => payrollRoster.reduce((sum, r) => sum + r.monthlyGross, 0),
     [payrollRoster],
   );
+  /** Wages earned this period but not yet paid out -- a real liability, not free profit. */
+  const accruedPayroll = useMemo(
+    () => accruedUnpaidPayrollTotal(payrollRoster, state.payroll, currentPeriod),
+    [payrollRoster, state.payroll, currentPeriod],
+  );
 
   const [expandedPayId, setExpandedPayId] = useState<string | null>(null);
   const [addExpenseOpen, setAddExpenseOpen] = useState(false);
@@ -360,8 +366,15 @@ export function ProfitManagement() {
 
   const totalIncome = transactions.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
   const totalExpenses = transactions.filter((t) => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const netProfit = totalIncome - totalExpenses;
+  // Accrual-aware: subtracts wages already earned this period even if payday hasn't happened yet,
+  // so a fresh sale can't look like pure profit while the pickers who produced it are still owed.
+  const netProfit = totalIncome - totalExpenses - accruedPayroll;
   const incomeCount = transactions.filter((t) => t.type === 'income').length;
+
+  const kgSold = useMemo(() => totalKgSold(state.sales), [state.sales]);
+  const avgSellPricePerKg = kgSold > 0 ? totalIncome / kgSold : 0;
+  const avgCostPerKgValue = kgSold > 0 ? (totalExpenses + accruedPayroll) / kgSold : 0;
+  const marginPerKg = kgSold > 0 ? avgSellPricePerKg - avgCostPerKgValue : 0;
 
   const expenseBreakdown = useMemo(
     () => buildExpensePieSlices(transactions, PIE_COLORS),
@@ -514,7 +527,7 @@ export function ProfitManagement() {
         </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center">
@@ -541,14 +554,36 @@ export function ProfitManagement() {
 
         <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center">
+              <Banknote className="w-5 h-5 text-red-500" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Unpaid Wages (Accrued)</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{formatCurrency(accruedPayroll)}</p>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {accruedPayroll > 0
+              ? 'Earned this period, not yet paid out -- already subtracted from Net Profit.'
+              : `Roster is fully paid for ${currentPeriod}.`}
+          </p>
+        </div>
+
+        <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
               <DollarSign className="w-5 h-5 text-accent" />
             </div>
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Net Profit</p>
-              <p className="text-2xl font-bold font-heading text-emerald-500 font-mono">{formatCurrency(netProfit)}</p>
+              <p className={`text-2xl font-bold font-heading font-mono ${netProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                {formatCurrency(netProfit)}
+              </p>
             </div>
           </div>
+          {accruedPayroll > 0 ? (
+            <p className="text-xs text-muted-foreground mt-1">After {formatCurrency(accruedPayroll)} in unpaid wages this period.</p>
+          ) : null}
         </div>
       </div>
 
@@ -916,10 +951,26 @@ export function ProfitManagement() {
               </div>
               <div className="bg-muted/40 rounded-lg p-3">
                 <p className="text-xs text-muted-foreground mb-1">Profit Margin</p>
-                <p className="text-2xl text-[#2d5016]">
+                <p className={`text-2xl ${netProfit >= 0 ? 'text-[#2d5016]' : 'text-red-600'}`}>
                   {totalIncome > 0 ? Math.round((netProfit / totalIncome) * 100) : 0}
                   {'%'}
                 </p>
+              </div>
+              <div className="bg-muted/40 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">Margin per kg sold</p>
+                {kgSold > 0 ? (
+                  <>
+                    <p className={`text-2xl font-bold ${marginPerKg >= 0 ? 'text-[#2d5016]' : 'text-red-600'}`}>
+                      {formatCurrency(marginPerKg)}
+                      <span className="text-xs font-normal text-muted-foreground">/kg</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Sells {formatCurrency(avgSellPricePerKg)}/kg · costs {formatCurrency(avgCostPerKgValue)}/kg (blended, incl. unpaid wages)
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">Log sale quantity (kg) to see this.</p>
+                )}
               </div>
               <div className="bg-muted/40 rounded-lg p-3">
                 <p className="text-xs text-muted-foreground mb-1">Avg Transaction</p>
