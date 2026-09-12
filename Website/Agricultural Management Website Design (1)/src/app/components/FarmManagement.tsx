@@ -70,7 +70,6 @@ import { runSave, showSaveError } from '../lib/saveFeedback';
 import { logStateApiActivity, logUiAction } from '../lib/apiRouteLogger';
 import {
   isAtLeast18,
-  isValidEmergencyPhone,
   isValidPhone11,
   parseWorkerDetails,
   sanitizePhoneInput,
@@ -722,8 +721,8 @@ export function FarmManagement() {
       setWorkerFormError('Phone number must be strictly 11 digits starting with 09 (Sample: 09171234567).');
       return;
     }
-    if (!isValidEmergencyPhone(form.emergencyPhone)) {
-      setWorkerFormError('Emergency contact number must contain 7 to 15 digits.');
+    if (!isValidPhone11(form.emergencyPhone)) {
+      setWorkerFormError('Emergency phone number must be strictly 11 digits starting with 09 (Sample: 09181234567).');
       return;
     }
     if (!form.municipality.trim() || !form.barangay.trim()) {

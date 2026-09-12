@@ -20,9 +20,7 @@ import {
 import {
   isAtLeast18,
   calculateMaxBirthDate,
-  isValidEmergencyPhone,
   isValidPhone11,
-  sanitizeEmergencyPhoneInput,
   sanitizePhoneInput,
   isValidNamePart,
   ACCEPTED_NAME_CHARS_DESCRIPTION,
@@ -58,7 +56,7 @@ export function addressFormReady(
     form.barangay.trim().length > 0;
 
   const validEmergencyName = !form.emergencyName.trim() || isValidNamePart(form.emergencyName);
-  const validEmergencyPhone = isValidEmergencyPhone(form.emergencyPhone);
+  const validEmergencyPhone = isValidPhone11(form.emergencyPhone);
 
   // Profile photo is REQUIRED for registration; for editing, must have an existing or new photo
   const validPhoto = isEditing ? true : Boolean(form.imageUrl && form.imageUrl.trim().length > 0);
@@ -517,22 +515,38 @@ export function WorkerFormDialog({
               />
 
               <div className="space-y-1.5">
-                <Label htmlFor="worker-emergency-phone" className="text-xs font-semibold">
-                  Emergency Phone Number
+                <Label htmlFor="worker-emergency-phone" className="text-xs font-semibold flex items-center justify-between">
+                  <span>Emergency Phone Number <span className="text-destructive">*</span></span>
+                  <span className="text-[10px] text-muted-foreground font-normal">Sample: 09181234567</span>
                 </Label>
                 <Input
                   id="worker-emergency-phone"
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={11}
                   value={form.emergencyPhone}
                   onChange={(e) =>
                     setForm((f) => ({
                       ...f,
-                      emergencyPhone: sanitizeEmergencyPhoneInput(e.target.value),
+                      emergencyPhone: sanitizePhoneInput(e.target.value),
                     }))
                   }
                   placeholder="Sample: 09181234567"
-                  className="bg-background/90 text-sm"
+                  className={`bg-background/90 text-sm ${
+                    form.emergencyPhone && !isValidPhone11(form.emergencyPhone)
+                      ? 'border-destructive focus-visible:ring-destructive'
+                      : ''
+                  }`}
                 />
+                {form.emergencyPhone && !isValidPhone11(form.emergencyPhone) ? (
+                  <p className="text-[11px] text-destructive font-medium">
+                    Phone number must be strictly 11 digits starting with 09 (Sample: 09181234567).
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Format: 11 digits starting with 09.
+                  </p>
+                )}
               </div>
             </div>
           </div>

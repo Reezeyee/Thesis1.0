@@ -454,7 +454,7 @@ export function draftToWorkerRecord(
     emergencyContact: JSON.stringify({
       fullName: draft.emergencyName.trim(),
       relationship: draft.emergencyRelationship.trim(),
-      contactNumber: sanitizeEmergencyPhoneInput(draft.emergencyPhone).trim(),
+      contactNumber: sanitizePhoneInput(draft.emergencyPhone).trim(),
     }),
     workerId: workerId || `EMP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
     birthday: draft.birthday,
