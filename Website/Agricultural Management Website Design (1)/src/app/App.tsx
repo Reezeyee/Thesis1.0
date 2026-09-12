@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/ui/Topbar';
 import { FarmMonitoringDashboard } from './components/FarmMonitoringDashboard';
@@ -15,6 +16,7 @@ import { AuthProvider, useRequireAdmin, useAuth } from './auth/AuthProvider';
 import { LoginScreen } from './auth/LoginScreen';
 import { FarmDataProvider, useFarmData } from './store/FarmDataProvider';
 import { GlobalNotificationBanner, NotificationDrawer, PasswordResetMessageSync, usePendingReports } from './components/NotificationCenter';
+import { ModuleErrorBoundary } from './components/ModuleErrorBoundary';
 
 export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings';
 
@@ -172,7 +174,22 @@ function AdminAppShell() {
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
           <SaveStatusBanner />
-          {renderModule()}
+          {/* Cross-fade + slight slide between modules instead of an instant hard cut --
+              mode="wait" lets the outgoing panel finish leaving before the next one enters,
+              so nothing overlaps or pops. */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeModule}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            >
+              <ModuleErrorBoundary moduleLabel={moduleLabels[activeModule]}>
+                {renderModule()}
+              </ModuleErrorBoundary>
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>

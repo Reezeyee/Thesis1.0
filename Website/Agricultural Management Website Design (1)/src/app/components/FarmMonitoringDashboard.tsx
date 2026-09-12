@@ -184,9 +184,11 @@ export function FarmMonitoringDashboard() {
         countMap.set(formatted, (countMap.get(formatted) || 0) + trees);
       }
     } else if (state.trees.length > 0) {
-      // 3. Fallback Source: Monitored trees variety
+      // 3. Fallback Source: Monitored trees grouped by section. TreeRecord has no per-tree
+      // species/variety field (that only exists on CoffeeFieldRecord and CNN scan records),
+      // so group by the one real per-tree dimension it does track instead of fabricating one.
       for (const tree of state.trees) {
-        const raw = (tree.variety || tree.species || '').trim() || 'Unspecified';
+        const raw = (tree.sectionName || '').trim() || 'Unspecified section';
         const formatted = raw.charAt(0).toUpperCase() + raw.slice(1);
         countMap.set(formatted, (countMap.get(formatted) || 0) + 1);
       }
@@ -224,7 +226,7 @@ export function FarmMonitoringDashboard() {
       const treeCount = `${(f.trees ?? 0).toLocaleString()} Trees`;
 
       // Correlate with real tree scans if available
-      const fieldTrees = state.trees.filter((t) => t.block === f.name || t.variety === f.variety);
+      const fieldTrees = state.trees.filter((t) => t.farmBlockName === f.name || t.sectionName === f.name);
       const fieldTreeIds = new Set(fieldTrees.map((t) => t.treeId));
       const relevantScans = state.cherryGrades.filter((g) => g.treeId && fieldTreeIds.has(g.treeId));
 
@@ -457,7 +459,7 @@ export function FarmMonitoringDashboard() {
             {
               id: 'sync',
               name: 'Firebase Cloud Realtime Sync',
-              value: syncStatus === 'live' || syncStatus === 'synced' ? 100 : 85,
+              value: syncStatus === 'connected' ? 100 : 85,
               status: 'healthy',
               subtitle: `Sync status: ${syncStatus}`,
               icon: Activity,

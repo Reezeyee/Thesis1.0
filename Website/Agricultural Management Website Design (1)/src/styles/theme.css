@@ -175,3 +175,16 @@
     background: rgba(160, 130, 100, 0.45);
   }
 }
+
+/* Respect the OS "reduce motion" setting -- collapses every animation/transition to
+   near-instant instead of forcing motion on people who've explicitly turned it off. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -251,11 +251,12 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
         }
       });
     } else if (state.trees.length > 0) {
+      // TreeRecord has no species/variety field (only CoffeeFieldRecord and CNN scan records
+      // do) -- group by the one real per-tree dimension it tracks instead of fabricating one.
       state.trees.forEach((t) => {
-        const raw = (t.variety || t.species || '').trim() || 'Unspecified';
+        const raw = (t.sectionName || '').trim() || 'Unspecified section';
         const formatted = raw.charAt(0).toUpperCase() + raw.slice(1);
-        const name = formatted.toLowerCase().includes('variety') || formatted.toLowerCase().includes('coffee') ? formatted : `${formatted} Variety`;
-        countMap.set(name, (countMap.get(name) || 0) + 1);
+        countMap.set(formatted, (countMap.get(formatted) || 0) + 1);
       });
     }
 
