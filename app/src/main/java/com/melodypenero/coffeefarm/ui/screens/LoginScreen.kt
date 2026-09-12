@@ -60,10 +60,10 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
-    var isResetLoading by remember { mutableStateOf(false) }
     var rememberMe by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
-    val canSubmit = username.trim().isNotEmpty() && password.trim().isNotEmpty() && !isLoading && !isResetLoading
+    var showForgotPasswordDialog by remember { mutableStateOf(false) }
+    val canSubmit = username.trim().isNotEmpty() && password.trim().isNotEmpty() && !isLoading
 
     Box(
         modifier = Modifier
@@ -174,28 +174,12 @@ fun LoginScreen(
                         )
                     }
                     Text(
-                        text = if (isResetLoading) "Sending…" else "Forgot password?",
+                        text = "Forgot password?",
                         style = MaterialTheme.typography.bodySmall,
                         color = palette.accent,
-                        modifier = Modifier.clickable(enabled = !isResetLoading && !isLoading) {
+                        modifier = Modifier.clickable(enabled = !isLoading) {
                             errorText = null
-                            scope.launch {
-                                isResetLoading = true
-                                val result = AuthManager.requestPasswordReset(context, username)
-                                isResetLoading = false
-                                errorText = result.fold(
-                                    onSuccess = { reset ->
-                                        if (reset.adminNotified) {
-                                            "Password reset email sent. The admin has been notified."
-                                        } else {
-                                            "Password reset email sent. Admin notification needs updated Firestore rules."
-                                        }
-                                    },
-                                    onFailure = { err ->
-                                        formatPasswordResetError(err.message.orEmpty())
-                                    }
-                                )
-                            }
+                            showForgotPasswordDialog = true
                         }
                     )
                 }
@@ -235,25 +219,14 @@ fun LoginScreen(
                 )
             }
         }
-    }
-}
 
-private fun formatPasswordResetError(raw: String): String {
-    val lower = raw.lowercase()
-    if (lower.contains("enter your username") || lower.contains("unknown")) {
-        return "Enter your username or email first, then tap Forgot password."
+        if (showForgotPasswordDialog) {
+            ForgotPasswordDialog(
+                initialUsername = username,
+                onDismiss = { showForgotPasswordDialog = false }
+            )
+        }
     }
-    if (lower.contains("user") && lower.contains("not") && lower.contains("found")) {
-        return "No Firebase account was found for that username or email. Ask the admin to create the account first."
-    }
-    if (lower.contains("invalid") && lower.contains("email")) {
-        return "Enter a valid username or email before requesting a password reset."
-    }
-    if (lower.contains("operation") && lower.contains("allowed")) {
-        return "Password reset is not enabled in Firebase Authentication. Ask the admin to enable Email/Password sign-in."
-    }
-    if (raw.isNotBlank()) return raw
-    return "Could not send password reset. Check your internet connection and try again."
 }
 
 private fun formatSignInError(raw: String): String {

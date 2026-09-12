@@ -48,3 +48,7 @@ Website_simple/
 *.env
 *.env.local
 
+# API key hashfile (regenerate per-deployment with backend/generate_api_key.py)
+backend/api_key.hash
+
+backend/serviceAccountKey.json

@@ -25,6 +25,7 @@ data class AuthSession(
 )
 
 data class PasswordResetRequestResult(
+    val requestId: String,
     val email: String,
     val adminNotified: Boolean
 )
@@ -301,6 +302,15 @@ object AuthManager {
         }
     }
 
+    /**
+     * Files a password reset request for the Website admin to review (visible there as a
+     * notification + a chat message from the worker). Once the admin approves it, the website
+     * calls a backend endpoint (Firebase Admin SDK) that sets a brand-new temporary password on
+     * this account directly -- no email required, so this also works for accounts that don't
+     * have a real, reachable email address. The admin then sends that temporary password to the
+     * worker by text message; the worker simply logs in with it and the app's existing
+     * "set a new password" screen takes over from there.
+     */
     suspend fun requestPasswordReset(context: Context, username: String): Result<PasswordResetRequestResult> {
         if (FirebaseApp.getApps(context).isEmpty()) {
             return Result.failure(IllegalStateException("Firebase is not configured (add google-services.json)."))
@@ -314,36 +324,54 @@ object AuthManager {
         val targetEmail = email ?: trimmed
         val displayName = if (email != null) displayNameForEmail(email) else trimmed
 
-        // Store reset request in Firestore so the Website admin gets a real-time notification
-        val adminNotified = runCatching {
+        // Store the reset request in Firestore so the Website admin gets a real-time notification
+        // and a chat message. Only the admin's approval unlocks the actual password change.
+        // Must match the fields allowed by the deployed Firestore rule for this collection exactly
+        // (email, displayName, role, requestedAt, source, status, message -- no more, no less).
+        val requestMessage = "$displayName requested a password reset from the Android app.".take(240)
+        val createdRequestId = runCatching {
             FirebaseFirestore.getInstance()
                 .collection(FirebaseCollections.PASSWORD_RESET_REQUESTS)
                 .add(
                     mapOf(
                         "email" to targetEmail,
-                        "username" to trimmed,
                         "displayName" to displayName,
+                        "role" to roleForEmail(targetEmail).name,
                         "requestedAt" to FieldValue.serverTimestamp(),
                         "source" to "android",
-                        "status" to "pending"
+                        "status" to "pending",
+                        "message" to requestMessage
                     )
                 )
                 .await()
-        }.isSuccess
+                .id
+        }.getOrNull()
 
-        val emailSent = if (email != null) {
-            runCatching {
-                FirebaseAuth.getInstance().sendPasswordResetEmail(email).await()
-            }.isSuccess
+        return if (createdRequestId != null) {
+            Result.success(
+                PasswordResetRequestResult(
+                    requestId = createdRequestId,
+                    email = targetEmail,
+                    adminNotified = true
+                )
+            )
         } else {
-            false
+            Result.failure(IllegalStateException("Unable to send your request right now. Please check your connection and try again."))
         }
+    }
 
-        return if (adminNotified || emailSent) {
-            Result.success(PasswordResetRequestResult(email = targetEmail, adminNotified = adminNotified))
-        } else {
-            Result.failure(IllegalStateException("Unable to process password reset request right now. Please try again."))
-        }
+    /**
+     * Polls the status of a previously-filed reset request. Returns the lowercase status string
+     * (`"pending"`, `"approved"`, `"resolved"`, `"denied"`, ...); defaults to `"pending"` if the
+     * status field is missing.
+     */
+    suspend fun checkPasswordResetStatus(requestId: String): Result<String> = runCatching {
+        val snap = FirebaseFirestore.getInstance()
+            .collection(FirebaseCollections.PASSWORD_RESET_REQUESTS)
+            .document(requestId)
+            .get()
+            .await()
+        (snap.getString("status") ?: "pending").lowercase()
     }
 
     private suspend fun tryBootstrapRegister(

@@ -14,7 +14,7 @@ import { CommandSearchModal } from './components/CommandSearchModal';
 import { AuthProvider, useRequireAdmin, useAuth } from './auth/AuthProvider';
 import { LoginScreen } from './auth/LoginScreen';
 import { FarmDataProvider, useFarmData } from './store/FarmDataProvider';
-import { GlobalNotificationBanner, NotificationDrawer, usePendingReports } from './components/NotificationCenter';
+import { GlobalNotificationBanner, NotificationDrawer, PasswordResetMessageSync, usePendingReports } from './components/NotificationCenter';
 
 export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings';
 
@@ -132,6 +132,7 @@ function AdminAppShell() {
         onMobileClose={() => setMobileSidebarOpen(false)}
       />
 
+      <PasswordResetMessageSync />
       <GlobalNotificationBanner onNavigateModule={handleNavigateModule} />
       <NotificationDrawer
         isOpen={drawerOpen}

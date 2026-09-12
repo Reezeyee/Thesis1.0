@@ -3,12 +3,16 @@ import io
 import time
 import json
 import random
+import hashlib
+import hmac
+import secrets
+import string
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from PIL import Image
 import numpy as np
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, status
+from fastapi import FastAPI, UploadFile, File, Form, Header, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -37,9 +41,74 @@ HARVEST_THRESHOLDS = {
 
 TARGET_CLASSES = ["Unripe", "Ripening", "Ripe", "Overripe", "Dry_Damaged"]
 
+# Resolved relative to this file (not the process's working directory) so the server behaves
+# the same whether it's started as `python backend/app.py`, `python app.py` from inside backend/,
+# or `uvicorn app:app` from a deploy host with a different working directory.
+_BACKEND_DIR = Path(__file__).resolve().parent
+
 # Directory for storing candidate retraining data from manual corrections
-CORRECTIONS_DIR = Path("backend/candidate_corrections")
+CORRECTIONS_DIR = _BACKEND_DIR / "candidate_corrections"
 CORRECTIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# API key authentication
+#
+# The server never stores the raw API key -- only its SHA-256 hash, loaded
+# from (in order of priority):
+#   1. the API_KEY_HASH environment variable
+#   2. backend/.env  (API_KEY_HASH=...)
+#   3. backend/api_key.hash  (a file containing just the hex digest)
+#
+# Generate a key + hashfile with:  python backend/generate_api_key.py
+# Callers must send it as:         X-API-Key: <the key>
+# ---------------------------------------------------------------------------
+
+_API_KEY_HASH_FILE = _BACKEND_DIR / "api_key.hash"
+
+
+def _load_dotenv_values(path: Path) -> Dict[str, str]:
+    """Minimal .env parser (KEY=VALUE per line) so this file has no extra dependency."""
+    values: Dict[str, str] = {}
+    if path.exists():
+        for raw_line in path.read_text().splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            values.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    return values
+
+
+_DOTENV_VALUES = _load_dotenv_values(_BACKEND_DIR / ".env")
+
+
+def _load_api_key_hash() -> Optional[str]:
+    env_hash = os.environ.get("API_KEY_HASH") or _DOTENV_VALUES.get("API_KEY_HASH")
+    if env_hash:
+        return env_hash.strip().lower()
+    if _API_KEY_HASH_FILE.exists():
+        return _API_KEY_HASH_FILE.read_text().strip().lower()
+    return None
+
+
+API_KEY_HASH = _load_api_key_hash()
+
+
+async def verify_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> None:
+    """FastAPI dependency that authenticates a request against the stored key hash."""
+    if not API_KEY_HASH:
+        # Fail closed: never silently allow unauthenticated access because setup is incomplete.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="API key is not configured on the server. Run backend/generate_api_key.py.",
+        )
+    if not x_api_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing X-API-Key header.")
+
+    candidate_hash = hashlib.sha256(x_api_key.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(candidate_hash, API_KEY_HASH):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key.")
 
 
 class BoundingBoxCorrection(BaseModel):
@@ -53,6 +122,10 @@ class CorrectionPayload(BaseModel):
     image_id: Optional[str] = None
     corrections: List[BoundingBoxCorrection]
     user_notes: Optional[str] = None
+
+
+class ResetWorkerPasswordPayload(BaseModel):
+    email: str
 
 
 def compute_harvest_recommendation(ripe_pct: float) -> str:
@@ -128,7 +201,7 @@ def health_check():
     return {"status": "ok", "service": "Coffee Cherry Maturity Detection API", "timestamp": time.time()}
 
 
-@app.post("/predict")
+@app.post("/predict", dependencies=[Depends(verify_api_key)])
 async def predict_branch(file: UploadFile = File(...)):
     """
     Accepts branch image upload, returns per-cherry detections, counts, ripe %, and harvest recommendation.
@@ -172,7 +245,7 @@ async def predict_branch(file: UploadFile = File(...)):
     }
 
 
-@app.post("/correct")
+@app.post("/correct", dependencies=[Depends(verify_api_key)])
 async def record_manual_correction(payload: CorrectionPayload):
     """
     Stores manually corrected predictions separately as candidate future training data pending review.
@@ -196,6 +269,133 @@ async def record_manual_correction(payload: CorrectionPayload):
         "message": "Manual corrections saved as candidate training data.",
         "correction_id": correction_id
     }
+
+
+# ---------------------------------------------------------------------------
+# Admin-triggered worker password reset (Firebase Admin SDK)
+#
+# The Android app's "forgot password" flow can't rely on Firebase's normal
+# email-link reset for worker accounts, because worker accounts are created
+# with a placeholder @acojidofarm.local address that has no real inbox.
+# Instead, once the admin approves a request on the website, the website
+# calls this endpoint (with the same hashed X-API-Key used above). This
+# server -- holding privileged Firebase Admin credentials that a browser can
+# never have -- sets a brand-new random temporary password directly on the
+# worker's Firebase Auth account and flags mustChangePassword/
+# isTemporaryPassword on their Firestore user doc, reusing the exact same
+# "must change password on next login" screen that's already used for newly
+# created worker accounts. No email is ever sent or required.
+#
+# Setup (one-time, on the machine running this backend):
+#   1. Firebase Console -> Project settings (gear icon) -> Service accounts
+#   2. Click "Generate new private key" -> a JSON file downloads
+#   3. Save it as backend/serviceAccountKey.json (already gitignored)
+#   4. pip install firebase-admin --break-system-packages
+#   5. Restart the backend. If the key file is missing, this endpoint
+#      returns 503 instead of crashing the whole app.
+# ---------------------------------------------------------------------------
+
+_SERVICE_ACCOUNT_PATH = Path(
+    os.environ.get("FIREBASE_SERVICE_ACCOUNT_PATH")
+    or _DOTENV_VALUES.get("FIREBASE_SERVICE_ACCOUNT_PATH")
+    or (_BACKEND_DIR / "serviceAccountKey.json")
+)
+
+_firebase_admin_app = None
+_firebase_admin_error: Optional[str] = None
+
+
+def _get_firebase_admin_app():
+    """Lazily initializes the Firebase Admin SDK app. Cached after first use."""
+    global _firebase_admin_app, _firebase_admin_error
+    if _firebase_admin_app is not None:
+        return _firebase_admin_app
+    if _firebase_admin_error is not None:
+        return None
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+
+        if not _SERVICE_ACCOUNT_PATH.exists():
+            _firebase_admin_error = (
+                f"Firebase service account key not found at {_SERVICE_ACCOUNT_PATH}. "
+                "Download it from Firebase Console -> Project settings -> Service accounts "
+                "-> Generate new private key, and save it there."
+            )
+            return None
+
+        cred = credentials.Certificate(str(_SERVICE_ACCOUNT_PATH))
+        _firebase_admin_app = firebase_admin.initialize_app(cred)
+        return _firebase_admin_app
+    except ImportError:
+        _firebase_admin_error = "firebase-admin is not installed. Run: pip install firebase-admin --break-system-packages"
+        return None
+    except Exception as e:  # noqa: BLE001
+        _firebase_admin_error = f"Failed to initialize Firebase Admin SDK: {e}"
+        return None
+
+
+def _generate_temp_password() -> str:
+    """Generates a random, human-typeable temporary password (mirrors the website's own generator style)."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return "Cf" + "".join(secrets.choice(alphabet) for _ in range(10))
+
+
+@app.post("/admin/reset-worker-password", dependencies=[Depends(verify_api_key)])
+async def admin_reset_worker_password(payload: ResetWorkerPasswordPayload):
+    """
+    Sets a brand-new temporary password on a worker's Firebase Auth account and
+    marks it as temporary, so the worker is forced through the existing
+    "change your password" screen the next time they log in with it. Intended
+    to be called only after an admin has approved a password_reset_requests
+    entry on the website -- this endpoint itself trusts whoever holds the
+    backend's API key, the same way /predict and /correct already do.
+    """
+    admin_app = _get_firebase_admin_app()
+    if admin_app is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_firebase_admin_error or "Firebase Admin SDK is not configured on the server.",
+        )
+
+    from firebase_admin import auth as firebase_auth, firestore as firebase_firestore
+
+    email = payload.email.strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="email is required.")
+
+    try:
+        user_record = firebase_auth.get_user_by_email(email, app=admin_app)
+    except firebase_auth.UserNotFoundError:
+        raise HTTPException(status_code=404, detail=f"No Firebase account found for {email}.")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Firebase lookup failed: {e}")
+
+    temp_password = _generate_temp_password()
+
+    try:
+        firebase_auth.update_user(user_record.uid, password=temp_password, app=admin_app)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Failed to set new password: {e}")
+
+    try:
+        db = firebase_firestore.client(app=admin_app)
+        db.collection("users").document(user_record.uid).set(
+            {"mustChangePassword": True, "isTemporaryPassword": True},
+            merge=True,
+        )
+    except Exception as e:  # noqa: BLE001
+        # The Auth password was already changed successfully; a Firestore flag failure
+        # shouldn't hide that from the admin, but it is worth surfacing.
+        print(f"[admin_reset_worker_password] Warning: could not update Firestore flags: {e}")
+
+    return {
+        "status": "success",
+        "uid": user_record.uid,
+        "email": email,
+        "temp_password": temp_password,
+    }
+
 
 if __name__ == "__main__":
     import uvicorn

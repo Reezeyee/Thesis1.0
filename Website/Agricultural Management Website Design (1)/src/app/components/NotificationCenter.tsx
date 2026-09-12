@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Bell, CheckCircle2, ChevronRight, KeyRound, Lock, RefreshCw, Wrench, X } from 'lucide-react';
-import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, type Timestamp } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, type Timestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
-import { computeLowStockThreshold } from '../types/appState';
+import { computeLowStockThreshold, type SmsMessageRecord, type WorkerRecord } from '../types/appState';
+import { adminResetWorkerPassword } from '../lib/apiClient';
 import type { AppModuleId } from '../App';
 
 export interface PendingReportItem {
@@ -17,6 +18,63 @@ export interface PendingReportItem {
   reportedAt: string;
   timestamp: number;
   rawReportId: string;
+  /** password_reset only: raw Firestore status (`pending` | `approved` | `resolved` | ...). */
+  status?: string;
+  /** password_reset only: the worker's account email, used to set a new temp password via the backend on approval. */
+  email?: string;
+}
+
+/**
+ * Mounted once, app-wide (see App.tsx). Watches password_reset_requests and mirrors them into the
+ * admin/worker SMS thread (SmsManagement) so a forgotten-password request shows up as a chat
+ * message, and an approval posts a reply -- without needing the worker to be signed in to write
+ * into the shared app_state document themselves (Firestore rules require auth for that; the
+ * requests collection is intentionally open so a signed-out worker can still file one).
+ * Idempotent: keyed by deterministic message ids, safe to run against the same request repeatedly.
+ */
+export function PasswordResetMessageSync() {
+  const { state, updateState } = useFarmData();
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    return onSnapshot(collection(db, COLLECTIONS.PASSWORD_RESET_REQUESTS), (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'removed') return;
+        const data = change.doc.data();
+        const status = String(data.status ?? 'pending').toLowerCase();
+        const displayName = String(data.displayName || data.username || data.email || 'Worker');
+        const requestId = change.doc.id;
+        const workerMsgId = `pwreset-request-${requestId}`;
+
+        const existing = stateRef.current.smsMessages || [];
+        const needsRequestMsg = !existing.some((m) => m.messageId === workerMsgId);
+        // The approval message (with the actual temp password) is posted by
+        // approvePasswordResetRequest() below, right when the admin approves --
+        // it needs the freshly generated password, so it can't be synthesized here.
+        if (!needsRequestMsg) return;
+
+        void updateState((prev) => {
+          const prevMsgs = prev.smsMessages || [];
+          if (prevMsgs.some((m) => m.messageId === workerMsgId)) return prev;
+          const addition: SmsMessageRecord = {
+            messageId: workerMsgId,
+            senderName: displayName,
+            recipientName: 'admin',
+            messageBody: 'I forgot my password and requested a reset from the app. Please review and approve it in Settings.',
+            timestamp: Date.now(),
+            status: 'Received',
+            viaGateway: 'App Request',
+          };
+          return { ...prev, smsMessages: [...prevMsgs, addition] };
+        });
+      });
+    });
+  }, [updateState]);
+
+  return null;
 }
 
 interface NotificationCenterProps {
@@ -35,7 +93,7 @@ export function usePendingReports() {
       collection(db, COLLECTIONS.PASSWORD_RESET_REQUESTS),
       (snapshot) => {
         const items: PendingReportItem[] = snapshot.docs
-          .map((d) => {
+          .map((d): PendingReportItem | null => {
             const data = d.data();
             const status = String(data.status ?? 'pending').toLowerCase();
             const isResolved = status === 'resolved' || status === 'completed';
@@ -51,14 +109,16 @@ export function usePendingReports() {
               id: `pw-reset-${d.id}`,
               type: 'password_reset' as const,
               title: `Password Reset Request: ${displayName}`,
-              subtitle: isApproved ? 'Status: Approved by Admin (Worker can now set new password)' : (email ? `Account: ${email}` : 'Pending Admin Approval'),
+              subtitle: isApproved ? 'Status: Approved by Admin (temp password sent)' : (email ? `Account: ${email}` : 'Pending Admin Approval'),
               details: isApproved
-                ? `Password reset has been approved for ${displayName}. Worker can now enter their new password on the Android app.`
-                : `Worker "${displayName}" requested a password reset from the Android mobile app. Tap "Approve Reset" to allow them to create a new password.`,
+                ? `Password reset has been approved for ${displayName}. A new temporary password was set and sent to them -- they can log in with it now.`
+                : `Worker "${displayName}" requested a password reset from the Android mobile app. Tap "Approve Reset" to set a new temporary password for them.`,
               reportedBy: displayName,
               reportedAt: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }),
               timestamp: dateObj.getTime() || Date.now(),
               rawReportId: d.id,
+              status,
+              email,
             };
           })
           .filter((item): item is PendingReportItem => item !== null)
@@ -208,12 +268,87 @@ export function usePendingReports() {
   return pendingList;
 }
 
+/**
+ * Approves a pending password_reset request and, instead of emailing a reset link (which can't
+ * reach the placeholder @acojidofarm.local addresses worker accounts are created with), calls the
+ * backend's /admin/reset-worker-password endpoint. That endpoint holds privileged Firebase Admin
+ * credentials and sets a brand-new temporary password directly on the worker's account, plus flags
+ * mustChangePassword so the worker is walked through the existing "set a new password" screen the
+ * next time they log in with it. The temp password is posted into the in-app message thread and,
+ * if the worker has a phone number on file, offered as a one-tap SMS to send it to them directly.
+ */
+async function approvePasswordResetRequest(
+  item: PendingReportItem,
+  workers: WorkerRecord[],
+  updateState: (updater: (prev: any) => any) => Promise<void> | void
+) {
+  if (item.type !== 'password_reset' || !item.rawReportId) return;
+
+  try {
+    await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, item.rawReportId), {
+      status: 'approved',
+      approvedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error('Failed to approve password reset request:', err);
+    return;
+  }
+
+  if (!item.email) return;
+
+  let tempPassword: string;
+  try {
+    const result = await adminResetWorkerPassword(item.email);
+    tempPassword = result.temp_password;
+  } catch (err) {
+    console.error('Failed to set a new temporary password via the backend:', err);
+    window.alert(
+      `The request was approved, but a new password could not be set automatically.\n\n${
+        err instanceof Error ? err.message : String(err)
+      }\n\nMake sure the backend server is running (see backend/app.py) and has a Firebase service account key configured.`
+    );
+    return;
+  }
+
+  const worker = workers.find((w) => w.accountEmail === item.email);
+  const messageBody = `Your password reset was approved. Your new temporary password is: ${tempPassword}\nLog in with it in the app -- you'll be asked to set your own new password right after.`;
+
+  await updateState((prev) => ({
+    ...prev,
+    smsMessages: [
+      ...(prev.smsMessages || []),
+      {
+        messageId: `pwreset-temppass-${item.rawReportId}-${Date.now()}`,
+        senderName: 'admin',
+        recipientName: item.reportedBy || 'Worker',
+        messageBody,
+        timestamp: Date.now(),
+        status: 'Sent',
+        viaGateway: worker?.phoneNumber ? 'Native SMS' : 'In-app only',
+      } as SmsMessageRecord,
+    ],
+  }));
+
+  if (worker?.phoneNumber) {
+    const shouldText = window.confirm(
+      `New temporary password for ${item.reportedBy}: ${tempPassword}\n\nOpen your phone's SMS app to text it to ${worker.phoneNumber} now?`
+    );
+    if (shouldText) {
+      window.open(`sms:${worker.phoneNumber}?body=${encodeURIComponent(messageBody)}`, '_blank');
+    }
+  } else {
+    window.alert(
+      `New temporary password for ${item.reportedBy}: ${tempPassword}\n\n(No phone number on file for this worker -- copy this and relay it to them yourself.)`
+    );
+  }
+}
+
 export function GlobalNotificationBanner({
   onNavigateModule,
 }: {
   onNavigateModule: (module: AppModuleId, targetElementId?: string) => void;
 }) {
-  const { updateState, saving } = useFarmData();
+  const { state, updateState, saving } = useFarmData();
   const pendingReports = usePendingReports();
 
   const [dismissedReportIds, setDismissedReportIds] = useState<string[]>(() => {
@@ -386,14 +521,25 @@ export function GlobalNotificationBanner({
           >
             Mark as Read
           </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void handleResolveReport(latestPendingReport)}
-            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#2d5016] text-white hover:bg-[#1b3310] shadow-sm transition-all active:scale-95 flex items-center gap-1 disabled:opacity-60"
-          >
-            ✓ Mark Resolved
-          </button>
+          {latestPendingReport.type === 'password_reset' && latestPendingReport.status === 'pending' ? (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void approvePasswordResetRequest(latestPendingReport, state.workers || [], updateState)}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#6b21a8] text-white hover:bg-[#581c87] shadow-sm transition-all active:scale-95 flex items-center gap-1 disabled:opacity-60"
+            >
+              <KeyRound className="w-3.5 h-3.5" /> Approve Reset
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void handleResolveReport(latestPendingReport)}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#2d5016] text-white hover:bg-[#1b3310] shadow-sm transition-all active:scale-95 flex items-center gap-1 disabled:opacity-60"
+            >
+              ✓ Mark Resolved
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -401,7 +547,7 @@ export function GlobalNotificationBanner({
 }
 
 export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: NotificationCenterProps) {
-  const { updateState, saving } = useFarmData();
+  const { state, updateState, saving } = useFarmData();
   const pendingReports = usePendingReports();
 
   const handleNavigate = (item: PendingReportItem) => {
@@ -587,14 +733,25 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
                       >
                         View
                       </button>
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void handleResolve(item)}
-                        className="font-bold px-2.5 py-1 rounded-lg bg-[#2d5016] text-white text-[11px] hover:bg-[#1b3310] transition-colors disabled:opacity-60"
-                      >
-                        Resolve
-                      </button>
+                      {item.type === 'password_reset' && item.status === 'pending' ? (
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => void approvePasswordResetRequest(item, state.workers || [], updateState)}
+                          className="font-bold px-2.5 py-1 rounded-lg bg-[#6b21a8] text-white text-[11px] hover:bg-[#581c87] transition-colors disabled:opacity-60"
+                        >
+                          Approve
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => void handleResolve(item)}
+                          className="font-bold px-2.5 py-1 rounded-lg bg-[#2d5016] text-white text-[11px] hover:bg-[#1b3310] transition-colors disabled:opacity-60"
+                        >
+                          Resolve
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

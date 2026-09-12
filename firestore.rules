@@ -24,9 +24,38 @@ service cloud.firestore {
       allow read, create: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Password reset requests: allow workers to create and check status, and admins to approve
+    // Password reset requests: a signed-out worker (they forgot their password, so they
+    // cannot be authenticated) files a request with exactly these validated fields.
+    // Anyone can read a request back by its (unguessable) document id -- needed so the
+    // worker's app can poll its own request's status without being signed in. Only the
+    // admin account can update (approve/resolve) or delete a request.
     match /password_reset_requests/{requestId} {
-      allow create, read, write: if true;
+      allow create: if
+        request.resource.data.keys().hasOnly([
+          'email',
+          'displayName',
+          'role',
+          'requestedAt',
+          'source',
+          'status',
+          'message'
+        ]) &&
+        request.resource.data.email is string &&
+        request.resource.data.email.size() <= 254 &&
+        request.resource.data.displayName is string &&
+        request.resource.data.displayName.size() <= 120 &&
+        request.resource.data.role in ['ADMINISTRATOR', 'FARM_STAFF'] &&
+        request.resource.data.message is string &&
+        request.resource.data.message.size() <= 240 &&
+        request.resource.data.requestedAt == request.time &&
+        request.resource.data.source == 'android' &&
+        request.resource.data.status == 'pending';
+
+      allow read: if true;
+
+      allow update, delete: if
+        request.auth != null &&
+        request.auth.token.email == 'farmacojido@gmail.com';
     }
 
     match /{document=**} {

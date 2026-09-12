@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+pillow
+numpy
+firebase-admin
+
+# Optional: enables real YOLO detection for /predict instead of the built-in heuristic
+# fallback. Skipped by default because it pulls in PyTorch/OpenCV (100s of MB) -- often too
+# large/slow for a free-tier host's disk and RAM, and not needed for the admin password-reset
+# feature. Uncomment locally if you have the trained weights and want real detections:
+# ultralytics
