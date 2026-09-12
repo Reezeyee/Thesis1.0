@@ -287,6 +287,11 @@ private fun InteractiveGoogleMapView(
                         view?.postDelayed({
                             view.evaluateJavascript("if (window.refreshMapSize) { window.refreshMapSize(); }", null)
                         }, 600)
+                        // A third, later resize+recenter pass for slower devices where the
+                        // WebView's layout is still settling after the first two.
+                        view?.postDelayed({
+                            view.evaluateJavascript("if (window.refreshMapSize) { window.refreshMapSize(); }", null)
+                        }, 1200)
                     }
                 }
                 webChromeClient = object : android.webkit.WebChromeClient() {
@@ -1157,7 +1162,13 @@ private fun buildGoogleMapsHtml(fields: List<CoffeeFieldRecord>): String {
 
         window.refreshMapSize = function() {
           if (isGoogleMapsLoaded && gMap) {
+            // Triggering 'resize' alone does NOT re-center the map -- if the WebView container
+            // had zero size at the moment the map was constructed (a common timing issue right
+            // after loadDataWithBaseURL), the map silently ends up centered on the wrong viewport
+            // and renders no visible tiles at all, even though initGoogleMap() reported success
+            // with no errors. Re-centering immediately after resize is the standard fix.
             google.maps.event.trigger(gMap, 'resize');
+            gMap.setCenter({ lat: centerLat, lng: centerLng });
           } else {
             renderFallbackMap();
           }
