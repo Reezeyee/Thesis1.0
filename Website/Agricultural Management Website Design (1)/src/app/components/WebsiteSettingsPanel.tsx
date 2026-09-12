@@ -10,6 +10,7 @@ import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { adminResetWorkerPassword } from '../lib/apiClient';
 import type { SmsMessageRecord } from '../types/appState';
+import { TempPasswordModal, type TempPasswordReveal } from './TempPasswordModal';
 
 type PasswordResetRequest = {
   id: string;
@@ -54,6 +55,7 @@ export function WebsiteSettingsPanel() {
   const [pushOn, setPushOn] = useState(true);
   const [passwordResetRequests, setPasswordResetRequests] = useState<PasswordResetRequest[]>([]);
   const [resettingId, setResettingId] = useState<string | null>(null);
+  const [passwordReveal, setPasswordReveal] = useState<TempPasswordReveal | null>(null);
 
   const handleResolveResetRequest = async (id: string) => {
     try {
@@ -71,7 +73,7 @@ export function WebsiteSettingsPanel() {
    * no real email required, so this works even for the auto-generated @acojidofarm.local
    * placeholder accounts. The worker is forced through the existing "set a new password" screen
    * the next time they log in with it. The temp password is posted into the in-app message thread
-   * and, if a phone number is on file, offered as a one-tap SMS.
+   * and revealed to the admin in the TempPasswordModal (copy / one-tap SMS).
    */
   const handleApproveResetRequest = async (id: string, email: string, displayName: string) => {
     try {
@@ -109,18 +111,13 @@ export function WebsiteSettingsPanel() {
         ],
       }));
 
-      if (worker?.phoneNumber) {
-        const shouldText = window.confirm(
-          `New temporary password for ${displayName}: ${tempPassword}\n\nOpen your phone's SMS app to text it to ${worker.phoneNumber} now?`
-        );
-        if (shouldText) {
-          window.open(`sms:${worker.phoneNumber}?body=${encodeURIComponent(messageBody)}`, '_blank');
-        }
-      } else {
-        window.alert(
-          `New temporary password for ${displayName}: ${tempPassword}\n\n(No phone number on file for this worker -- copy this and relay it to them yourself.)`
-        );
-      }
+      setPasswordReveal({
+        displayName: displayName || 'Worker',
+        email,
+        tempPassword,
+        phoneNumber: worker?.phoneNumber,
+        smsBody: messageBody,
+      });
     } catch (err) {
       console.error('Failed to set a new temporary password via the backend:', err);
       window.alert(
@@ -298,6 +295,8 @@ export function WebsiteSettingsPanel() {
           <span className="text-sm font-medium text-[#2d5016]">Admin session</span>
         </Row>
       </div>
+
+      <TempPasswordModal data={passwordReveal} onClose={() => setPasswordReveal(null)} />
     </div>
   );
 }
