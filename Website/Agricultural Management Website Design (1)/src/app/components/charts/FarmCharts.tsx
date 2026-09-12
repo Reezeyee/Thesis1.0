@@ -1,12 +1,12 @@
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
   Legend,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -14,7 +14,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { CHART_COLORS, CHART_LINE_SERIES, CHART_LINE_WIDTH, compactAxisFormatter } from '../../lib/chartTheme';
+import {
+  CHART_COLORS,
+  CHART_GRADIENT_BOTTOM_OPACITY,
+  CHART_GRADIENT_TOP_OPACITY,
+  CHART_LINE_SERIES,
+  CHART_LINE_WIDTH,
+  compactAxisFormatter,
+} from '../../lib/chartTheme';
 import {
   CHART_AXIS_TICK,
   CHART_MARGIN_WITH_BOTTOM_LABELS,
@@ -23,6 +30,29 @@ import {
   piePercentLabel,
 } from '../../lib/chartTheme';
 import { cn } from '../ui/utils';
+
+/** Deterministic gradient id for a series color, so two charts on the same page never collide. */
+export function chartGradientId(dataKey: string): string {
+  return `farmGradient-${dataKey.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+}
+
+/** Soft top-to-transparent fill defs for area charts. Render once per chart, before the series. */
+export function ChartGradientDefs({ series }: { series: { dataKey: string; color: string }[] }) {
+  return (
+    <defs>
+      {series.map((s) => (
+        <linearGradient key={s.dataKey} id={chartGradientId(s.dataKey)} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={s.color} stopOpacity={CHART_GRADIENT_TOP_OPACITY} />
+          <stop offset="100%" stopColor={s.color} stopOpacity={CHART_GRADIENT_BOTTOM_OPACITY} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
+}
+
+/** Shared hover-highlight for bar/area tooltips -- a faint tint instead of Recharts' default gray box. */
+export const farmTooltipCursorFill = { fill: 'rgba(45, 80, 22, 0.05)' };
+export const farmTooltipCursorLine = { stroke: CHART_COLORS.grid, strokeWidth: 1 };
 
 /** Custom pie label — avoid `style` on `<Pie>` (can blank the chart in Recharts). */
 export function renderPieLabel(props: { name?: string; percent?: number; x?: number; y?: number }) {
@@ -107,6 +137,8 @@ export function ColoredDonutChart({
   outerRadius = 88,
   innerRadius = 40,
   showLabels = true,
+  centerValue,
+  centerSubLabel,
 }: {
   data: ColoredSlice[];
   /** Injected by ResponsiveContainer */
@@ -115,6 +147,10 @@ export function ColoredDonutChart({
   outerRadius?: number;
   innerRadius?: number;
   showLabels?: boolean;
+  /** Big number shown in the donut hole, e.g. a formatted total. Only rendered when there's a hole (innerRadius > 0). */
+  centerValue?: string;
+  /** Small caption under the center value, e.g. "Total spend". */
+  centerSubLabel?: string;
 }) {
   const chartData = data.map((row) => ({
     name: row.name,
@@ -153,6 +189,34 @@ export function ColoredDonutChart({
           <Cell key={`${row.name}-${index}`} fill={row.fill} stroke={row.fill} />
         ))}
       </Pie>
+      {centerValue && inner > 0 ? (
+        <>
+          <text
+            x={cx}
+            y={cy - (centerSubLabel ? 8 : 0)}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={centerSubLabel ? 20 : 22}
+            fontWeight={700}
+            fill="#292524"
+          >
+            {centerValue}
+          </text>
+          {centerSubLabel ? (
+            <text
+              x={cx}
+              y={cy + 14}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={11}
+              fontWeight={500}
+              fill={CHART_COLORS.axis}
+            >
+              {centerSubLabel}
+            </text>
+          ) : null}
+        </>
+      ) : null}
       <Tooltip {...farmTooltipProps} formatter={countTooltipFormatter} />
     </PieChart>
   );
@@ -271,7 +335,8 @@ export function FarmLineChart({
   const chartHeight = height > 0 ? height : 280;
 
   return (
-    <LineChart width={chartWidth} height={chartHeight} data={data} margin={farmChartBottomMargin}>
+    <AreaChart width={chartWidth} height={chartHeight} data={data} margin={farmChartBottomMargin}>
+      <ChartGradientDefs series={series.map((s) => ({ dataKey: s.dataKey, color: s.stroke }))} />
       <CartesianGrid strokeDasharray="4 4" stroke={CHART_COLORS.grid} vertical={false} />
       <XAxis {...farmMonthXAxisProps} />
       <YAxis
@@ -284,15 +349,17 @@ export function FarmLineChart({
         axisLine={false}
         tickLine={false}
       />
-      <Tooltip {...farmTooltipProps} formatter={pesoTooltipFormatter} />
+      <Tooltip {...farmTooltipProps} formatter={pesoTooltipFormatter} cursor={farmTooltipCursorLine} />
       <Legend wrapperStyle={{ fontSize: 12 }} />
       {series.map((s) => (
-        <Line
+        <Area
           key={s.dataKey}
           type="monotone"
           dataKey={s.dataKey}
           stroke={s.stroke}
           strokeWidth={CHART_LINE_WIDTH}
+          fill={`url(#${chartGradientId(s.dataKey)})`}
+          fillOpacity={1}
           dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: s.stroke }}
           activeDot={{ r: 6, strokeWidth: 0 }}
           name={s.name}
@@ -300,7 +367,7 @@ export function FarmLineChart({
           isAnimationActive={false}
         />
       ))}
-    </LineChart>
+    </AreaChart>
   );
 }
 
@@ -341,7 +408,7 @@ export function FarmBarChart({
         axisLine={false}
         tickLine={false}
       />
-      <Tooltip {...farmTooltipProps} formatter={pesoTooltipFormatter} />
+      <Tooltip {...farmTooltipProps} formatter={pesoTooltipFormatter} cursor={farmTooltipCursorFill} />
       <Legend wrapperStyle={{ fontSize: 12 }} />
       {series.map((s) => (
         <Bar
@@ -349,7 +416,7 @@ export function FarmBarChart({
           dataKey={s.dataKey}
           fill={s.fill}
           name={s.name}
-          radius={[4, 4, 0, 0]}
+          radius={[6, 6, 0, 0]}
           maxBarSize={maxBarSize}
           isAnimationActive={false}
         />
@@ -376,12 +443,12 @@ export function FarmHarvestBarChart({
       <CartesianGrid strokeDasharray="4 4" stroke={CHART_COLORS.grid} vertical={false} />
       <XAxis {...farmMonthXAxisProps} />
       <YAxis tick={farmAxisTick} width={48} domain={[0, 'auto']} axisLine={false} tickLine={false} />
-      <Tooltip {...farmTooltipProps} formatter={kgTooltipFormatter} />
+      <Tooltip {...farmTooltipProps} formatter={kgTooltipFormatter} cursor={farmTooltipCursorFill} />
       <Bar
         dataKey="kg"
         fill={CHART_COLORS.harvest}
         name="Harvest"
-        radius={[4, 4, 0, 0]}
+        radius={[6, 6, 0, 0]}
         maxBarSize={48}
         isAnimationActive={false}
       />
@@ -401,7 +468,7 @@ export function ChartLegendList({
         <div key={item.name} className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2 min-w-0">
             <div
-              className="w-3.5 h-3.5 rounded-sm shrink-0 ring-1 ring-[#292524]/15"
+              className="w-3 h-3 rounded-full shrink-0 ring-2 ring-white/80 shadow-sm"
               style={{ backgroundColor: item.color }}
             />
             <span className="truncate">{item.name}</span>
@@ -435,8 +502,8 @@ export function ChartPanel({
   legend,
 }: ChartPanelProps) {
   return (
-    <div className="farm-chart-panel bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-      <h3 className="mb-1 text-foreground font-medium">{title}</h3>
+    <div className="farm-chart-panel bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow duration-200">
+      <h3 className="mb-1 text-foreground font-semibold">{title}</h3>
       {subtitle ? <p className="text-xs text-muted-foreground mb-4">{subtitle}</p> : <div className="mb-4" />}
       <div className="w-full" style={{ height, minHeight: height }}>
         {empty ? (

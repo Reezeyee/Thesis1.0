@@ -28,7 +28,11 @@ export const CHART_AXIS_TICK_ANGLED = {
   textAnchor: 'end' as const,
 };
 
-export const CHART_LINE_WIDTH = 2.5;
+export const CHART_LINE_WIDTH = 3;
+
+/** Gradient fill stops for area charts -- same hue as the line stroke, fading to transparent. */
+export const CHART_GRADIENT_TOP_OPACITY = 0.32;
+export const CHART_GRADIENT_BOTTOM_OPACITY = 0.02;
 
 export const CHART_TOOLTIP_STYLE: CSSProperties = {
   backgroundColor: 'rgba(255, 255, 255, 0.92)',
@@ -55,8 +59,10 @@ export const PIE_COLORS = [
 
 export const CHART_LINE_SERIES = {
   revenue: '#2d5016',    // Green (income)
-  expenses: '#c2410c',   // Terracotta/warm rust (expenses)
-  profit: '#4a2c2a',     // Deep espresso brown (net profit)
+  expenses: '#ea580c',   // Vivid amber-orange (expenses) -- more distinct from the grid/axis browns
+  profit: '#6b21a8',     // Purple accent (net profit) -- same accent used for security/password UI,
+                          // ties the chart palette back to the rest of the site and reads clearly
+                          // next to green + orange instead of blending into the earth-tone background
   sales: '#2d5016',      // Green (sales)
 } as const;
 

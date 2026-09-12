@@ -54,6 +54,7 @@ import {
   farmAxisTick,
   farmChartBottomMargin,
   farmMonthXAxisProps,
+  farmTooltipCursorFill,
   farmTooltipProps,
 } from './charts/FarmCharts';
 import { useFarmData } from '../store/FarmDataProvider';
@@ -1431,7 +1432,13 @@ export function EquipmentManagement() {
               ) : null
             }
           >
-            <ColoredDonutChart data={statusDistribution} innerRadius={52} outerRadius={88} />
+            <ColoredDonutChart
+              data={statusDistribution}
+              innerRadius={52}
+              outerRadius={88}
+              centerValue={String(statusDistribution.reduce((sum, d) => sum + d.value, 0))}
+              centerSubLabel="Total items"
+            />
           </ChartPanel>
 
           <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
@@ -1481,6 +1488,7 @@ export function EquipmentManagement() {
             <YAxis tick={farmAxisTick} allowDecimals={false} width={44} axisLine={false} tickLine={false} />
             <Tooltip
               {...farmTooltipProps}
+              cursor={farmTooltipCursorFill}
               formatter={(value: number | string, name: string) => {
                 const n = typeof value === 'number' ? value : Number(value);
                 if (name === 'Spend (₱)') {
@@ -1497,7 +1505,7 @@ export function EquipmentManagement() {
               dataKey="logs"
               fill={CHART_COLORS.tertiary}
               name="Logs & reports"
-              radius={[4, 4, 0, 0]}
+              radius={[6, 6, 0, 0]}
               maxBarSize={32}
               isAnimationActive={false}
             />
@@ -1505,7 +1513,7 @@ export function EquipmentManagement() {
               dataKey="inMaintenance"
               fill={CHART_EQUIPMENT_STATUS.maintenance}
               name="In maintenance (fleet)"
-              radius={[4, 4, 0, 0]}
+              radius={[6, 6, 0, 0]}
               maxBarSize={32}
               isAnimationActive={false}
             />
@@ -1513,7 +1521,7 @@ export function EquipmentManagement() {
               dataKey="costPeso"
               fill={CHART_COLORS.accent}
               name="Spend (₱)"
-              radius={[4, 4, 0, 0]}
+              radius={[6, 6, 0, 0]}
               maxBarSize={32}
               isAnimationActive={false}
             />
@@ -1541,6 +1549,7 @@ export function EquipmentManagement() {
             />
             <Tooltip
               {...farmTooltipProps}
+              cursor={farmTooltipCursorFill}
               formatter={(value: number | string) => {
                 const n = typeof value === 'number' ? value : Number(value);
                 const hrs = Number.isFinite(n) ? n : 0;
@@ -1551,7 +1560,7 @@ export function EquipmentManagement() {
               dataKey="hours"
               fill={CHART_COLORS.primary}
               name="Usage"
-              radius={[0, 4, 4, 0]}
+              radius={[0, 6, 6, 0]}
               maxBarSize={28}
               isAnimationActive={false}
             />

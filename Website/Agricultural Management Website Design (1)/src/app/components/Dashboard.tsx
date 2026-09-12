@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Package, Users, Wrench, ShoppingCart, Coffee } from 'lucide-react';
-import { PieChart, Pie, Cell, Tooltip } from 'recharts';
+// (chart primitives now come from the shared FarmCharts components below)
 import { useFarmData } from '../store/FarmDataProvider';
 import {
   buildCherryClassData,
@@ -20,11 +20,10 @@ import {
 import {
   ChartLegendList,
   ChartPanel,
-  countTooltipFormatter,
+  ColoredDonutChart,
   FarmBarChart,
   FarmHarvestBarChart,
   FarmLineChart,
-  farmTooltipProps,
 } from './charts/FarmCharts';
 
 const iconMap = {
@@ -157,31 +156,11 @@ export function Dashboard() {
             ) : null
           }
         >
-          <PieChart>
-            <Pie
-              data={cherryClassData.map((d) => ({
-                name: d.name,
-                value: d.value,
-                fill: d.color,
-              }))}
-              dataKey="value"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius="48%"
-              outerRadius="72%"
-              paddingAngle={cherryClassData.length > 1 ? 3 : 0}
-              labelLine={false}
-              stroke="#ffffff"
-              strokeWidth={2}
-              isAnimationActive={false}
-            >
-              {cherryClassData.map((entry, index) => (
-                <Cell key={`${entry.name}-${index}`} fill={entry.color} stroke={entry.color} />
-              ))}
-            </Pie>
-            <Tooltip {...farmTooltipProps} formatter={countTooltipFormatter} />
-          </PieChart>
+          <ColoredDonutChart
+            data={cherryClassData}
+            centerValue={String(cherryClassData.reduce((sum, d) => sum + d.value, 0))}
+            centerSubLabel="Total scans"
+          />
         </ChartPanel>
 
         <ChartPanel

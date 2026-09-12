@@ -29,7 +29,7 @@ import {
   CheckCircle2,
   Edit2,
 } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import {
   CHART_COLORS,
   CHART_LINE_SERIES,
@@ -41,12 +41,16 @@ import {
 } from '../lib/chartTheme';
 import {
   categoryXAxisProps,
+  ChartGradientDefs,
+  chartGradientId,
   ChartLegendList,
   ChartPanel,
   ColoredDonutChart,
   farmAxisTick,
   farmChartBottomMargin,
   farmMonthXAxisProps,
+  farmTooltipCursorFill,
+  farmTooltipCursorLine,
   farmTooltipProps,
   pesoTooltipFormatter,
 } from './charts/FarmCharts';
@@ -829,16 +833,23 @@ export function ProfitManagement() {
           subtitle="Monthly revenue, expenses, and net profit"
           empty={chartSeriesEmpty(revenueData)}
         >
-          <LineChart data={revenueData} margin={farmChartBottomMargin}>
+          <AreaChart data={revenueData} margin={farmChartBottomMargin}>
+            <ChartGradientDefs
+              series={[
+                { dataKey: 'revenue', color: CHART_LINE_SERIES.revenue },
+                { dataKey: 'expenses', color: CHART_LINE_SERIES.expenses },
+                { dataKey: 'profit', color: CHART_LINE_SERIES.profit },
+              ]}
+            />
             <CartesianGrid strokeDasharray="4 4" stroke={CHART_COLORS.grid} vertical={false} />
             <XAxis {...farmMonthXAxisProps} />
             <YAxis tick={farmAxisTick} tickFormatter={compactAxisFormatter} width={52} axisLine={false} tickLine={false} />
-            <Tooltip {...farmTooltipProps} formatter={pesoTooltipFormatter} />
+            <Tooltip {...farmTooltipProps} formatter={pesoTooltipFormatter} cursor={farmTooltipCursorLine} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line type="monotone" dataKey="revenue" stroke={CHART_LINE_SERIES.revenue} strokeWidth={CHART_LINE_WIDTH} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_LINE_SERIES.revenue }} activeDot={{ r: 6, strokeWidth: 0 }} name="Revenue" />
-            <Line type="monotone" dataKey="expenses" stroke={CHART_LINE_SERIES.expenses} strokeWidth={CHART_LINE_WIDTH} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_LINE_SERIES.expenses }} activeDot={{ r: 6, strokeWidth: 0 }} name="Expenses" />
-            <Line type="monotone" dataKey="profit" stroke={CHART_LINE_SERIES.profit} strokeWidth={CHART_LINE_WIDTH} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_LINE_SERIES.profit }} activeDot={{ r: 6, strokeWidth: 0 }} name="Net profit" />
-          </LineChart>
+            <Area type="monotone" dataKey="revenue" stroke={CHART_LINE_SERIES.revenue} strokeWidth={CHART_LINE_WIDTH} fill={`url(#${chartGradientId('revenue')})`} fillOpacity={1} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_LINE_SERIES.revenue }} activeDot={{ r: 6, strokeWidth: 0 }} name="Revenue" />
+            <Area type="monotone" dataKey="expenses" stroke={CHART_LINE_SERIES.expenses} strokeWidth={CHART_LINE_WIDTH} fill={`url(#${chartGradientId('expenses')})`} fillOpacity={1} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_LINE_SERIES.expenses }} activeDot={{ r: 6, strokeWidth: 0 }} name="Expenses" />
+            <Area type="monotone" dataKey="profit" stroke={CHART_LINE_SERIES.profit} strokeWidth={CHART_LINE_WIDTH} fill={`url(#${chartGradientId('profit')})`} fillOpacity={1} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_LINE_SERIES.profit }} activeDot={{ r: 6, strokeWidth: 0 }} name="Net profit" />
+          </AreaChart>
         </ChartPanel>
 
         <ChartPanel
@@ -856,7 +867,13 @@ export function ProfitManagement() {
             />
           }
         >
-          <ColoredDonutChart data={expenseBreakdown} outerRadius={100} innerRadius={48} />
+          <ColoredDonutChart
+            data={expenseBreakdown}
+            outerRadius={100}
+            innerRadius={48}
+            centerValue={formatCurrency(totalExpenses, false)}
+            centerSubLabel="Total spend"
+          />
         </ChartPanel>
       </div>
 
@@ -920,8 +937,8 @@ export function ProfitManagement() {
               <CartesianGrid strokeDasharray="4 4" stroke={CHART_COLORS.grid} vertical={false} />
               <XAxis {...categoryXAxisProps('name')} />
               <YAxis tick={farmAxisTick} tickFormatter={compactAxisFormatter} width={52} axisLine={false} tickLine={false} />
-              <Tooltip {...farmTooltipProps} formatter={pesoTooltipFormatter} />
-              <Bar dataKey="sales" fill={CHART_LINE_SERIES.sales} name="Sales" radius={[4, 4, 0, 0]} maxBarSize={48} />
+              <Tooltip {...farmTooltipProps} formatter={pesoTooltipFormatter} cursor={farmTooltipCursorFill} />
+              <Bar dataKey="sales" fill={CHART_LINE_SERIES.sales} name="Sales" radius={[6, 6, 0, 0]} maxBarSize={48} />
             </BarChart>
           </ChartPanel>
         </div>

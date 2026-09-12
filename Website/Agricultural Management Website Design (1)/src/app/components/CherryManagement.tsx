@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Coffee, CheckCircle, AlertCircle, Clock, TrendingUp } from 'lucide-react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -36,6 +36,8 @@ import {
 } from '../lib/chartTheme';
 import {
   categoryXAxisProps,
+  ChartGradientDefs,
+  chartGradientId,
   ChartLegendList,
   ChartPanel,
   ColoredDonutChart,
@@ -43,6 +45,8 @@ import {
   farmAxisTick,
   farmChartBottomMargin,
   farmMonthXAxisProps,
+  farmTooltipCursorFill,
+  farmTooltipCursorLine,
   farmTooltipProps,
   kgTooltipFormatter,
 } from './charts/FarmCharts';
@@ -351,7 +355,11 @@ export function CherryManagement() {
               />
             }
           >
-            <ColoredDonutChart data={qualityDistribution} />
+            <ColoredDonutChart
+              data={qualityDistribution}
+              centerValue={String(qualityDistribution.reduce((sum, d) => sum + d.value, 0))}
+              centerSubLabel="Total scans"
+            />
           </ChartPanel>
 
           <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
@@ -398,16 +406,23 @@ export function CherryManagement() {
           subtitle="Ripe / unripe / overripe scans over time"
           empty={chartSeriesEmpty(classificationTrend)}
         >
-          <LineChart data={classificationTrend} margin={farmChartBottomMargin}>
+          <AreaChart data={classificationTrend} margin={farmChartBottomMargin}>
+            <ChartGradientDefs
+              series={[
+                { dataKey: 'ripe', color: CHART_CHERRY.ripe },
+                { dataKey: 'unripe', color: CHART_CHERRY.unripe },
+                { dataKey: 'overripe', color: CHART_CHERRY.overripe },
+              ]}
+            />
             <CartesianGrid strokeDasharray="4 4" stroke={CHART_COLORS.grid} vertical={false} />
             <XAxis {...categoryXAxisProps('date')} />
             <YAxis tick={farmAxisTick} allowDecimals={false} width={40} axisLine={false} tickLine={false} />
-            <Tooltip {...farmTooltipProps} formatter={countTooltipFormatter} />
+            <Tooltip {...farmTooltipProps} formatter={countTooltipFormatter} cursor={farmTooltipCursorLine} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line type="monotone" dataKey="ripe" stroke={CHART_CHERRY.ripe} strokeWidth={CHART_LINE_WIDTH} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_CHERRY.ripe }} activeDot={{ r: 6, strokeWidth: 0 }} name="Ripe" />
-            <Line type="monotone" dataKey="unripe" stroke={CHART_CHERRY.unripe} strokeWidth={CHART_LINE_WIDTH} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_CHERRY.unripe }} activeDot={{ r: 6, strokeWidth: 0 }} name="Unripe" />
-            <Line type="monotone" dataKey="overripe" stroke={CHART_CHERRY.overripe} strokeWidth={CHART_LINE_WIDTH} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_CHERRY.overripe }} activeDot={{ r: 6, strokeWidth: 0 }} name="Overripe" />
-          </LineChart>
+            <Area type="monotone" dataKey="ripe" stroke={CHART_CHERRY.ripe} strokeWidth={CHART_LINE_WIDTH} fill={`url(#${chartGradientId('ripe')})`} fillOpacity={1} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_CHERRY.ripe }} activeDot={{ r: 6, strokeWidth: 0 }} name="Ripe" />
+            <Area type="monotone" dataKey="unripe" stroke={CHART_CHERRY.unripe} strokeWidth={CHART_LINE_WIDTH} fill={`url(#${chartGradientId('unripe')})`} fillOpacity={1} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_CHERRY.unripe }} activeDot={{ r: 6, strokeWidth: 0 }} name="Unripe" />
+            <Area type="monotone" dataKey="overripe" stroke={CHART_CHERRY.overripe} strokeWidth={CHART_LINE_WIDTH} fill={`url(#${chartGradientId('overripe')})`} fillOpacity={1} dot={{ r: 4, strokeWidth: 2, fill: '#ffffff', stroke: CHART_CHERRY.overripe }} activeDot={{ r: 6, strokeWidth: 0 }} name="Overripe" />
+          </AreaChart>
         </ChartPanel>
 
         <ChartPanel
@@ -419,8 +434,8 @@ export function CherryManagement() {
             <CartesianGrid strokeDasharray="4 4" stroke={CHART_COLORS.grid} vertical={false} />
             <XAxis {...farmMonthXAxisProps} />
             <YAxis tick={farmAxisTick} tickFormatter={compactAxisFormatter} width={48} axisLine={false} tickLine={false} />
-            <Tooltip {...farmTooltipProps} formatter={kgTooltipFormatter} />
-            <Bar dataKey="kg" fill={CHART_COLORS.harvest} name="Harvest" radius={[4, 4, 0, 0]} maxBarSize={48} />
+            <Tooltip {...farmTooltipProps} formatter={kgTooltipFormatter} cursor={farmTooltipCursorFill} />
+            <Bar dataKey="kg" fill={CHART_COLORS.harvest} name="Harvest" radius={[6, 6, 0, 0]} maxBarSize={48} />
           </BarChart>
         </ChartPanel>
       </div>
