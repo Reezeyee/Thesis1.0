@@ -11,13 +11,16 @@ project root:
 
 It uses backend/serviceAccountKey.json (already set up for the password-reset
 feature) to talk to Firebase directly with admin privileges, bypassing the
-website entirely. This is IRREVERSIBLE -- there is no undo once it runs.
+website entirely. Before touching anything, it saves a full backup of the
+current data to backend/farm_data_backups/ -- if you ever need the old data
+back, that JSON file has everything (see restore_farm_data_backup.py).
 """
 
 import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import firebase_admin
@@ -95,12 +98,24 @@ for key in EMPTY_KEYS:
 
 worker_count = before_counts.get("workers", 0)
 
+# Always back up the full current state before changing anything, so this is recoverable
+# even though the wipe itself is irreversible in Firestore.
+backup_dir = _BACKEND_DIR / "farm_data_backups"
+backup_dir.mkdir(exist_ok=True)
+backup_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+backup_path = backup_dir / f"app_state_farm_backup_{backup_timestamp}.json"
+with open(backup_path, "w", encoding="utf-8") as f:
+    json.dump(current, f, indent=2)
+print(f"\nBacked up current data to {backup_path}")
+print("(keep this file if you might want the old data back later)")
+
 confirm = input(
     f"\nThis will PERMANENTLY erase all the counts above except '{worker_count}' worker "
-    "account(s), which will be kept. This cannot be undone. Type WIPE to continue: "
+    "account(s), which will be kept, from Firebase. A local backup was just saved above.\n"
+    "Type WIPE to continue: "
 )
 if confirm.strip() != "WIPE":
-    print("Aborted -- nothing was changed.")
+    print("Aborted -- nothing was changed in Firebase (the backup file above is still there).")
     sys.exit(0)
 
 # Build the wiped state: every field empty except workers.
