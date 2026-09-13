@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Coffee, CheckCircle, AlertCircle, Clock, TrendingUp } from 'lucide-react';
+import { Cherry, CheckCircle, AlertCircle, Clock, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
 const containerVariants = {
@@ -104,16 +104,24 @@ export function CherryManagement() {
             )
           : undefined;
 
-        const locationParts: string[] = [];
-        const fBlock = matchingTree?.farmBlockName?.trim();
-        const sName = matchingTree?.sectionName?.trim();
-        if (fBlock) {
-          locationParts.push(fBlock);
+        // Prefer the section the worker actually picked on the phone when saving the scan
+        // (g.location) -- this is set for every scan, including standalone branch scans with
+        // no tree attached. Only fall back to deriving a location from the linked tree's farm
+        // block/section when a scan predates that field or the app didn't record one.
+        const recordedLocation = g.location?.trim();
+        let locationName = recordedLocation || '—';
+        if (!recordedLocation) {
+          const locationParts: string[] = [];
+          const fBlock = matchingTree?.farmBlockName?.trim();
+          const sName = matchingTree?.sectionName?.trim();
+          if (fBlock) {
+            locationParts.push(fBlock);
+          }
+          if (sName && sName !== fBlock) {
+            locationParts.push(sName);
+          }
+          locationName = locationParts.length > 0 ? locationParts.join(' - ') : '—';
         }
-        if (sName && sName !== fBlock) {
-          locationParts.push(sName);
-        }
-        const locationName = locationParts.length > 0 ? locationParts.join(' - ') : '—';
         const qualityLevel: 'excellent' | 'good' | 'fair' =
           conf >= 90 ? 'excellent' : conf >= 75 ? 'good' : 'fair';
 
@@ -250,7 +258,7 @@ export function CherryManagement() {
         <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
-              <Coffee className="w-5 h-5 text-accent" />
+              <Cherry className="w-5 h-5 text-accent" />
             </div>
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Classifications</p>
@@ -272,7 +280,7 @@ export function CherryManagement() {
                 >
                   <div className="flex items-start gap-4">
                     <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
-                      <Coffee className="h-7 w-7" />
+                      <Cherry className="h-7 w-7" />
                     </div>
                     <div className="flex-1">
                     <div className="flex items-start justify-between mb-2">

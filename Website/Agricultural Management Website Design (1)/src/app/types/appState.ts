@@ -180,6 +180,8 @@ export interface CherryGradeRecord {
   speciesConfidence?: string | null;
   savedAtMillis?: number | null;
   treeId?: string | null;
+  /** Farm section / sector / block / plot picked on the phone when the scan was saved. */
+  location?: string | null;
   scannedByWorkerName?: string | null;
   scannedByEmail?: string | null;
   scannedByAuthUid?: string | null;
