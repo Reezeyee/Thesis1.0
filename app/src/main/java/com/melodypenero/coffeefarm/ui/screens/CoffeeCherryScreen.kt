@@ -126,10 +126,14 @@ import com.melodypenero.coffeefarm.data.store.TreeRipenessScanRecord
 import com.melodypenero.coffeefarm.data.store.isDeviceOnline
 import com.melodypenero.coffeefarm.ml.BitmapExifUtils
 import com.melodypenero.coffeefarm.ml.CoffeeSpeciesTfliteClassifier
+import com.melodypenero.coffeefarm.ui.icons.CoffeeCherry
 import com.melodypenero.coffeefarm.ui.components.FarmTabRow
 import com.melodypenero.coffeefarm.ui.components.farmPalette
 import java.io.File
+import java.text.SimpleDateFormat
 import java.time.LocalDate
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlinx.coroutines.Dispatchers
@@ -143,6 +147,28 @@ private val CLASS_COLORS = mapOf(
     "Overripe" to Color(0xFF8B4513),    // Saddle Brown
     "Dry_Damaged" to Color(0xFF2F4F4F)  // Dark Slate
 )
+
+/** [CherryGradeRecord.grade] holds [BranchScanSummary.harvestStatus], one of three fixed phrases. */
+private fun harvestStatusAccentColor(grade: String?): Color = when {
+    grade == null -> Color(0xFF8A7A6D)
+    grade.contains("Optimal", ignoreCase = true) -> Color(0xFF84B626)
+    grade.contains("Selective", ignoreCase = true) -> Color(0xFFFFBF00)
+    grade.contains("Wait", ignoreCase = true) -> Color(0xFFFF7A70)
+    else -> Color(0xFF8A7A6D)
+}
+
+private fun harvestStatusShortLabel(grade: String?): String = when {
+    grade == null -> "Graded"
+    grade.contains("Optimal", ignoreCase = true) -> "Ready to Harvest"
+    grade.contains("Selective", ignoreCase = true) -> "Selective Pick"
+    grade.contains("Wait", ignoreCase = true) -> "Not Ready"
+    else -> grade
+}
+
+private val SCAN_TIMESTAMP_FORMAT = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+
+private fun formatScanTimestamp(millis: Long?): String =
+    if (millis == null || millis <= 0L) "Date unknown" else SCAN_TIMESTAMP_FORMAT.format(Date(millis))
 
 @Composable
 fun CoffeeCherryScreen(
@@ -1398,48 +1424,106 @@ private fun SavedScansTab(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(sortedRecords, key = { it.savedAtMillis ?: 0L }) { r ->
+                    val accent = harvestStatusAccentColor(r.grade)
                     Surface(
                         color = Color(0xFF241A14),
                         shape = RoundedCornerShape(16.dp),
                         border = BorderStroke(1.dp, Color(0xFF4A382C)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(accent.copy(alpha = 0.18f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Place,
-                                            contentDescription = null,
-                                            tint = Color(0xFFD4AF37),
-                                            modifier = Modifier.size(16.dp)
-                                        )
+                                Icon(
+                                    imageVector = Icons.Default.CoffeeCherry,
+                                    contentDescription = null,
+                                    tint = accent,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Place,
+                                                contentDescription = null,
+                                                tint = Color(0xFFD4AF37),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = r.location?.ifBlank { null } ?: "Farm Section",
+                                                color = Color(0xFFF4EDE6),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                         Text(
-                                            text = r.location?.ifBlank { null } ?: "Farm Section",
-                                            color = Color(0xFFF4EDE6),
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold
+                                            text = formatScanTimestamp(r.savedAtMillis),
+                                            color = Color(0xFF8A7A6D),
+                                            style = MaterialTheme.typography.labelSmall
                                         )
                                     }
-                                    val speciesInfo = if (!r.species.isNullOrBlank() && r.species != "Undetermined") {
-                                        "Species: ${r.species} (${r.speciesConfidence ?: "CNN"})"
-                                    } else {
-                                        "Species: ${r.species ?: "Unidentified"}"
-                                    }
-                                    Text(speciesInfo, color = Color(0xFFD4AF37), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                                    Text("Ripeness: ${r.confidence ?: "0.0%"}", color = Color(0xFFB8A99E), style = MaterialTheme.typography.bodySmall)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(r.grade ?: "Graded", color = Color(0xFF84B626), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                    IconButton(onClick = { onDeleteRecord(r) }) {
+                                    IconButton(
+                                        onClick = { onDeleteRecord(r) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
                                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFFF7A70), modifier = Modifier.size(18.dp))
+                                    }
+                                }
+
+                                Surface(
+                                    color = accent.copy(alpha = 0.16f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = harvestStatusShortLabel(r.grade),
+                                        color = accent,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                                ) {
+                                    Column {
+                                        Text("Species", color = Color(0xFF8A7A6D), style = MaterialTheme.typography.labelSmall)
+                                        Text(
+                                            text = r.species?.takeIf { it.isNotBlank() && it != "Undetermined" } ?: "Unidentified",
+                                            color = Color(0xFFD4AF37),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Column {
+                                        Text("Ripeness", color = Color(0xFF8A7A6D), style = MaterialTheme.typography.labelSmall)
+                                        Text(
+                                            text = r.confidence?.ifBlank { null } ?: "0.0%",
+                                            color = Color(0xFFF4EDE6),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
                                     }
                                 }
                             }
