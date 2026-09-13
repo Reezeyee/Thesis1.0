@@ -406,6 +406,7 @@ class AppStore(context: Context) {
     val activeAuthUid: String? get() = activeUserId
     private var boundCloudUserId: String? = null
     private var userLastEditKey = "user_last_edit_wall_ms"
+    private var lastHardResetSeenKey = "last_hard_reset_seen_ms"
     private var firestoreClient: FirebaseFirestore? = null
     private var cloudListener: ListenerRegistration? = null
     private var networkSyncRegistered = false
@@ -442,6 +443,7 @@ class AppStore(context: Context) {
         activeUserId = userId
         val keyForEdit = if (userId == null) "user_last_edit_wall_ms" else "user_last_edit_${userId}_wall_ms"
         userLastEditKey = keyForEdit
+        lastHardResetSeenKey = if (userId == null) "last_hard_reset_seen_ms" else "last_hard_reset_seen_${userId}_ms"
         initializationAttempted = false
         if (userId == null) {
             appState.value = AppState()
@@ -2351,6 +2353,18 @@ class AppStore(context: Context) {
             val currentJson = gson.toJson(state)
             if (remoteJson == currentJson) return@addSnapshotListener
             val remoteState = runCatching { gson.fromJson(remoteJson, AppState::class.java) }.getOrNull() ?: return@addSnapshotListener
+            val serverHardReset = s.getLong("hardReset") ?: 0L
+            if (serverHardReset > prefs.getLong(lastHardResetSeenKey, 0L)) {
+                // backend/wipe_farm_data.py or restore_farm_data_backup.py just wrote directly to
+                // Firestore and stamped this marker. Without this check, shouldUploadLocalInsteadOfApplyingRemote
+                // below would see "remote just went empty, local isn't" and immediately re-upload this
+                // device's stale cached data over the wipe -- so trust the remote snapshot as-is instead.
+                prefs.edit().putLong(lastHardResetSeenKey, serverHardReset).apply()
+                applyingCloudState = true
+                persist(remoteState, pushToCloud = false)
+                applyingCloudState = false
+                return@addSnapshotListener
+            }
             if (shouldUploadLocalInsteadOfApplyingRemote(state, remoteState,    serverUpdatedAt)) {
                 if (!applyingCloudState) syncFullStateToCloud(state)
                 return@addSnapshotListener
@@ -2369,7 +2383,13 @@ class AppStore(context: Context) {
             } else {
                 val remoteState = runCatching { gson.fromJson(remoteJson, AppState::class.java) }.getOrNull()
                 if (remoteState != null && remoteJson != gson.toJson(state)) {
-                    if (shouldUploadLocalInsteadOfApplyingRemote(state, remoteState, serverUpdatedAt)) {
+                    val serverHardReset = snapshot.getLong("hardReset") ?: 0L
+                    if (serverHardReset > prefs.getLong(lastHardResetSeenKey, 0L)) {
+                        prefs.edit().putLong(lastHardResetSeenKey, serverHardReset).apply()
+                        applyingCloudState = true
+                        persist(remoteState, pushToCloud = false)
+                        applyingCloudState = false
+                    } else if (shouldUploadLocalInsteadOfApplyingRemote(state, remoteState, serverUpdatedAt)) {
                         if (!applyingCloudState) syncFullStateToCloud(state)
                     } else {
                         applyingCloudState = true

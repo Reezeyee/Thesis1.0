@@ -126,9 +126,14 @@ now_millis = int(time.time() * 1000)
 
 # 1. Overwrite the main shared doc (this is the one both the website and the Android app
 #    treat as the single source of truth -- see FarmDataProvider.tsx / syncToCloud.ts).
+#    `hardReset` tells an already-open website tab (still holding pre-wipe data in memory)
+#    that this update is a deliberate wipe, not an ordinary sync -- otherwise its real-time
+#    listener would merge its stale in-memory records back in as "unsynced local extras" and
+#    a later save would write them right back to Firestore, silently undoing the wipe.
 main_ref.set({
     "stateJson": json.dumps(new_state),
     "updatedAt": now_millis,
+    "hardReset": now_millis,
 }, merge=True)
 print("\nOK: app_state/farm rewritten with all data cleared (workers kept).")
 

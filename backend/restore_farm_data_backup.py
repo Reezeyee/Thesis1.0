@@ -101,9 +101,12 @@ MIRROR_COLLECTIONS = [
 now_millis = int(time.time() * 1000)
 
 main_ref = db.collection("app_state").document("farm")
+# `hardReset` tells an already-open website tab this is a deliberate overwrite, not an
+# ordinary sync -- see the matching comment in wipe_farm_data.py.
 main_ref.set({
     "stateJson": json.dumps(restored_state),
     "updatedAt": now_millis,
+    "hardReset": now_millis,
 }, merge=True)
 print("\nOK: app_state/farm restored.")
 

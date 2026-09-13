@@ -58,6 +58,14 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
   const [saving, setSaving] = useState(false);
   const stateRef = useRef(state);
   const lastUpdatedAtRef = useRef<number | null>(null);
+  // Tracks the newest backend/wipe_farm_data.py or restore_farm_data_backup.py run this tab
+  // has already applied. Those scripts write straight to Firestore, bypassing the app, and
+  // stamp `hardReset` with the write's own timestamp so an already-open tab (holding
+  // pre-wipe data in memory) can tell "the collection is genuinely empty because it was just
+  // wiped" apart from "my own unsynced edits are ahead of a stale remote read" -- the ordinary
+  // merge below can't distinguish those and would otherwise keep resurrecting the tab's stale
+  // in-memory records as "extras to preserve" on every wipe/restore.
+  const lastHardResetRef = useRef(0);
   const isSavingRef = useRef(false);
 
   useEffect(() => {
@@ -101,7 +109,17 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
           if (isSavingRef.current && remoteUpdatedAt <= (lastUpdatedAtRef.current ?? 0)) {
             return;
           }
-          const merged = mergeRemoteStatePreservingLocalGrades(stateRef.current, remote);
+          const remoteHardReset = (data.hardReset as number) ?? 0;
+          const isFreshHardReset = remoteHardReset > lastHardResetRef.current;
+          if (isFreshHardReset) {
+            lastHardResetRef.current = remoteHardReset;
+          }
+          // A fresh hardReset marker means this snapshot is a wipe/restore write, not an
+          // ordinary sync -- trust it as-is instead of merging, so a tab that was already open
+          // before the wipe doesn't put its stale in-memory records back.
+          const merged = isFreshHardReset
+            ? remote
+            : mergeRemoteStatePreservingLocalGrades(stateRef.current, remote);
           setState(merged);
           stateRef.current = merged;
           setLastUpdatedAt(remoteUpdatedAt);
