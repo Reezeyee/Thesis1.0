@@ -1,5 +1,11 @@
 package com.melodypenero.coffeefarm.ui.dashboard
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,7 +27,6 @@ import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Construction
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -121,10 +126,6 @@ fun DashboardScreen(
         }
 
         item {
-            SectionMapPreview(appState = appState, onNavigateToModule = onNavigateToModule)
-        }
-
-        item {
             FarmSectionTitle(
                 title = "Modules",
                 subtitle = "Daily attendance, interactive map, scan proof, equipment reports, irrigation checks, and activity assignments are tracked here or synced from the website."
@@ -153,6 +154,17 @@ private fun CoffeeMaturityDonutCard(
 
     val totalCategorized = (ripeCount + ripeningCount + unripeCount + overripeCount + damagedCount).coerceAtLeast(1)
     val ripeRatio = (ripeCount.toFloat() / totalCategorized * 100f)
+
+    // New scans arrive live (CNN scans sync from the field), so animate toward the new slice
+    // angles / ripe% instead of snapping -- a value jumping straight to its new position reads
+    // as broken on a donut chart, an eased transition reads as "the chart updated".
+    val animSpec = tween<Float>(durationMillis = 600)
+    val animatedRipeRatio by animateFloatAsState(ripeRatio, animSpec, label = "ripeRatio")
+    val animatedSliceUnripe by animateFloatAsState((unripeCount.toFloat() / totalCategorized) * 360f, animSpec, label = "sliceUnripe")
+    val animatedSliceRipening by animateFloatAsState((ripeningCount.toFloat() / totalCategorized) * 360f, animSpec, label = "sliceRipening")
+    val animatedSliceRipe by animateFloatAsState((ripeCount.toFloat() / totalCategorized) * 360f, animSpec, label = "sliceRipe")
+    val animatedSliceOverripe by animateFloatAsState((overripeCount.toFloat() / totalCategorized) * 360f, animSpec, label = "sliceOverripe")
+    val animatedSliceDamaged by animateFloatAsState((damagedCount.toFloat() / totalCategorized) * 360f, animSpec, label = "sliceDamaged")
 
     FarmCard(
         modifier = Modifier
@@ -210,33 +222,26 @@ private fun CoffeeMaturityDonutCard(
                 androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
                     val strokeWidth = 24f
 
-                    val sliceUnripe = (unripeCount.toFloat() / totalCategorized) * 360f
-
-                    val sliceRipening = (ripeningCount.toFloat() / totalCategorized) * 360f
-                    val sliceRipe = (ripeCount.toFloat() / totalCategorized) * 360f
-                    val sliceOverripe = (overripeCount.toFloat() / totalCategorized) * 360f
-                    val sliceDamaged = (damagedCount.toFloat() / totalCategorized) * 360f
-
                     var startAngle = -90f
 
-                    drawArc(Color(0xFF228B22), startAngle, sliceUnripe, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
-                    startAngle += sliceUnripe
+                    drawArc(Color(0xFF228B22), startAngle, animatedSliceUnripe, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
+                    startAngle += animatedSliceUnripe
 
-                    drawArc(Color(0xFFFFBF00), startAngle, sliceRipening, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
-                    startAngle += sliceRipening
+                    drawArc(Color(0xFFFFBF00), startAngle, animatedSliceRipening, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
+                    startAngle += animatedSliceRipening
 
-                    drawArc(Color(0xFFDC143C), startAngle, sliceRipe, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
-                    startAngle += sliceRipe
+                    drawArc(Color(0xFFDC143C), startAngle, animatedSliceRipe, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
+                    startAngle += animatedSliceRipe
 
-                    drawArc(Color(0xFF8B4513), startAngle, sliceOverripe, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
-                    startAngle += sliceOverripe
+                    drawArc(Color(0xFF8B4513), startAngle, animatedSliceOverripe, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
+                    startAngle += animatedSliceOverripe
 
-                    drawArc(Color(0xFF2F4F4F), startAngle, sliceDamaged, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
+                    drawArc(Color(0xFF2F4F4F), startAngle, animatedSliceDamaged, false, style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth))
                 }
 
                 Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
                     Text(
-                        text = "%.0f%%".format(ripeRatio),
+                        text = "%.0f%%".format(animatedRipeRatio),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = palette.textPrimary
@@ -281,99 +286,50 @@ private fun MaturityLegendRow(label: String, count: Int, color: Color, palette: 
 }
 
 
+private data class StatCardSpec(val title: String, val value: String, val icon: ImageVector, val onClick: () -> Unit)
+
+/** Fades + slides each card in with a short stagger so the grid doesn't just pop in as one block. */
+@Composable
+private fun StaggeredEntrance(index: Int, content: @Composable () -> Unit) {
+    val visibleState = remember { MutableTransitionState(false).apply { targetState = true } }
+    AnimatedVisibility(
+        visibleState = visibleState,
+        enter = fadeIn(tween(durationMillis = 260, delayMillis = index * 50)) +
+            slideInVertically(tween(durationMillis = 260, delayMillis = index * 50)) { it / 4 }
+    ) {
+        content()
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FieldSummaryGrid(
     metrics: DashboardFieldMetrics,
     onNavigateToModule: (AppDestination) -> Unit
 ) {
+    val cards = listOf(
+        StatCardSpec("Equipment", metrics.totalEquipmentCount.toString(), Icons.Default.Construction) {
+            onNavigateToModule(AppDestination.Equipment)
+        },
+        StatCardSpec("Today's harvest", "${metrics.harvestTodayKg.toInt()} kg", Icons.Default.Coffee) {
+            onNavigateToModule(AppDestination.Cherry)
+        },
+        StatCardSpec("Ready trees", metrics.readyTreeCount.toString(), Icons.Default.Coffee) {
+            onNavigateToModule(AppDestination.Cherry)
+        },
+        StatCardSpec("Irrigation zones", metrics.irrigationZoneCount.toString(), Icons.Default.WaterDrop) {
+            onNavigateToModule(AppDestination.Irrigation)
+        },
+    )
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         maxItemsInEachRow = 2
     ) {
-        FarmStatCard(
-            title = "Equipment",
-            value = metrics.totalEquipmentCount.toString(),
-            icon = Icons.Default.Construction,
-            onClick = { onNavigateToModule(AppDestination.Equipment) }
-        )
-        FarmStatCard(
-            title = "Today's harvest",
-            value = "${metrics.harvestTodayKg.toInt()} kg",
-            icon = Icons.Default.Coffee,
-            onClick = { onNavigateToModule(AppDestination.Cherry) }
-        )
-        FarmStatCard(
-            title = "Ready trees",
-            value = metrics.readyTreeCount.toString(),
-            icon = Icons.Default.Coffee,
-            onClick = { onNavigateToModule(AppDestination.Cherry) }
-        )
-        FarmStatCard(
-            title = "Irrigation zones",
-            value = metrics.irrigationZoneCount.toString(),
-            icon = Icons.Default.WaterDrop,
-            onClick = { onNavigateToModule(AppDestination.Irrigation) }
-        )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun SectionMapPreview(
-    appState: AppState,
-    onNavigateToModule: (AppDestination) -> Unit
-) {
-    val palette = farmPalette()
-    val sectionLabels = when {
-        appState.coffeeFields.isNotEmpty() -> appState.coffeeFields.mapIndexed { index, field ->
-            "Section ${('A'.code + (index % 26)).toChar()}" to (field.name.ifBlank { field.variety })
-        }
-        appState.sections.isNotEmpty() -> appState.sections.map { it.name to it.details }
-        else -> emptyList()
-    }
-    FarmCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onNavigateToModule(AppDestination.FarmMap) }
-    ) {
-        FarmSectionTitle(
-            title = "Farm section map",
-            subtitle = "Visual location guide for registered coffee plots and crop areas. Tap to open interactive map."
-        )
-        if (sectionLabels.isEmpty()) {
-            Text(
-                text = "No farm sections registered yet. Configure fields via the admin portal.",
-                color = palette.textSecondary,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(vertical = 6.dp)
-            )
-        } else {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                maxItemsInEachRow = 2
-            ) {
-                sectionLabels.take(6).forEach { (section, detail) ->
-                    FarmCard(modifier = Modifier.fillMaxWidth(0.48f)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = section.ifBlank { "Section" },
-                                color = palette.textPrimary,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = detail.ifBlank { "Crop location" },
-                                color = palette.textSecondary,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
+        cards.forEachIndexed { index, card ->
+            StaggeredEntrance(index) {
+                FarmStatCard(title = card.title, value = card.value, icon = card.icon, onClick = card.onClick)
             }
         }
     }
@@ -391,7 +347,6 @@ private fun ModulesGrid(onNavigateToModule: (AppDestination) -> Unit, isAdmin: B
         if (!isAdmin) {
             add(Triple("My Attendance", Icons.Default.Schedule, AppDestination.StaffAttendance))
         }
-        add(Triple("Farm Section Map", Icons.Default.Map, AppDestination.FarmMap))
         add(Triple("Cherry scanner", Icons.Default.Coffee, AppDestination.Cherry))
         add(Triple("Harvest Reports", Icons.Default.AssignmentTurnedIn, AppDestination.HarvestReadiness))
         add(Triple("Pest & Disease", Icons.Default.BugReport, AppDestination.PestDisease))
@@ -404,12 +359,14 @@ private fun ModulesGrid(onNavigateToModule: (AppDestination) -> Unit, isAdmin: B
         verticalArrangement = Arrangement.spacedBy(10.dp),
         maxItemsInEachRow = 2
     ) {
-        for ((label, icon, destination) in modules) {
-            FarmModuleTile(
-                label = label,
-                icon = icon,
-                onClick = { onNavigateToModule(destination) }
-            )
+        modules.forEachIndexed { index, (label, icon, destination) ->
+            StaggeredEntrance(index) {
+                FarmModuleTile(
+                    label = label,
+                    icon = icon,
+                    onClick = { onNavigateToModule(destination) }
+                )
+            }
         }
     }
 }

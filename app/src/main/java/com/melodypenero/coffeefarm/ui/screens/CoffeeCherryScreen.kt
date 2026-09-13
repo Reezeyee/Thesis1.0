@@ -404,17 +404,25 @@ private fun PremiumCherryScannerTab(
         inferenceRunning = false
     }
 
-    // Scanning Animation Transition
-    val infiniteTransition = rememberInfiniteTransition(label = "laser_sweep")
-    val laserPosition by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "laser_pos"
-    )
+    // Scanning Animation Transition -- only drawn while inferenceRunning (see the `if
+    // (inferenceRunning)` block below), so only run the infinite animation loop then. Starting
+    // it unconditionally at the top of this screen would keep it ticking at 60fps for as long as
+    // the Cherry Scanner screen stays open, even when nothing is being scanned.
+    val laserPosition: Float = if (inferenceRunning) {
+        val infiniteTransition = rememberInfiniteTransition(label = "laser_sweep")
+        val pos by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "laser_pos"
+        )
+        pos
+    } else {
+        0f
+    }
 
     Column(
         modifier = Modifier

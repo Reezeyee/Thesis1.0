@@ -1,6 +1,9 @@
 package com.melodypenero.coffeefarm.ui
 
 import android.widget.Toast
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,7 +60,6 @@ import com.melodypenero.coffeefarm.ui.navigation.farmStaffMobileDestinations
 import com.melodypenero.coffeefarm.ui.screens.ChangePasswordScreen
 import com.melodypenero.coffeefarm.ui.screens.CoffeeCherryScreen
 import com.melodypenero.coffeefarm.ui.screens.EquipmentScreen
-import com.melodypenero.coffeefarm.ui.screens.FarmMapScreen
 import com.melodypenero.coffeefarm.ui.screens.HarvestReadinessScreen
 import com.melodypenero.coffeefarm.ui.screens.IrrigationScreen
 import com.melodypenero.coffeefarm.ui.screens.LoginScreen
@@ -299,15 +301,20 @@ fun CoffeeFarmApp() {
                         startDestination = AppDestination.Dashboard.route,
                         modifier = Modifier
                             .padding(innerPadding)
-                            .padding(horizontal = 4.dp)
+                            .padding(horizontal = 4.dp),
+                        // Drawer navigation between unrelated modules (Dashboard, Cherry Scanner,
+                        // Equipment, ...) has no natural forward/back direction, so a plain
+                        // cross-fade reads better here than a directional slide -- without any
+                        // transition at all, switching modules was an abrupt hard cut.
+                        enterTransition = { fadeIn(animationSpec = tween(220)) },
+                        exitTransition = { fadeOut(animationSpec = tween(180)) },
+                        popEnterTransition = { fadeIn(animationSpec = tween(220)) },
+                        popExitTransition = { fadeOut(animationSpec = tween(180)) }
                     ) {
                         composable(AppDestination.Dashboard.route) {
                             DashboardScreen(
                                 onNavigateToModule = navigateToDestination
                             )
-                        }
-                        composable(AppDestination.FarmMap.route) {
-                            FarmMapScreen()
                         }
                         composable(AppDestination.StaffAttendance.route) {
                             StaffAttendanceScreen(session = currentSession)
