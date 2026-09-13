@@ -21,6 +21,8 @@ object RoboflowApiClient {
     private const val MODEL_ID = "coffee-fruit-maturity-befkg-q80dw"
     private const val VERSION = "1"
 
+    val TARGET_CLASSES = listOf("Unripe", "Ripening", "Ripe", "Overripe", "Dry_Damaged")
+
 
     fun detect(bitmap: Bitmap): Result<BranchScanSummary> {
         return try {
@@ -82,14 +84,19 @@ object RoboflowApiClient {
                 val rawClass = pred.optString("class", "mentah")
 
 
+                // An unrecognized class name (a hosted-model retrain, relabeling, or a raw label
+                // this mapping doesn't know about yet) used to silently fall back to "Ripe" --
+                // meaning any label drift on Roboflow's end would quietly inflate the ripe count
+                // and skew the harvest recommendation with no error surfaced anywhere. Skip
+                // detections we can't confidently classify instead of miscounting them.
                 val normalizedClass = when (rawClass.lowercase().trim()) {
                     "matang", "ripe" -> "Ripe"
                     "matang sempurna", "overripe" -> "Overripe"
                     "setengah matang", "semi_ripe", "ripening" -> "Ripening"
                     "mentah", "unripe" -> "Unripe"
                     "diseased", "dry" -> "Dry_Damaged"
-                    else -> "Ripe"
-                }
+                    else -> null
+                } ?: continue
 
                 classCounts[normalizedClass] = (classCounts[normalizedClass] ?: 0) + 1
 
@@ -101,7 +108,7 @@ object RoboflowApiClient {
                 detections.add(
                     BoundingBoxDetection(
                         rect = RectF(left, top, right, bottom),
-                        classIndex = YoloTfliteDetector.TARGET_CLASSES.indexOf(normalizedClass).coerceAtLeast(0),
+                        classIndex = TARGET_CLASSES.indexOf(normalizedClass).coerceAtLeast(0),
                         className = normalizedClass,
                         confidence = conf,
                         uncertain = conf < 0.40f

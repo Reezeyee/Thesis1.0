@@ -126,7 +126,6 @@ import com.melodypenero.coffeefarm.data.store.TreeRipenessScanRecord
 import com.melodypenero.coffeefarm.data.store.isDeviceOnline
 import com.melodypenero.coffeefarm.ml.BitmapExifUtils
 import com.melodypenero.coffeefarm.ml.CoffeeSpeciesTfliteClassifier
-import com.melodypenero.coffeefarm.ml.YoloTfliteDetector
 import com.melodypenero.coffeefarm.ui.components.FarmTabRow
 import com.melodypenero.coffeefarm.ui.components.farmPalette
 import java.io.File
@@ -321,8 +320,8 @@ private fun PremiumCherryScannerTab(
     var scanResult by remember { mutableStateOf<BranchScanSummary?>(null) }
     var showResultSheet by remember { mutableStateOf(false) }
     var showNoCherryDialog by remember { mutableStateOf(false) }
+    var showConnectionErrorDialog by remember { mutableStateOf(false) }
 
-    val detector = remember { YoloTfliteDetector(context) }
     val speciesClassifier = remember { CoffeeSpeciesTfliteClassifier(context) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val imageCapture = remember { ImageCapture.Builder().build() }
@@ -351,7 +350,6 @@ private fun PremiumCherryScannerTab(
     DisposableEffect(Unit) {
         onDispose {
             cameraExecutor.shutdown()
-            detector.close()
         }
     }
 
@@ -365,23 +363,13 @@ private fun PremiumCherryScannerTab(
         if (bmp != null) {
             capturedBitmap = bmp
             selectedImageUri = null
-            val (yoloRes, speciesPred) = withContext(Dispatchers.Default) {
-                val localRes = detector.detect(bmp)
-                val detectionResult = if (localRes.isSuccess && (localRes.getOrNull()?.totalCount ?: 0) > 0) {
-                    localRes
-                } else {
-                    val cloudRes = RoboflowApiClient.detect(bmp)
-                    if (cloudRes.isSuccess && (cloudRes.getOrNull()?.totalCount ?: 0) > 0) {
-                        cloudRes
-                    } else {
-                        localRes
-                    }
-                }
+            val (ripenessRes, speciesPred) = withContext(Dispatchers.Default) {
+                val ripeness = RoboflowApiClient.detect(bmp)
                 val spec = speciesClassifier.classify(bmp).getOrNull()
-                detectionResult to spec
+                ripeness to spec
             }
 
-            yoloRes.fold(
+            ripenessRes.fold(
                 onSuccess = { summary ->
                     val speciesName = speciesPred?.speciesDisplay ?: "Undetermined"
                     val speciesConf = speciesPred?.confidenceText ?: "0.0%"
@@ -397,7 +385,7 @@ private fun PremiumCherryScannerTab(
                     }
                 },
                 onFailure = {
-                    showNoCherryDialog = true
+                    showConnectionErrorDialog = true
                 }
             )
         }
@@ -646,17 +634,7 @@ private fun PremiumCherryScannerTab(
                                         inferenceRunning = true
                                     }
                                     cameraExecutor.execute {
-                                        val localRes = detector.detect(bmp)
-                                        val res = if (localRes.isSuccess && (localRes.getOrNull()?.totalCount ?: 0) > 0) {
-                                            localRes
-                                        } else {
-                                            val cloudRes = RoboflowApiClient.detect(bmp)
-                                            if (cloudRes.isSuccess && (cloudRes.getOrNull()?.totalCount ?: 0) > 0) {
-                                                cloudRes
-                                            } else {
-                                                localRes
-                                            }
-                                        }
+                                        val res = RoboflowApiClient.detect(bmp)
                                         val speciesPred = speciesClassifier.classify(bmp).getOrNull()
 
                                         mainExecutor.execute {
@@ -676,7 +654,7 @@ private fun PremiumCherryScannerTab(
                                                         showNoCherryDialog = true
                                                     }
                                                 },
-                                                onFailure = { showNoCherryDialog = true }
+                                                onFailure = { showConnectionErrorDialog = true }
                                             )
                                         }
                                     }
@@ -742,6 +720,18 @@ private fun PremiumCherryScannerTab(
     // POP-OUT "COFFEE CHERRY NOT VISIBLE" DIALOG
     if (showNoCherryDialog) {
         CherryNotVisibleDialog(onDismiss = { showNoCherryDialog = false })
+    }
+
+    // POP-OUT "RIPENESS SERVICE UNREACHABLE" DIALOG -- ripeness is classified entirely by the
+    // Roboflow cloud model (there's no on-device fallback for it by design; only species
+    // classification runs locally), so a failed call here means no network or the API is down,
+    // not that the photo itself had no cherries -- telling the worker to reposition the branch
+    // would be misleading, so this gets its own message.
+    if (showConnectionErrorDialog) {
+        RipenessServiceUnavailableDialog(
+            offline = !isDeviceOnline(context),
+            onDismiss = { showConnectionErrorDialog = false }
+        )
     }
 
     // FARM SECTION PICKER DIALOG
@@ -1303,6 +1293,41 @@ private fun CherryNotVisibleDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Got It & Try Again")
+            }
+        }
+    )
+}
+
+@Composable
+private fun RipenessServiceUnavailableDialog(offline: Boolean, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF2D211A),
+        icon = {
+            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF7A70), modifier = Modifier.size(40.dp))
+        },
+        title = {
+            Text("Ripeness Check Unavailable", color = Color(0xFFF4EDE6), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        },
+        text = {
+            Text(
+                if (offline) {
+                    "This device isn't connected to the internet. Ripeness grading runs on our cloud service, so it needs a connection -- reconnect and try again."
+                } else {
+                    "The ripeness grading service couldn't be reached right now. This isn't about your photo -- please try again in a moment."
+                },
+                color = Color(0xFFB8A99E),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF84B626)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("OK")
             }
         }
     )
