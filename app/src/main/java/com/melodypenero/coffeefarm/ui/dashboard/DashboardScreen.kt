@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.WaterDrop
@@ -49,6 +48,7 @@ import com.melodypenero.coffeefarm.auth.UserRole
 import com.melodypenero.coffeefarm.data.store.AppState
 import com.melodypenero.coffeefarm.data.store.LocalAppStore
 import com.melodypenero.coffeefarm.domain.FarmFinance
+import com.melodypenero.coffeefarm.ui.icons.CoffeeCherry
 import com.melodypenero.coffeefarm.domain.TreeRipeness
 import com.melodypenero.coffeefarm.ui.components.FarmCard
 import com.melodypenero.coffeefarm.ui.components.FarmInfoBanner
@@ -311,10 +311,10 @@ private fun FieldSummaryGrid(
         StatCardSpec("Equipment", metrics.totalEquipmentCount.toString(), Icons.Default.Construction) {
             onNavigateToModule(AppDestination.Equipment)
         },
-        StatCardSpec("Today's harvest", "${metrics.harvestTodayKg.toInt()} kg", Icons.Default.Coffee) {
+        StatCardSpec("Today's harvest", "${metrics.harvestTodayKg.toInt()} kg", Icons.Default.CoffeeCherry) {
             onNavigateToModule(AppDestination.Cherry)
         },
-        StatCardSpec("Ready trees", metrics.readyTreeCount.toString(), Icons.Default.Coffee) {
+        StatCardSpec("Ready trees", metrics.readyTreeCount.toString(), Icons.Default.CoffeeCherry) {
             onNavigateToModule(AppDestination.Cherry)
         },
         StatCardSpec("Irrigation zones", metrics.irrigationZoneCount.toString(), Icons.Default.WaterDrop) {
@@ -347,7 +347,7 @@ private fun ModulesGrid(onNavigateToModule: (AppDestination) -> Unit, isAdmin: B
         if (!isAdmin) {
             add(Triple("My Attendance", Icons.Default.Schedule, AppDestination.StaffAttendance))
         }
-        add(Triple("Cherry scanner", Icons.Default.Coffee, AppDestination.Cherry))
+        add(Triple("Cherry scanner", Icons.Default.CoffeeCherry, AppDestination.Cherry))
         add(Triple("Harvest Reports", Icons.Default.AssignmentTurnedIn, AppDestination.HarvestReadiness))
         add(Triple("Pest & Disease", Icons.Default.BugReport, AppDestination.PestDisease))
         add(Triple("Equipment", Icons.Default.Construction, AppDestination.Equipment))

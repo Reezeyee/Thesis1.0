@@ -3,7 +3,6 @@ package com.melodypenero.coffeefarm.ui.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Grass
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.PrecisionManufacturing
 import androidx.compose.material.icons.filled.Schedule
@@ -12,6 +11,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.melodypenero.coffeefarm.ui.icons.CoffeeCherry
 
 /** Mobile app routes — field tools only. Farm management and sales live on the web admin portal. */
 sealed class AppDestination(
@@ -20,7 +20,7 @@ sealed class AppDestination(
     val icon: ImageVector
 ) {
     data object Dashboard : AppDestination("dashboard", "Dashboard", Icons.Default.Dashboard)
-    data object Cherry : AppDestination("cherry", "Cherry scanner", Icons.Default.Grass)
+    data object Cherry : AppDestination("cherry", "Cherry scanner", Icons.Default.CoffeeCherry)
     data object HarvestReadiness : AppDestination("harvest_readiness", "Harvest Reports", Icons.Default.AssignmentTurnedIn)
     data object PestDisease : AppDestination("pest_disease", "Pest & Disease", Icons.Default.BugReport)
     data object Equipment : AppDestination("equipment", "Equipment", Icons.Default.PrecisionManufacturing)
