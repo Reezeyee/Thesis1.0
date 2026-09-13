@@ -262,12 +262,19 @@ export function FarmMonitoringDashboard() {
     return buildScanTrendData(state.cherryGrades, timeframe);
   }, [state.cherryGrades, timeframe]);
 
-  // Real CNN Average Confidence calculated from live scans
+  // Rolling CNN Average Confidence over the most recent scans only, so an
+  // older, less-accurate model version doesn't keep dragging down the
+  // metric forever once a newer model comes online.
+  const RECENT_CONFIDENCE_WINDOW = 20;
   const avgModelConfidence = useMemo(() => {
     if (state.cherryGrades.length === 0) return 0;
+    const recent = [...state.cherryGrades]
+      .sort((a, b) => (b.savedAtMillis ?? 0) - (a.savedAtMillis ?? 0))
+      .slice(0, RECENT_CONFIDENCE_WINDOW);
+
     let sum = 0;
     let count = 0;
-    for (const g of state.cherryGrades) {
+    for (const g of recent) {
       const c = parseFloat(g.confidence || '0');
       const val = c <= 1 && c > 0 ? c * 100 : c;
       if (val > 0) {
