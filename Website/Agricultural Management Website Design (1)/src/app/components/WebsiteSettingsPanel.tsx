@@ -48,11 +48,15 @@ function Row({
   );
 }
 
-export function WebsiteSettingsPanel() {
+export function WebsiteSettingsPanel({
+  darkMode,
+  onToggleDarkMode,
+}: {
+  darkMode: boolean;
+  onToggleDarkMode: () => void;
+}) {
   const { session, signOut } = useAuth();
   const { state, updateState, syncStatus, lastUpdatedAt, error } = useFarmData();
-  const [darkTheme, setDarkTheme] = useState(false);
-  const [pushOn, setPushOn] = useState(true);
   const [passwordResetRequests, setPasswordResetRequests] = useState<PasswordResetRequest[]>([]);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [passwordReveal, setPasswordReveal] = useState<TempPasswordReveal | null>(null);
@@ -174,6 +178,8 @@ export function WebsiteSettingsPanel() {
             ? 'Error'
             : 'Offline';
 
+  const isConnected = syncStatus === 'connected' || syncStatus === 'syncing';
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
@@ -182,8 +188,19 @@ export function WebsiteSettingsPanel() {
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
               Website & System Settings
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Firebase Connected
+            {/* Was hardcoded to always show "Firebase Connected" in green regardless of the
+                real syncStatus below -- now reflects it, matching the Cloud sync row. */}
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border ${
+                isConnected
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                  : syncStatus === 'error'
+                    ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25'
+                    : 'bg-muted text-muted-foreground border-border/60'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : syncStatus === 'error' ? 'bg-red-500' : 'bg-muted-foreground'}`} />
+              {isConnected ? 'Firebase Connected' : syncStatus === 'error' ? 'Firebase Error' : 'Firebase Offline'}
             </span>
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
@@ -202,10 +219,10 @@ export function WebsiteSettingsPanel() {
             Sign out
           </Button>
         </Row>
-        <Row icon={Palette} title="Theme" subtitle="App uses Coffee / Light coffee — web preview toggle.">
+        <Row icon={Palette} title="Theme" subtitle="Switches the whole admin portal between light and dark mode.">
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Dark</span>
-            <Switch checked={darkTheme} onCheckedChange={setDarkTheme} />
+            <Switch checked={darkMode} onCheckedChange={onToggleDarkMode} />
           </div>
         </Row>
         <Row
@@ -214,10 +231,10 @@ export function WebsiteSettingsPanel() {
           subtitle={
             passwordResetRequests.filter((r) => r.status === 'pending').length > 0
               ? `${passwordResetRequests.filter((r) => r.status === 'pending').length} pending password reset request(s)`
-              : 'Email and push-style alerts for harvest, equipment, and account access.'
+              : 'In-app alerts for harvest, equipment, and account access — see the bell icon in the top bar. There is no email or push delivery yet.'
           }
         >
-          <Switch checked={pushOn} onCheckedChange={setPushOn} />
+          <span className="text-sm font-medium text-[#2d5016]">Always on</span>
         </Row>
         <div id="password-reset-requests-section" className="rounded-xl bg-muted/40 border border-border/60 p-4 mb-2">
           <p className="text-sm font-medium text-foreground mb-3">Password Reset Requests (Worker Mobile App)</p>

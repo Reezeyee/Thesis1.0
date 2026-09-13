@@ -114,7 +114,7 @@ function AdminAppShell() {
       case 'sms':
         return <SmsManagement />;
       case 'settings':
-        return <WebsiteSettingsPanel />;
+        return <WebsiteSettingsPanel darkMode={darkMode} onToggleDarkMode={handleToggleDarkMode} />;
       default:
         return <FarmMonitoringDashboard />;
     }
