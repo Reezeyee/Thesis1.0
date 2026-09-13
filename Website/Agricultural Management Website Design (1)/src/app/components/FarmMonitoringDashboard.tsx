@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import {
   Activity,
   Cpu,
-  Coffee,
   Users,
   CheckCircle2,
   AlertTriangle,

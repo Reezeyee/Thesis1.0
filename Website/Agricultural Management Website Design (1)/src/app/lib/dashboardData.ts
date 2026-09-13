@@ -47,11 +47,11 @@ export function buildDashboardStats(state: AppState) {
     { label: 'Total Sales', value: peso(income), change: `${state.sales.length} records`, trend: 'up' as const, icon: 'DollarSign', color: '#2d5016' },
     { label: 'Net Profit', value: peso(profit), change: profit >= 0 ? 'positive' : 'negative', trend: profit >= 0 ? ('up' as const) : ('down' as const), icon: 'TrendingUp', color: profit >= 0 ? '#2d5016' : '#d4183d' },
     { label: 'Total Expenses', value: peso(expenses), change: `${state.expenses.length + state.payroll.length} lines`, trend: 'down' as const, icon: 'TrendingDown', color: '#d4183d' },
-    { label: 'Harvested Coffee', value: `${Math.round(harvestKg)} kg`, change: `${state.cherryHarvests.length} entries`, trend: 'up' as const, icon: 'Coffee', color: '#4a2c2a' },
+    { label: 'Harvested Coffee', value: `${Math.round(harvestKg)} kg`, change: `${state.cherryHarvests.length} entries`, trend: 'up' as const, icon: 'Cherry', color: '#4a2c2a' },
     { label: 'Active Workers', value: String(activeWorkers), change: activeWorkers === state.workers.length ? `${activeWorkers} active` : `${activeWorkers}/${state.workers.length} active`, trend: 'up' as const, icon: 'Users', color: '#8b6f47' },
     { label: 'Equipment Status', value: `${activeEquipment}/${state.equipment.length}`, change: 'live', trend: 'up' as const, icon: 'Wrench', color: '#d4a574' },
     { label: 'Coffee Fields', value: String(state.coffeeFields.length), change: 'fields', trend: 'up' as const, icon: 'Package', color: '#2d5016' },
-    { label: 'Cherry Grades', value: String(state.cherryGrades.length), change: 'scans', trend: 'up' as const, icon: 'Coffee', color: '#8b6f47' },
+    { label: 'Cherry Grades', value: String(state.cherryGrades.length), change: 'scans', trend: 'up' as const, icon: 'Cherry', color: '#8b6f47' },
   ];
 }
 

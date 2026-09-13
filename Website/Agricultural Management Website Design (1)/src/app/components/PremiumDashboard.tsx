@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   DollarSign,
-  Coffee,
+  Cherry,
   TrendingUp,
   Wrench,
   Download,
@@ -424,7 +424,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
               value={formattedHarvest}
               change={8.7}
               changeLabel={`${state.cherryHarvests.length} harvest logs`}
-              icon={Coffee}
+              icon={Cherry}
               trend="up"
               loading={isFarmLoading}
             />
@@ -523,7 +523,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
                     className="h-auto py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
                   >
                     <div className="flex items-center justify-between w-full">
-                      <Coffee className="w-4 h-4 text-accent" />
+                      <Cherry className="w-4 h-4 text-accent" />
                       <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-accent transition-colors" />
                     </div>
                     <span className="text-xs font-bold font-heading text-foreground mt-1">Log CNN Scan Batch</span>

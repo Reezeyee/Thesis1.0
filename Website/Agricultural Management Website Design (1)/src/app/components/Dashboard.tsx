@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Package, Users, Wrench, ShoppingCart, Coffee } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Package, Users, Wrench, ShoppingCart, Cherry } from 'lucide-react';
 // (chart primitives now come from the shared FarmCharts components below)
 import { useFarmData } from '../store/FarmDataProvider';
 import {
@@ -31,7 +31,7 @@ const iconMap = {
   TrendingUp,
   TrendingDown,
   Package,
-  Coffee,
+  Cherry,
   Users,
   Wrench,
 };
