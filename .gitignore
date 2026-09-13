@@ -55,3 +55,6 @@ backend/serviceAccountKey.json
 
 # Farm data backups made by backend/wipe_farm_data.py (contain real business data)
 backend/farm_data_backups/
+
+__pycache__/
+**/__pycache__/

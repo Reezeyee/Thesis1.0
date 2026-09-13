@@ -8,6 +8,8 @@
  * hashes on every call.
  */
 
+import { auth } from '../firebase/config';
+
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_API_URL as string) || 'http://localhost:8000';
 const API_KEY = (import.meta.env.VITE_BACKEND_API_KEY as string) || '';
 
@@ -127,19 +129,29 @@ export interface BackendResetPasswordResponse {
  * email address is needed, so this works even for the auto-generated
  * @acojidofarm.local placeholder accounts. The worker is then forced
  * through the existing "change your password" screen the next time they
- * log in with the temp password. Requires the API key, and requires the
- * backend to have a Firebase service account key configured (see
- * backend/.env.example).
+ * log in with the temp password. Requires the API key AND a fresh Firebase ID
+ * token from the signed-in admin -- the API key alone isn't enough for this
+ * endpoint because VITE_BACKEND_API_KEY is inlined into this public JS bundle
+ * and readable by anyone, so the backend also verifies the caller is really
+ * signed in as the admin account before it will touch a worker's password.
  */
 export async function adminResetWorkerPassword(email: string): Promise<BackendResetPasswordResponse> {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) {
+    throw new Error('You must be signed in as the admin to reset a worker password.');
+  }
+
   const res = await fetch(`${BACKEND_URL}/admin/reset-worker-password`, {
     method: 'POST',
-    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    headers: authHeaders({ 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` }),
     body: JSON.stringify({ email }),
   });
 
   if (res.status === 401) {
-    throw new Error('Backend rejected the API key. Check VITE_BACKEND_API_KEY in your .env.');
+    throw new Error('Backend rejected the request. Sign out and back in, then try again.');
+  }
+  if (res.status === 403) {
+    throw new Error('Only the farm admin account can reset a worker password.');
   }
   if (res.status === 503) {
     const detail = await res.text().catch(() => '');

@@ -26,9 +26,13 @@ service cloud.firestore {
 
     // Password reset requests: a signed-out worker (they forgot their password, so they
     // cannot be authenticated) files a request with exactly these validated fields.
-    // Anyone can read a request back by its (unguessable) document id -- needed so the
-    // worker's app can poll its own request's status without being signed in. Only the
-    // admin account can update (approve/resolve) or delete a request.
+    // The worker's app polls its own request's status by document id (an unguessable
+    // auto-generated id), so single-document reads (`get`) stay open to signed-out
+    // callers. Listing/querying the whole collection is a separate permission in
+    // Firestore rules and is deliberately NOT granted here -- `allow read` would let
+    // anyone enumerate every pending request (emails, names, messages) via a query,
+    // not just fetch one they already know the id of. Only the admin account can
+    // list, update (approve/resolve), or delete requests.
     match /password_reset_requests/{requestId} {
       allow create: if
         request.resource.data.keys().hasOnly([
@@ -51,9 +55,9 @@ service cloud.firestore {
         request.resource.data.source == 'android' &&
         request.resource.data.status == 'pending';
 
-      allow read: if true;
+      allow get: if true;
 
-      allow update, delete: if
+      allow list, update, delete: if
         request.auth != null &&
         request.auth.token.email == 'farmacojido@gmail.com';
     }

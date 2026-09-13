@@ -128,6 +128,9 @@ class ResetWorkerPasswordPayload(BaseModel):
     email: str
 
 
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL") or _DOTENV_VALUES.get("ADMIN_EMAIL", "farmacojido@gmail.com")
+
+
 def compute_harvest_recommendation(ripe_pct: float) -> str:
     """Computes harvest recommendation based on operational ripe percentage thresholds."""
     if ripe_pct >= HARVEST_THRESHOLDS["OPTIMAL_HARVEST_PCT"]:
@@ -341,15 +344,55 @@ def _generate_temp_password() -> str:
     return "Cf" + "".join(secrets.choice(alphabet) for _ in range(10))
 
 
-@app.post("/admin/reset-worker-password", dependencies=[Depends(verify_api_key)])
+async def verify_admin_identity(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> None:
+    """
+    FastAPI dependency guarding the password-reset endpoint. The X-API-Key header
+    alone is NOT enough here: that key lives in the website's frontend build
+    (VITE_BACKEND_API_KEY), which ships in plain text to every browser that loads
+    the site, so anyone could read it out of the JS bundle. To actually reset a
+    worker's password, the caller must also present a Firebase ID token proving
+    they are signed in as the farm's real admin account -- the exact same identity
+    check firestore.rules already uses to gate approving/deleting reset requests.
+    """
+    admin_app = _get_firebase_admin_app()
+    if admin_app is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_firebase_admin_error or "Firebase Admin SDK is not configured on the server.",
+        )
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization: Bearer <Firebase ID token> header.",
+        )
+    id_token = authorization[len("Bearer "):].strip()
+
+    from firebase_admin import auth as firebase_auth
+
+    try:
+        decoded = firebase_auth.verify_id_token(id_token, app=admin_app)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=401, detail=f"Invalid or expired admin session: {e}")
+
+    if decoded.get("email") != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="This action requires the farm admin account.")
+
+
+@app.post(
+    "/admin/reset-worker-password",
+    dependencies=[Depends(verify_api_key), Depends(verify_admin_identity)],
+)
 async def admin_reset_worker_password(payload: ResetWorkerPasswordPayload):
     """
     Sets a brand-new temporary password on a worker's Firebase Auth account and
     marks it as temporary, so the worker is forced through the existing
-    "change your password" screen the next time they log in with it. Intended
-    to be called only after an admin has approved a password_reset_requests
-    entry on the website -- this endpoint itself trusts whoever holds the
-    backend's API key, the same way /predict and /correct already do.
+    "change your password" screen the next time they log in with it. Requires
+    both the shared backend API key AND a Firebase ID token proving the caller
+    is signed in as the farm admin (see verify_admin_identity) -- the API key
+    alone isn't trusted for this endpoint because it's shipped to the browser.
     """
     admin_app = _get_firebase_admin_app()
     if admin_app is None:
