@@ -30,6 +30,7 @@ export interface SidebarProps {
   onToggleCollapse?: () => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  adminFirstName?: string;
 }
 
 export function Sidebar({
@@ -41,6 +42,7 @@ export function Sidebar({
   onToggleCollapse,
   mobileOpen = false,
   onMobileClose,
+  adminFirstName,
 }: SidebarProps) {
   const navGroups = [
     {
@@ -137,6 +139,11 @@ export function Sidebar({
               <span className="text-[11px] text-muted-foreground truncate">
                 Agricultural Admin Portal
               </span>
+              {adminFirstName && (
+                <span className="text-[11px] font-medium text-primary truncate mt-0.5">
+                  Hi, {adminFirstName}
+                </span>
+              )}
             </div>
           )}
         </div>

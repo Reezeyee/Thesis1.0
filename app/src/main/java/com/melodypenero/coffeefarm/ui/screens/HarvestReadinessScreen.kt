@@ -35,10 +35,12 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.melodypenero.coffeefarm.data.store.CherryHarvestRecord
 import com.melodypenero.coffeefarm.data.store.HarvestReadinessReportRecord
 import com.melodypenero.coffeefarm.data.store.LocalAppStore
 import com.melodypenero.coffeefarm.ui.components.farmPalette
 import java.time.LocalDate
+import java.util.UUID
 
 @Composable
 fun HarvestReadinessScreen(reporterDisplayName: String = "") {
@@ -47,6 +49,7 @@ fun HarvestReadinessScreen(reporterDisplayName: String = "") {
     val context = LocalContext.current
     val palette = farmPalette()
     var showReportDialog by remember { mutableStateOf(false) }
+    var showHarvestDialog by remember { mutableStateOf(false) }
     val zoneOptions = remember(state.coffeeFields, state.sections) {
         (state.coffeeFields.map { it.name } + state.sections.map { it.name })
             .map { it.trim() }
@@ -60,6 +63,12 @@ fun HarvestReadinessScreen(reporterDisplayName: String = "") {
             .filter { name.isBlank() || it.reportedBy.equals(name, ignoreCase = true) }
             .asReversed()
     }
+    val workerHarvests = remember(state.cherryHarvests, reporterDisplayName) {
+        val name = reporterDisplayName.trim()
+        state.cherryHarvests
+            .filter { name.isBlank() || (it.pickerWorkerName ?: "").equals(name, ignoreCase = true) }
+            .asReversed()
+    }
 
     Box(
         modifier = Modifier
@@ -68,7 +77,9 @@ fun HarvestReadinessScreen(reporterDisplayName: String = "") {
     ) {
         HarvestReadinessList(
             reports = workerReports,
-            onNewReport = { showReportDialog = true }
+            harvests = workerHarvests,
+            onNewReport = { showReportDialog = true },
+            onLogHarvest = { showHarvestDialog = true }
         )
 
         FloatingActionButton(
@@ -108,12 +119,43 @@ fun HarvestReadinessScreen(reporterDisplayName: String = "") {
             }
         )
     }
+
+    if (showHarvestDialog) {
+        SimpleRecordDialog(
+            title = "Log Picked Harvest",
+            fields = listOf(
+                RecordField("Field / Block", options = zoneOptions),
+                RecordField("Weight (kg)"),
+                RecordField("Harvest Date"),
+                RecordField("Notes")
+            ),
+            initialValues = listOf(zoneOptions.first(), "", LocalDate.now().toString(), ""),
+            onDismiss = { showHarvestDialog = false },
+            onSave = { values ->
+                store.addCherryHarvest(
+                    batchId = "HV-${UUID.randomUUID().toString().take(8).uppercase()}",
+                    pickerWorkerName = reporterDisplayName.ifBlank { "Worker" },
+                    details = values[3],
+                    weightText = values[1],
+                    date = values[2],
+                    farmBlock = values[0]
+                )
+                Toast.makeText(
+                    context,
+                    "Harvest logged: ${values[1]} kg from ${values[0]}.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+    }
 }
 
 @Composable
 private fun HarvestReadinessList(
     reports: List<HarvestReadinessReportRecord>,
-    onNewReport: () -> Unit
+    harvests: List<CherryHarvestRecord>,
+    onNewReport: () -> Unit,
+    onLogHarvest: () -> Unit
 ) {
     val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val titleColor = if (isDarkPalette) Color(0xFFF4EDE6) else Color(0xFF3E2723)
@@ -128,20 +170,86 @@ private fun HarvestReadinessList(
     ) {
         item {
             Text(
-                "Report crop readiness for admin review. Reports appear on the web harvest readiness board.",
+                "Report crop readiness for admin review, or log cherries you've already picked and weighed. Both appear on the web admin portal.",
                 color = subtitleColor,
                 style = MaterialTheme.typography.bodyMedium
             )
-            Button(
-                onClick = onNewReport,
+            Row(
                 modifier = Modifier.padding(top = 12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF84B626),
-                    contentColor = Color(0xFF111111)
-                )
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Report readiness", fontWeight = FontWeight.SemiBold)
+                Button(
+                    onClick = onNewReport,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF84B626),
+                        contentColor = Color(0xFF111111)
+                    )
+                ) {
+                    Text("Report readiness", fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick = onLogHarvest,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF8B6F47),
+                        contentColor = Color(0xFFF4EDE6)
+                    )
+                ) {
+                    Text("Log harvest", fontWeight = FontWeight.SemiBold)
+                }
             }
+        }
+        item {
+            Text(
+                "Logged harvests",
+                color = titleColor,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        if (harvests.isEmpty()) {
+            item {
+                Text("No harvests logged yet today or otherwise.", color = subtitleColor)
+            }
+        } else {
+            items(harvests, key = { it.harvestId.ifBlank { "${it.batchId}-${it.date}" } }) { harvest ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = cardColor),
+                    border = BorderStroke(1.dp, borderColor)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                harvest.farmBlock.ifBlank { "Unspecified block" },
+                                color = titleColor,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(harvest.weightText, color = Color(0xFF84B626), fontWeight = FontWeight.SemiBold)
+                        }
+                        if (harvest.details.isNotBlank()) {
+                            Text(harvest.details, color = subtitleColor)
+                        }
+                        Text(
+                            "Harvested: ${harvest.date ?: "Unknown date"}",
+                            color = subtitleColor,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            Text(
+                "Readiness reports",
+                color = titleColor,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
         if (reports.isEmpty()) {
             item {

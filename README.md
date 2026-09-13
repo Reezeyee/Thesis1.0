@@ -48,6 +48,18 @@ The folder `Cnn Training/Data/` is **not** in Git (several GB of photos). After 
 
 Training scripts live under `Cnn Training/ImageClassification/`.
 
+## Ripeness classification model (Roboflow)
+
+Coffee cherry ripeness is classified by a Roboflow-hosted object detection model — there is no on-device fallback for ripeness (see `RoboflowApiClient.kt`).
+
+- **Workspace:** `fates-workspace`
+- **Project:** `coffee-tmlrm-1fnkh`
+- **Version:** `3` (architecture: YOLOv26n)
+- **Classes:** `Unripe`, `Ripening`, `Ripe`, `Overripe`, `Dry_Damaged`
+- **Accuracy (mAP / precision / recall):** TODO — copy from the version page at `https://app.roboflow.com/fates-workspace/coffee-tmlrm-1fnkh` and fill in here for the thesis writeup.
+
+Config lives in `app/src/main/java/com/melodypenero/coffeefarm/ml/RoboflowApiClient.kt`. To point the app at a newer trained version, update `MODEL_ID` and `VERSION` there.
+
 ## Notes
 
 - This MVP uses demo repository data to render the dashboard quickly.

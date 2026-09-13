@@ -109,7 +109,19 @@ data class SmsMessageRecord(
     val recipientPhoneNumber: String = "",
     val messageBody: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val sentViaCellularSms: Boolean = false
+    val sentViaCellularSms: Boolean = false,
+    /**
+     * These four are written by the website (SmsManagement/NotificationCenter) but never read or
+     * set by this app. Without them here, Gson silently drops them when this app parses a Firestore
+     * snapshot into [AppState] -- and since [AppStore.persist] re-uploads the FULL state after every
+     * local change (not just SMS-related ones), the very next action taken anywhere in the app would
+     * wipe these fields from every message in the shared thread. Keeping them as pass-through fields
+     * (never populated by this app, but preserved on any read/merge/write round trip) fixes that.
+     */
+    val senderPhone: String? = null,
+    val recipientPhone: String? = null,
+    val status: String? = null,
+    val viaGateway: String? = null
 )
 
 data class WorkerRecord(
@@ -148,7 +160,9 @@ data class AttendanceRecord(
     val timeInLongitude: Double? = null,
     val timeInLocationName: String = "",
     val faceSnapshotBase64: String = "",
-    val isGeofenceVerified: Boolean? = null
+    val isGeofenceVerified: Boolean? = null,
+    /** Set by the website when it creates an attendance row (e.g. from an approved timesheet correction) for sort-order fallback; pass-through only -- see [SmsMessageRecord] for why this app must still declare fields it never reads. */
+    val timestampMillis: Long? = null
 )
 data class TaskRecord(val title: String, val details: String, val status: String)
 data class SectionRecord(val name: String, val details: String)
@@ -298,7 +312,10 @@ data class PayrollRecord(
     val daysWorked: Int = 0,
     val hourlyRate: Double = 0.0,
     val hoursWorked: Double = 0.0,
-    val linkedAttendanceId: String = ""
+    val linkedAttendanceId: String = "",
+    /** Set by the website's payroll payout flow; pass-through only -- see [SmsMessageRecord] for why this app must still declare fields it never reads. */
+    val paymentMethod: String? = null,
+    val receiptNumber: String? = null
 )
 
 data class CoffeeFieldRecord(
@@ -369,7 +386,10 @@ data class ConsumableSupplyRecord(
     val stock: Int = 0,
     val unit: String,
     val status: String,
-    val lastRestocked: String
+    val lastRestocked: String,
+    /** Set by the website's Supplies inventory form; pass-through only -- see [SmsMessageRecord] for why this app must still declare fields it never reads. */
+    val referenceStock: Int? = null,
+    val lowStockThreshold: Int? = null
 )
 
 /** Worker-submitted consumable availability report; admins review it on the website. */
@@ -406,6 +426,8 @@ class AppStore(context: Context) {
     val activeAuthUid: String? get() = activeUserId
     private var boundCloudUserId: String? = null
     private var userLastEditKey = "user_last_edit_wall_ms"
+    /** How long a recorded local edit is still trusted over an incoming server snapshot; see [shouldUploadLocalInsteadOfApplyingRemote]. */
+    private val recentEditWindowMs = 2 * 60 * 1000L
     private var lastHardResetSeenKey = "last_hard_reset_seen_ms"
     private var firestoreClient: FirebaseFirestore? = null
     private var cloudListener: ListenerRegistration? = null
@@ -794,7 +816,7 @@ class AppStore(context: Context) {
             "${g.savedAtMillis ?: 0L}",
             g.treeId ?: "",
             g.location ?: "",
-        ).joinToString("\u0001")
+        ).joinToString("\u0001", transform = ::normKeyPart)
 
     /**
      * Firestore may deliver an older [stateJson] before the latest local write is visible.
@@ -841,7 +863,7 @@ class AppStore(context: Context) {
         remote: List<TreeRipenessScanRecord>
     ): List<TreeRipenessScanRecord> {
         fun key(r: TreeRipenessScanRecord) =
-            listOf(r.treeId, "${r.timestampMillis}", r.ripenessLabel, r.sourceGrade ?: "").joinToString("\u0001")
+            listOf(r.treeId, "${r.timestampMillis}", r.ripenessLabel, r.sourceGrade ?: "").joinToString("\u0001", transform = ::normKeyPart)
         val remoteKeys = remote.mapTo(mutableSetOf()) { key(it) }
         val normalizedRemote = remote.map { r ->
             TreeRipenessScanRecord(
@@ -857,7 +879,7 @@ class AppStore(context: Context) {
 
     private fun equipmentReportKey(r: EquipmentConditionReport): String =
         r.reportId.ifBlank {
-            listOf(r.equipmentName, r.reportedAt, r.reportedBy.orEmpty(), r.isWrecked.toString(), r.notes).joinToString("\u0001")
+            listOf(r.equipmentName, r.reportedAt, r.reportedBy.orEmpty(), r.isWrecked.toString(), r.notes).joinToString("\u0001", transform = ::normKeyPart)
         }
 
     private fun mergeEquipmentReportsWithRemote(
@@ -888,73 +910,87 @@ class AppStore(context: Context) {
 
     private fun preferLongerList(local: List<*>, remote: List<*>): Boolean = remote.size > local.size
 
+    /**
+     * Normalizes a composite-key fragment (trim, lowercase, collapse internal whitespace) so two
+     * records that describe the same real-world thing but were typed/saved with slightly different
+     * spacing or casing (common with old records saved before a stable id existed) still land on the
+     * same key instead of silently duplicating forever.
+     */
+    private fun normKeyPart(s: String): String = s.trim().lowercase().replace(Regex("\\s+"), " ")
+
+    /**
+     * Unions local and remote by key, keeping remote's copy on a collision. Built as a key->item map
+     * (not a plain concat) so it also dedupes remote itself: if an earlier sync cycle already wrote
+     * duplicate keys into the shared Firestore snapshot, this cleans them up on the next merge instead
+     * of perpetuating them.
+     */
     private fun <T> mergeByKey(
         local: List<T>,
         remote: List<T>,
         keyFor: (T) -> String
     ): List<T> {
-        val remoteKeys = remote.mapTo(mutableSetOf()) { keyFor(it) }
-        val extras = local.filter { keyFor(it) !in remoteKeys }
-        return remote + extras
+        val merged = LinkedHashMap<String, T>()
+        remote.forEach { item -> merged.putIfAbsent(keyFor(item), item) }
+        local.forEach { item -> merged.putIfAbsent(keyFor(item), item) }
+        return merged.values.toList()
     }
 
     private fun <T> preferLongerListValue(local: List<T>, remote: List<T>): List<T> =
         if (preferLongerList(local, remote)) remote else local
 
     private fun workerKey(w: WorkerRecord): String =
-        w.workerId.trim().ifBlank { listOf(w.name, w.roleRate, w.phoneNumber).joinToString("\u0001") }
+        w.workerId.trim().ifBlank { listOf(w.name, w.roleRate, w.phoneNumber).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun attendanceKey(a: AttendanceRecord): String =
         (a.attendanceId ?: "").trim().ifBlank {
-            listOf(a.workerName, a.date ?: "", a.clockIn ?: "", a.clockOut ?: "", a.details).joinToString("\u0001")
+            listOf(a.workerName, a.date ?: "", a.clockIn ?: "", a.clockOut ?: "", a.details).joinToString("\u0001", transform = ::normKeyPart)
         }
 
     private fun treeKey(t: TreeRecord): String =
-        t.treeId.trim().ifBlank { listOf(t.sectionName, t.details, t.stage).joinToString("\u0001") }
+        t.treeId.trim().ifBlank { listOf(t.sectionName, t.details, t.stage).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun harvestKey(h: CherryHarvestRecord): String =
-        h.harvestId.trim().ifBlank { listOf(h.batchId, h.date ?: "", h.weightText, h.details).joinToString("\u0001") }
+        h.harvestId.trim().ifBlank { listOf(h.batchId, h.date ?: "", h.weightText, h.details).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun harvestReadinessReportKey(r: HarvestReadinessReportRecord): String =
-        r.reportId.trim().ifBlank { listOf(r.zone, r.expectedWeight, r.reportedBy, r.reportedAt).joinToString("\u0001") }
+        r.reportId.trim().ifBlank { listOf(r.zone, r.expectedWeight, r.reportedBy, r.reportedAt).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun batchKey(b: BatchRecord): String =
-        b.batchId.trim().ifBlank { listOf(b.label, b.status, b.treeId.orEmpty()).joinToString("\u0001") }
+        b.batchId.trim().ifBlank { listOf(b.label, b.status, b.treeId.orEmpty()).joinToString("\u0001", transform = ::normKeyPart) }
 
-    private fun equipmentKey(e: EquipmentRecord): String =
-        e.name.trim().lowercase()
+    private fun equipmentKey(e: EquipmentRecord): String = normKeyPart(e.name)
 
     private fun saleKey(s: SaleRecord): String =
-        s.saleId.trim().ifBlank { listOf(s.buyer, s.date, s.type, s.total.toString(), s.details).joinToString("\u0001") }
+        s.saleId.trim().ifBlank { listOf(s.buyer, s.date, s.type, s.total.toString(), s.details).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun expenseKey(e: ExpenseRecord): String =
-        e.expenseId.trim().ifBlank { listOf(e.category, e.description, e.amount.toString(), e.date.orEmpty()).joinToString("\u0001") }
+        e.expenseId.trim().ifBlank { listOf(e.category, e.description, e.amount.toString(), e.date.orEmpty()).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun payrollKey(p: PayrollRecord): String =
         (p.linkedAttendanceId ?: "").trim().ifBlank {
-            listOf(p.workerId, p.workerName, p.period, p.date.orEmpty(), p.amount.toString()).joinToString("\u0001")
+            listOf(p.workerId, p.workerName, p.period, p.date.orEmpty(), p.amount.toString()).joinToString("\u0001", transform = ::normKeyPart)
         }
 
     private fun coffeeFieldKey(f: CoffeeFieldRecord): String =
-        f.fieldId.trim().ifBlank { listOf(f.name, f.area, f.variety).joinToString("\u0001") }
+        f.fieldId.trim().ifBlank { listOf(f.name, f.area, f.variety).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun irrigationKey(i: IrrigationSystemRecord): String =
-        i.irrigationId.trim().ifBlank { listOf(i.zone, i.type, i.coverage).joinToString("\u0001") }
+        i.irrigationId.trim().ifBlank { listOf(i.zone, i.type, i.coverage).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun irrigationDamageReportKey(r: IrrigationDamageReportRecord): String =
-        r.reportId.trim().ifBlank { listOf(r.irrigationId, r.zone, r.sprinklerLabel, r.reportedAt, r.reportedBy).joinToString("\u0001") }
+        r.reportId.trim().ifBlank { listOf(r.irrigationId, r.zone, r.sprinklerLabel, r.reportedAt, r.reportedBy).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun pestControlKey(p: PestControlRecord): String =
-        p.pestControlId.trim().ifBlank { listOf(p.date, p.field, p.issue, p.treatment).joinToString("\u0001") }
+        p.pestControlId.trim().ifBlank { listOf(p.date, p.field, p.issue, p.treatment).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun consumableSupplyKey(s: ConsumableSupplyRecord): String =
-        s.supplyId.trim().ifBlank { listOf(s.name, s.category, s.unit).joinToString("\u0001") }
+        s.supplyId.trim().ifBlank { listOf(s.name, s.category, s.unit).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun consumableReportKey(r: ConsumableSupplyReportRecord): String =
-        r.reportId.trim().ifBlank { listOf(r.supplyId, r.supplyName, r.reportedAt, r.reportedBy).joinToString("\u0001") }
+        r.reportId.trim().ifBlank { listOf(r.supplyId, r.supplyName, r.reportedAt, r.reportedBy).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun smsMessageKey(m: SmsMessageRecord): String =
-        m.messageId.trim().ifBlank { listOf(m.senderName, m.recipientPhoneNumber, m.timestamp.toString()).joinToString("\u0001") }
+        m.messageId.trim().ifBlank { listOf(m.senderName, m.recipientPhoneNumber, m.timestamp.toString()).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun mergeRemoteStatePreservingLocalGrades(local: AppState, remoteState: AppState): AppState =
         normalizeAppState(remoteState.copy(
@@ -1005,6 +1041,16 @@ class AppStore(context: Context) {
     /**
      * If cloud has no rows but this device has data, the snapshot is wrong or never synced.
      * Never replace local (merge would still wipe all non–cherry-grade lists; see mergeRemoteStatePreservingLocalGrades).
+     *
+     * Beyond that, local is only trusted over a fresh server snapshot for a short window right after a
+     * genuine local edit (guarding against the server snapshot listener firing with a pre-edit state
+     * before Firestore has caught up). [userLastEditKey] is a persisted timestamp that is NOT cleared
+     * between app opens, so it must never be compared against the server timestamp on its own: a
+     * months-old edit is still "newer than serverUpdatedAtMs" if nobody has touched the server since,
+     * which used to make this return true on every cold start and re-push this device's stale, larger
+     * local cache over data that was deliberately cleaned up server-side in the meantime. Requiring the
+     * edit to be recent in wall-clock time (not just newer-than-server) closes that hole; having more
+     * rows than the server snapshot is no longer sufficient justification by itself.
      */
     private fun shouldUploadLocalInsteadOfApplyingRemote(
         local: AppState,
@@ -1014,11 +1060,10 @@ class AppStore(context: Context) {
         if (isEffectivelyEmpty(remote) && !isEffectivelyEmpty(local)) return true
         if (isEffectivelyEmpty(local)) return false
         val lastUserEdit = prefs.getLong(userLastEditKey, 0L)
-        // Local edits not yet reflected on server: avoid pulling an older, smaller snapshot.
-        if (lastUserEdit > 0L && serverUpdatedAtMs > 0L && lastUserEdit > serverUpdatedAtMs + 1500L) {
-            if (local.totalItemCount() > remote.totalItemCount()) return true
-        }
-        return false
+        if (lastUserEdit <= 0L) return false
+        val editIsRecent = System.currentTimeMillis() - lastUserEdit < recentEditWindowMs
+        val serverSnapshotPredatesEdit = serverUpdatedAtMs > 0L && lastUserEdit > serverUpdatedAtMs + 1500L
+        return editIsRecent && serverSnapshotPredatesEdit
     }
 
     private fun persist(next: AppState) {

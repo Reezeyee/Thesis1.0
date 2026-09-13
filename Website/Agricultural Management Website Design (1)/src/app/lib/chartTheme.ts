@@ -44,17 +44,25 @@ export const CHART_TOOLTIP_STYLE: CSSProperties = {
   padding: '8px 12px',
 };
 
-/** Distinct categorical palette for pie / donut charts. */
+/**
+ * Distinct categorical palette for pie / donut charts. The previous palette was almost all
+ * mid-tone browns (#8b6f47, #a0826d, #a88c74, #d4a574 are all close enough to read as the same
+ * color), so adjacent slices visually merged into one blob on the expense/species/cherry-grade
+ * donuts. Replaced with the dataviz skill's validated 8-hue categorical set: fixed hue order,
+ * each pair passing the colorblind (CVD) separation and normal-vision distinctness checks --
+ * verified with scripts/validate_palette.js against this app's actual card surface (#faf7f3),
+ * not eyeballed. Every chart using this also renders a color-dot + text legend alongside the
+ * slices, satisfying the contrast "relief" requirement the validator flags.
+ */
 export const PIE_COLORS = [
-  '#2d5016', // Forest green
-  '#4a2c2a', // Deep espresso
-  '#8b6f47', // Warm coffee brown
-  '#d4a574', // Coffee light brown
-  '#a0826d', // Medium earthy brown
-  '#e8d5c4', // Light cream accent
-  '#5c3e3c', // Medium espresso
-  '#a88c74', // Clay brown
-  '#6b705c', // Olive green
+  '#2a78d6', // Blue
+  '#eb6834', // Orange
+  '#1baf7a', // Aqua/teal
+  '#eda100', // Yellow/gold
+  '#e87ba4', // Magenta
+  '#008300', // Green
+  '#4a3aa7', // Violet
+  '#e34948', // Red
 ] as const;
 
 export const CHART_LINE_SERIES = {
@@ -279,9 +287,15 @@ export function truncateLabel(label: string, max = 14): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
-export function piePercentLabel(name: string, percent: number | undefined): string {
+/**
+ * Percentage-only slice label -- every chart that calls this also renders a legend with the
+ * full, untruncated category name next to a matching color dot, so cramming the name onto the
+ * slice too just meant it got hard-truncated at 10 characters ("Transport & freight" ->
+ * "Transport…", "Payroll & wages" -> "Payroll &…") regardless of how much was actually cut off.
+ */
+export function piePercentLabel(_name: string, percent: number | undefined): string {
   if ((percent ?? 0) < 0.06) return '';
-  return `${truncateLabel(name, 10)} ${Math.round((percent ?? 0) * 100)}%`;
+  return `${Math.round((percent ?? 0) * 100)}%`;
 }
 
 export function pieColorAt(index: number): string {

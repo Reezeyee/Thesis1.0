@@ -1,9 +1,104 @@
 import { useState, type FormEvent } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Coffee, ShieldCheck, Lock, ArrowRight } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+
+/**
+ * Three soft, blurred color fields that slowly drift and breathe behind the login card --
+ * plain bg-background alone read as lifeless. Colors pull from the existing brand tokens
+ * (--primary, --accent, --status-success) via Tailwind's bg-color/opacity utilities so this
+ * stays on-palette and correct in both light and dark mode automatically. Motion is skipped
+ * entirely for prefers-reduced-motion instead of just running slower.
+ */
+function AmbientBackground() {
+  const reduceMotion = useReducedMotion();
+
+  const blobs = [
+    { className: 'bg-accent/25 dark:bg-accent/20', size: 420, top: '-8%', left: '-6%', duration: 22 },
+    { className: 'bg-primary/20 dark:bg-primary/25', size: 480, top: '55%', left: '70%', duration: 26 },
+    { className: 'bg-emerald-500/10', size: 360, top: '65%', left: '-4%', duration: 19 },
+  ];
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+      {blobs.map((blob, i) => (
+        <motion.div
+          key={i}
+          className={`absolute rounded-full blur-3xl ${blob.className}`}
+          style={{ width: blob.size, height: blob.size, top: blob.top, left: blob.left }}
+          animate={
+            reduceMotion
+              ? undefined
+              : {
+                  x: [0, 30, -20, 0],
+                  y: [0, -25, 20, 0],
+                  scale: [1, 1.08, 0.96, 1],
+                }
+          }
+          transition={{ duration: blob.duration, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** A minimal coffee-bean silhouette -- an oval, simple enough to read at a small, low-opacity size. */
+function CoffeeBeanShape({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 36" className={className} fill="currentColor">
+      <path d="M12 0C5.373 0 0 7.163 0 18s5.373 18 12 18 12-7.163 12-18S18.627 0 12 0Z" />
+    </svg>
+  );
+}
+
+/**
+ * Small coffee-bean shapes drifting slowly upward with a gentle horizontal sway, fading in and
+ * out as they cross the card area -- a themed layer on top of AmbientBackground's color glow.
+ * Fixed per-particle values (no Math.random) keep the layout stable across re-renders.
+ */
+function FloatingBeans() {
+  const reduceMotion = useReducedMotion();
+  if (reduceMotion) return null;
+
+  const beans = [
+    { left: '8%', size: 22, duration: 16, delay: 0, sway: 14 },
+    { left: '22%', size: 14, duration: 21, delay: 3, sway: -10 },
+    { left: '38%', size: 18, duration: 18, delay: 7, sway: 12 },
+    { left: '58%', size: 16, duration: 23, delay: 1, sway: -16 },
+    { left: '74%', size: 24, duration: 19, delay: 5, sway: 10 },
+    { left: '88%', size: 15, duration: 25, delay: 9, sway: -12 },
+  ];
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+      {beans.map((bean, i) => (
+        <motion.div
+          key={i}
+          className="absolute text-primary/15 dark:text-accent/20"
+          style={{ left: bean.left, width: bean.size, bottom: '-10%' }}
+          animate={{
+            y: ['0%', '-130vh'],
+            x: [0, bean.sway, 0],
+            opacity: [0, 0.8, 0.8, 0],
+            rotate: [0, bean.sway > 0 ? 25 : -25],
+          }}
+          transition={{
+            duration: bean.duration,
+            delay: bean.delay,
+            repeat: Infinity,
+            ease: 'linear',
+            opacity: { duration: bean.duration, delay: bean.delay, repeat: Infinity, times: [0, 0.15, 0.85, 1] },
+          }}
+        >
+          <CoffeeBeanShape />
+        </motion.div>
+      ))}
+    </div>
+  );
+}
 
 export function LoginScreen() {
   const { signIn, error } = useAuth();
@@ -37,9 +132,17 @@ export function LoginScreen() {
     }
   };
 
+  const reduceMotion = useReducedMotion();
+
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4 sm:p-6 transition-colors duration-200">
-      <div className="w-full max-w-md bg-card/95 backdrop-blur-md rounded-3xl border border-border/80 shadow-2xl p-6 sm:p-8 space-y-6">
+    <div className="relative min-h-screen bg-background text-foreground flex items-center justify-center p-4 sm:p-6 transition-colors duration-200 overflow-hidden">
+      <AmbientBackground />
+      <FloatingBeans />
+      <motion.div
+        initial={reduceMotion ? undefined : { opacity: 0, y: 16, scale: 0.98 }}
+        animate={reduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        className="relative w-full max-w-md bg-card/95 backdrop-blur-md rounded-3xl border border-border/80 shadow-2xl p-6 sm:p-8 space-y-6">
         {/* Header Branding */}
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-amber-500 text-black flex items-center justify-center font-bold shadow-md flex-shrink-0">
@@ -125,7 +228,7 @@ export function LoginScreen() {
             Admin Portal
           </span>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -12,14 +12,14 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Native REST API Client for Roboflow Hosted YOLOv8 CNN Inference Engine.
- * Connected to 8,110-image dataset project `coffee-tmlrm-1fnkh/1`.
+ * Native REST API Client for Roboflow Hosted YOLO CNN Inference Engine.
+ * Connected to dataset project `coffee-tmlrm-1fnkh/3` (YOLOv26n architecture, workspace `fates-workspace`).
  */
 object RoboflowApiClient {
 
     private const val API_KEY = "zl9Dmr15qZsJA3TCteGy"
-    private const val MODEL_ID = "coffee-fruit-maturity-befkg-q80dw"
-    private const val VERSION = "1"
+    private const val MODEL_ID = "coffee-tmlrm-1fnkh"
+    private const val VERSION = "3"
 
     val TARGET_CLASSES = listOf("Unripe", "Ripening", "Ripe", "Overripe", "Dry_Damaged")
 
@@ -48,7 +48,7 @@ object RoboflowApiClient {
 
             val responseCode = conn.responseCode
             if (responseCode == 404) {
-                return Result.failure(IllegalStateException("Roboflow Model Training Pending: Click 'Train Model' on Roboflow website to activate Version 1."))
+                return Result.failure(IllegalStateException("Roboflow Model Training Pending: Click 'Train Model' on Roboflow website to activate Version $VERSION."))
             } else if (responseCode != 200) {
                 return Result.failure(IllegalStateException("Roboflow API returned HTTP $responseCode"))
             }

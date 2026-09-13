@@ -206,7 +206,16 @@ export function mergeStateForCloudUpload(local: AppState, remote: AppState): App
 
   return normalizeAppState({
     ...mergeRemoteStatePreservingLocalGrades(local, remote),
-    attendance: local.attendance,
+    // Local wins on a matching key (protects an admin's simultaneous edit to an existing row from
+    // being clobbered by an older remote copy of the same row), but -- unlike a bare `local.attendance`
+    // override -- remote-only rows are still preserved. Workers clock in from the Android app
+    // continuously; a straight override here would silently delete any clock-in that landed in
+    // Firestore between this admin's last state refresh and this save, on literally any website save
+    // (approving a leave request, editing a phone number, anything that calls updateState).
+    attendance: mergeByKey(remote.attendance, local.attendance, (a) =>
+      (a.attendanceId ?? '').trim() ||
+      [a.workerName, a.date ?? '', a.clockIn ?? '', a.clockOut ?? '', a.details].join(''),
+    ),
     timesheetCorrections: mergeByKey(remote.timesheetCorrections, local.timesheetCorrections, timesheetCorrectionKey),
     leaveRequests: mergeByKey(remote.leaveRequests, local.leaveRequests, leaveRequestKey),
     workers: mergeByKey(remote.workers, local.workers, (w) =>

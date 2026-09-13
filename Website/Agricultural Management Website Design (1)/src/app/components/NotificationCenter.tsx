@@ -455,7 +455,7 @@ export function GlobalNotificationBanner({
 
   return (
     <>
-      <div className="fixed top-6 right-6 z-50 max-w-md w-full animate-in slide-in-from-top-6 fade-in duration-300 pointer-events-auto">
+      <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-in slide-in-from-bottom-6 fade-in duration-300 pointer-events-auto">
         <div className="bg-card/95 backdrop-blur-md border-2 border-[#d4183d]/40 rounded-2xl p-4 shadow-2xl ring-4 ring-[#d4183d]/15 relative overflow-hidden">
           <div className="absolute -top-10 -right-10 w-28 h-28 bg-[#d4183d]/15 rounded-full blur-xl pointer-events-none animate-pulse" />
 

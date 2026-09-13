@@ -143,16 +143,25 @@ private fun CoffeeMaturityDonutCard(
     onNavigateToScanner: () -> Unit
 ) {
     val palette = farmPalette()
-    val scans = appState.cherryGrades
-    val totalScans = scans.size
+    // appState.cherryGrades mixes two unrelated record kinds: per-cherry maturity grades (e.g.
+    // "Ripe", "Unripe") AND branch-level harvest-readiness statuses ("Optimal Harvest" / "Selective
+    // Picking" / "Wait", saved by CoffeeCherryScreen's summary flow -- see the comment on
+    // harvestStatusAccentColor). Only the former matches any of the keyword filters below, so
+    // counting every row here as a "saved branch scan" silently inflated the total shown next to a
+    // pie chart that only ever categorizes a subset of them (e.g. 50 rows in the database but only
+    // 46 falling into a maturity bucket, so the chart's slices summed to less than the caption's
+    // count, and the ripe% was computed against the wrong denominator). Filter to grade rows the
+    // chart can actually categorize before deriving either the displayed count or the percentages.
+    val allScans = appState.cherryGrades
 
-    val ripeCount = scans.count { (it.grade ?: "").contains("Ripe", ignoreCase = true) && !(it.grade ?: "").contains("Unripe", ignoreCase = true) && !(it.grade ?: "").contains("Overripe", ignoreCase = true) }
-    val ripeningCount = scans.count { (it.grade ?: "").contains("Ripening", ignoreCase = true) || (it.grade ?: "").contains("Near", ignoreCase = true) }
-    val unripeCount = scans.count { (it.grade ?: "").contains("Unripe", ignoreCase = true) || (it.grade ?: "").contains("Green", ignoreCase = true) }
-    val overripeCount = scans.count { (it.grade ?: "").contains("Overripe", ignoreCase = true) || (it.grade ?: "").contains("Defective", ignoreCase = true) }
-    val damagedCount = scans.count { (it.grade ?: "").contains("Dry", ignoreCase = true) || (it.grade ?: "").contains("Damaged", ignoreCase = true) }
+    val ripeCount = allScans.count { (it.grade ?: "").contains("Ripe", ignoreCase = true) && !(it.grade ?: "").contains("Unripe", ignoreCase = true) && !(it.grade ?: "").contains("Overripe", ignoreCase = true) }
+    val ripeningCount = allScans.count { (it.grade ?: "").contains("Ripening", ignoreCase = true) || (it.grade ?: "").contains("Near", ignoreCase = true) }
+    val unripeCount = allScans.count { (it.grade ?: "").contains("Unripe", ignoreCase = true) || (it.grade ?: "").contains("Green", ignoreCase = true) }
+    val overripeCount = allScans.count { (it.grade ?: "").contains("Overripe", ignoreCase = true) || (it.grade ?: "").contains("Defective", ignoreCase = true) }
+    val damagedCount = allScans.count { (it.grade ?: "").contains("Dry", ignoreCase = true) || (it.grade ?: "").contains("Damaged", ignoreCase = true) }
 
-    val totalCategorized = (ripeCount + ripeningCount + unripeCount + overripeCount + damagedCount).coerceAtLeast(1)
+    val totalScans = ripeCount + ripeningCount + unripeCount + overripeCount + damagedCount
+    val totalCategorized = totalScans.coerceAtLeast(1)
     val ripeRatio = (ripeCount.toFloat() / totalCategorized * 100f)
 
     // New scans arrive live (CNN scans sync from the field), so animate toward the new slice

@@ -132,6 +132,7 @@ function AdminAppShell() {
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         mobileOpen={mobileSidebarOpen}
         onMobileClose={() => setMobileSidebarOpen(false)}
+        adminFirstName={(session?.displayName || session?.email?.split('@')[0] || '').split(' ')[0]}
       />
 
       <PasswordResetMessageSync />
