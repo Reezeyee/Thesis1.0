@@ -5,7 +5,6 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Grass
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PrecisionManufacturing
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -21,7 +20,6 @@ sealed class AppDestination(
     val icon: ImageVector
 ) {
     data object Dashboard : AppDestination("dashboard", "Dashboard", Icons.Default.Dashboard)
-    data object FarmMap : AppDestination("farm_map", "Farm section map", Icons.Default.Map)
     data object Cherry : AppDestination("cherry", "Cherry scanner", Icons.Default.Grass)
     data object HarvestReadiness : AppDestination("harvest_readiness", "Harvest Reports", Icons.Default.AssignmentTurnedIn)
     data object PestDisease : AppDestination("pest_disease", "Pest & Disease", Icons.Default.BugReport)
@@ -37,7 +35,6 @@ sealed class AppDestination(
 /** Worker mobile drawer: attendance, CNN scanner, harvest reports, pest reports, equipment. */
 val farmStaffMobileDestinations = listOf(
     AppDestination.Dashboard,
-    AppDestination.FarmMap,
     AppDestination.StaffAttendance,
     AppDestination.Cherry,
     AppDestination.HarvestReadiness,
@@ -52,7 +49,6 @@ val farmStaffMobileDestinations = listOf(
 /** Admin mobile drawer: same field tools (no attendance); management on web. */
 val administratorMobileDestinations = listOf(
     AppDestination.Dashboard,
-    AppDestination.FarmMap,
     AppDestination.Cherry,
     AppDestination.HarvestReadiness,
     AppDestination.PestDisease,
