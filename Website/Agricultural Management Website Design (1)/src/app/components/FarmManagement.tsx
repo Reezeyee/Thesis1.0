@@ -30,6 +30,7 @@ import {
   Camera,
 } from 'lucide-react';
 import { SelectWithOther } from './ui/SelectWithOther';
+import { SpeciesPicker } from './ui/SpeciesPicker';
 import { CoffeeFieldLandscapeMap } from './CoffeeFieldLandscapeMap';
 import { DashboardGrid, GridItem } from './ui/DashboardGrid';
 
@@ -1437,14 +1438,10 @@ export function FarmManagement() {
                     onChange={(e) => setCoffeeForm({ ...coffeeForm, trees: Number(e.target.value) || 0 })}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Variety</Label>
-                  <Input
-                    value={coffeeForm.variety}
-                    onChange={(e) => setCoffeeForm({ ...coffeeForm, variety: e.target.value })}
-                    placeholder="e.g. Arabica / Liberica"
-                  />
-                </div>
+                <SpeciesPicker
+                  value={coffeeForm.variety}
+                  onChange={(val) => setCoffeeForm({ ...coffeeForm, variety: val })}
+                />
                 <div className="space-y-2">
                   <Label>Age</Label>
                   <Input
