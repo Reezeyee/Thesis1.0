@@ -178,6 +178,9 @@ export interface CherryGradeRecord {
   confidence?: string | null;
   species?: string | null;
   speciesConfidence?: string | null;
+  /** Raw on-device CNN species read, kept even when `species` was overridden by the scan's field-declared variety. */
+  cnnDetectedSpecies?: string | null;
+  cnnSpeciesConfidence?: string | null;
   savedAtMillis?: number | null;
   treeId?: string | null;
   /** Farm section / sector / block / plot picked on the phone when the scan was saved. */

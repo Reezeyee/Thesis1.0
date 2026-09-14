@@ -229,7 +229,8 @@ fun CoffeeCherryScreen(
                             FarmSectionOption(
                                 name = name,
                                 details = if (detailsList.isNotEmpty()) detailsList.joinToString(" · ") else "Active Field Section",
-                                treeCount = f.trees
+                                treeCount = f.trees,
+                                declaredSpecies = f.variety.trim().ifBlank { null }
                             )
                         )
                     }
@@ -280,6 +281,14 @@ fun CoffeeCherryScreen(
                             state.cherryGrades.mapNotNull { it.batchId?.trim() }
                         )
 
+                        // The field's admin-declared variety (Robusta/Liberica), when this section is a
+                        // registered coffee field, wins over the on-device CNN guess -- the CNN was
+                        // trained on leaves and is unreliable when pointed at cherries/branches. The raw
+                        // CNN read is still stored (cnnDetectedSpecies/cnnSpeciesConfidence) for QA.
+                        val declaredSpecies = availableSections
+                            .find { it.name.equals(section, ignoreCase = true) }
+                            ?.declaredSpecies
+
                         store.addTreeRipenessScanWithCherryGrade(
                             TreeRipenessScanRecord(
                                 treeId = "branch_scan",
@@ -290,8 +299,10 @@ fun CoffeeCherryScreen(
                             batchId = generatedBatchId,
                             grade = summary.harvestStatus,
                             confidence = "%.1f%%".format(summary.ripePercentage),
-                            species = summary.detectedSpecies,
-                            speciesConfidence = summary.speciesConfidence,
+                            species = declaredSpecies ?: summary.detectedSpecies,
+                            speciesConfidence = if (declaredSpecies != null) "Field-declared" else summary.speciesConfidence,
+                            cnnDetectedSpecies = summary.detectedSpecies,
+                            cnnSpeciesConfidence = summary.speciesConfidence,
                             location = section,
                             scannedByWorkerName = session.displayName,
                             scannedByEmail = session.email,
@@ -325,7 +336,9 @@ fun CoffeeCherryScreen(
 data class FarmSectionOption(
     val name: String,
     val details: String = "",
-    val treeCount: Int = 0
+    val treeCount: Int = 0,
+    /** Variety the admin declared for this field on the website, when this section is a registered coffee field. */
+    val declaredSpecies: String? = null
 )
 
 @Composable
@@ -733,6 +746,7 @@ private fun PremiumCherryScannerTab(
                 summary = scanResult!!,
                 bitmap = capturedBitmap!!,
                 section = selectedSection,
+                declaredSpecies = availableSections.find { it.name.equals(selectedSection, ignoreCase = true) }?.declaredSpecies,
                 onSave = {
                     onSaveScan(scanResult!!, capturedBitmap!!, selectedSection)
                     showResultSheet = false
@@ -919,6 +933,7 @@ private fun BranchScanResultSheet(
     summary: BranchScanSummary,
     bitmap: Bitmap,
     section: String,
+    declaredSpecies: String? = null,
     onSave: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1086,14 +1101,14 @@ private fun BranchScanResultSheet(
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "COFFEE SPECIES (CNN)",
+                                text = if (declaredSpecies != null) "COFFEE SPECIES (FIELD)" else "COFFEE SPECIES (CNN)",
                                 color = Color(0xFF9E8E81),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 10.sp
                             )
                             Text(
-                                text = summary.detectedSpecies,
+                                text = declaredSpecies ?: summary.detectedSpecies,
                                 color = Color(0xFFF4EDE6),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
@@ -1111,7 +1126,7 @@ private fun BranchScanResultSheet(
                         border = BorderStroke(1.dp, Color(0xFFD4AF37).copy(alpha = 0.5f))
                     ) {
                         Text(
-                            text = "Conf: ${summary.speciesConfidence}",
+                            text = if (declaredSpecies != null) "Field-declared" else "Conf: ${summary.speciesConfidence}",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             color = Color(0xFFD4AF37),
                             style = MaterialTheme.typography.labelSmall,
