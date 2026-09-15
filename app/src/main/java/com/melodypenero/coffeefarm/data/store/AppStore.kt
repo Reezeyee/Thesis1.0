@@ -858,6 +858,11 @@ class AppStore(context: Context) {
                 scannedByWorkerName = g.scannedByWorkerName?.trim()?.ifBlank { null },
                 scannedByEmail = g.scannedByEmail?.trim()?.ifBlank { null },
                 scannedByAuthUid = g.scannedByAuthUid?.trim()?.ifBlank { null },
+                unripeCount = g.unripeCount,
+                ripeningCount = g.ripeningCount,
+                ripeCount = g.ripeCount,
+                overripeCount = g.overripeCount,
+                dryDamagedCount = g.dryDamagedCount,
             )
         }
     )
@@ -894,6 +899,11 @@ class AppStore(context: Context) {
                 scannedByWorkerName = g.scannedByWorkerName?.trim()?.ifBlank { null },
                 scannedByEmail = g.scannedByEmail?.trim()?.ifBlank { null },
                 scannedByAuthUid = g.scannedByAuthUid?.trim()?.ifBlank { null },
+                unripeCount = g.unripeCount,
+                ripeningCount = g.ripeningCount,
+                ripeCount = g.ripeCount,
+                overripeCount = g.overripeCount,
+                dryDamagedCount = g.dryDamagedCount,
             )
         }
         val remoteKeys = normalizedRemote.mapTo(mutableSetOf()) { cherryGradeDedupeKey(it) }
@@ -912,6 +922,11 @@ class AppStore(context: Context) {
                 scannedByWorkerName = g.scannedByWorkerName?.trim()?.ifBlank { null },
                 scannedByEmail = g.scannedByEmail?.trim()?.ifBlank { null },
                 scannedByAuthUid = g.scannedByAuthUid?.trim()?.ifBlank { null },
+                unripeCount = g.unripeCount,
+                ripeningCount = g.ripeningCount,
+                ripeCount = g.ripeCount,
+                overripeCount = g.overripeCount,
+                dryDamagedCount = g.dryDamagedCount,
             )
         }
         val extras = normalizedLocal.filter { cherryGradeDedupeKey(it) !in remoteKeys }
