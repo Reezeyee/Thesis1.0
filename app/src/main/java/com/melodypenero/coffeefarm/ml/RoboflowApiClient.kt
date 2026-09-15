@@ -13,13 +13,13 @@ import java.net.URL
 
 /**
  * Native REST API Client for Roboflow Hosted YOLO CNN Inference Engine.
- * Connected to dataset project `coffee-tmlrm-1fnkh/3` (YOLOv26n architecture, workspace `fates-workspace`).
+ * Connected to dataset project `coffee-cherries-qpktr-4zkou/2` (YOLOv26n-t1 architecture, workspace `fates-workspace`).
  */
 object RoboflowApiClient {
 
     private const val API_KEY = "zl9Dmr15qZsJA3TCteGy"
-    private const val MODEL_ID = "coffee-tmlrm-1fnkh"
-    private const val VERSION = "3"
+    private const val MODEL_ID = "coffee-cherries-qpktr-4zkou"
+    private const val VERSION = "2"
 
     val TARGET_CLASSES = listOf("Unripe", "Ripening", "Ripe", "Overripe", "Dry_Damaged")
 
