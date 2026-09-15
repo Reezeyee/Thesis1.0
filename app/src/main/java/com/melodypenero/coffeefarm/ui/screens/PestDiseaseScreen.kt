@@ -2,7 +2,6 @@ package com.melodypenero.coffeefarm.ui.screens
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,7 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -167,14 +165,13 @@ fun PestDiseaseScreen(reporterDisplayName: String = "") {
             zoneOptions = zoneOptions,
             reporterName = reporterDisplayName.ifBlank { "Field Worker" },
             onDismiss = { showDialog = false },
-            onSubmit = { field, treeNum, issue, notes, photoBase64 ->
+            onSubmit = { field, issue, notes, photoBase64 ->
                 val dateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.US))
                 val timeStr = LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm a", Locale.US))
                 store.addPestControlLog(
                     date = dateStr,
                     time = timeStr,
                     field = field,
-                    treeNumber = treeNum,
                     issue = issue,
                     treatment = "",
                     status = "Pending",
@@ -236,7 +233,7 @@ private fun PestReportList(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(reports, key = { it.pestControlId.ifBlank { "${it.field}-${it.date}-${it.treeNumber}" } }) { report ->
+        items(reports, key = { it.pestControlId.ifBlank { "${it.field}-${it.date}-${it.issue}-${it.timestampMillis}" } }) { report ->
             PestReportCard(report = report)
         }
     }
@@ -326,7 +323,7 @@ private fun PestReportCard(report: PestControlRecord) {
 
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = "${report.field} · ${if (report.treeNumber.isNotBlank()) report.treeNumber else "Tree #01"}",
+                        text = report.field,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF81C784)
@@ -379,11 +376,10 @@ private fun PestReportFormDialog(
     zoneOptions: List<String>,
     reporterName: String,
     onDismiss: () -> Unit,
-    onSubmit: (field: String, treeNum: String, issue: String, notes: String, photoBase64: String) -> Unit
+    onSubmit: (field: String, issue: String, notes: String, photoBase64: String) -> Unit
 ) {
     val context = LocalContext.current
     var selectedZone by remember { mutableStateOf(zoneOptions.firstOrNull() ?: "Section F") }
-    var treeNumber by remember { mutableStateOf("") }
     var selectedPest by remember { mutableStateOf(PEST_OPTIONS[0]) }
     var customPest by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
@@ -397,22 +393,6 @@ private fun PestReportFormDialog(
         if (bitmap != null) {
             photoBitmap = bitmap
             photoBase64 = bitmapToBase64(bitmap)
-        }
-    }
-
-    val pickImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    val bitmap = BitmapFactory.decodeStream(stream)
-                    if (bitmap != null) {
-                        photoBitmap = bitmap
-                        photoBase64 = bitmapToBase64(bitmap)
-                    }
-                }
-            } catch (_: Exception) {
-                Toast.makeText(context, "Failed to load image", Toast.LENGTH_SHORT).show()
-            }
         }
     }
 
@@ -474,15 +454,6 @@ private fun PestReportFormDialog(
                         }
                     }
                 }
-
-                // Tree Number
-                OutlinedTextField(
-                    value = treeNumber,
-                    onValueChange = { treeNumber = it },
-                    label = { Text("Tree Identifier / Number (e.g. Tree #04)") },
-                    placeholder = { Text("e.g. Tree #04") },
-                    modifier = Modifier.fillMaxWidth()
-                )
 
                 // Pest Selection
                 ExposedDropdownMenuBox(
@@ -559,26 +530,14 @@ private fun PestReportFormDialog(
                             }
                         }
                     } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        // Camera only: pest/disease evidence must be photographed on-site, not picked from the gallery.
+                        OutlinedButton(
+                            onClick = { takePictureLauncher.launch(null) },
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            OutlinedButton(
-                                onClick = { takePictureLauncher.launch(null) },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Camera")
-                            }
-                            OutlinedButton(
-                                onClick = { pickImageLauncher.launch("image/*") },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Gallery")
-                            }
+                            Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Take Photo")
                         }
                     }
                 }
@@ -606,10 +565,7 @@ private fun PestReportFormDialog(
                     Button(
                         onClick = {
                             val finalIssue = if (selectedPest == "Other / Unidentified Pest" && customPest.isNotBlank()) customPest else selectedPest
-                            val finalTreeNum = if (treeNumber.isNotBlank()) {
-                                if (treeNumber.startsWith("#")) treeNumber else "Tree #$treeNumber"
-                            } else "Tree #01"
-                            onSubmit(selectedZone, finalTreeNum, finalIssue, notes, photoBase64)
+                            onSubmit(selectedZone, finalIssue, notes, photoBase64)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
                     ) {

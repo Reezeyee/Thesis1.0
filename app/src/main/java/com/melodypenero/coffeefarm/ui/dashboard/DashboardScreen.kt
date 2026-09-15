@@ -143,22 +143,55 @@ private fun CoffeeMaturityDonutCard(
     onNavigateToScanner: () -> Unit
 ) {
     val palette = farmPalette()
-    // appState.cherryGrades mixes two unrelated record kinds: per-cherry maturity grades (e.g.
-    // "Ripe", "Unripe") AND branch-level harvest-readiness statuses ("Optimal Harvest" / "Selective
-    // Picking" / "Wait", saved by CoffeeCherryScreen's summary flow -- see the comment on
-    // harvestStatusAccentColor). Only the former matches any of the keyword filters below, so
-    // counting every row here as a "saved branch scan" silently inflated the total shown next to a
-    // pie chart that only ever categorizes a subset of them (e.g. 50 rows in the database but only
-    // 46 falling into a maturity bucket, so the chart's slices summed to less than the caption's
-    // count, and the ripe% was computed against the wrong denominator). Filter to grade rows the
-    // chart can actually categorize before deriving either the displayed count or the percentages.
+    // Each scan's real per-cherry CNN detection counts (unripeCount/ripeningCount/ripeCount/
+    // overripeCount/dryDamagedCount) are the source of truth here -- they come straight from the
+    // model's per-cherry classification, saved alongside `grade`. `grade` itself is only a single
+    // coarse branch-level recommendation ("Optimal Harvest Ready" / "Selective Picking
+    // Recommended" / "Wait / Unripe") computed from the ripe fraction of one scan, so it can never
+    // say "overripe" and previously made this donut's slices (and the ripe% inside it) wrong for
+    // every real scan: substring-matching "Ripe"/"Overripe"/"Dry"/"Damaged" against those three
+    // fixed phrases always returned ripeCount=0 (neither phrase contains "Ripe" as a
+    // non-"Unripe" substring) and overripeCount/damagedCount=0 (those words never appear at all).
+    // Fall back to bucketing the coarse phrase only for scans saved before per-cherry counts
+    // existed, using the phrases this app actually produces (not the "Green"/"Defective"/"Dry"/
+    // "Near" keywords the old code guessed at, none of which ever appear in real data).
     val allScans = appState.cherryGrades
 
-    val ripeCount = allScans.count { (it.grade ?: "").contains("Ripe", ignoreCase = true) && !(it.grade ?: "").contains("Unripe", ignoreCase = true) && !(it.grade ?: "").contains("Overripe", ignoreCase = true) }
-    val ripeningCount = allScans.count { (it.grade ?: "").contains("Ripening", ignoreCase = true) || (it.grade ?: "").contains("Near", ignoreCase = true) }
-    val unripeCount = allScans.count { (it.grade ?: "").contains("Unripe", ignoreCase = true) || (it.grade ?: "").contains("Green", ignoreCase = true) }
-    val overripeCount = allScans.count { (it.grade ?: "").contains("Overripe", ignoreCase = true) || (it.grade ?: "").contains("Defective", ignoreCase = true) }
-    val damagedCount = allScans.count { (it.grade ?: "").contains("Dry", ignoreCase = true) || (it.grade ?: "").contains("Damaged", ignoreCase = true) }
+    fun legacyBucketCounts(grade: String?): IntArray {
+        val k = (grade ?: "").lowercase().trim()
+        return when {
+            k.contains("optimal harvest ready") -> intArrayOf(1, 0, 0, 0, 0)
+            k.contains("selective picking") -> intArrayOf(0, 1, 0, 0, 0)
+            k.contains("wait") || k.contains("delay harvest") -> intArrayOf(0, 0, 1, 0, 0)
+            k.contains("overripe") || k.contains("defect") -> intArrayOf(0, 0, 0, 1, 0)
+            k.contains("dry") || k.contains("damaged") -> intArrayOf(0, 0, 0, 0, 1)
+            else -> intArrayOf(0, 0, 0, 0, 0)
+        }
+    }
+
+    var ripeCount = 0
+    var ripeningCount = 0
+    var unripeCount = 0
+    var overripeCount = 0
+    var damagedCount = 0
+    for (g in allScans) {
+        val hasRealCounts = g.unripeCount != null || g.ripeningCount != null || g.ripeCount != null ||
+            g.overripeCount != null || g.dryDamagedCount != null
+        if (hasRealCounts) {
+            ripeCount += g.ripeCount ?: 0
+            ripeningCount += g.ripeningCount ?: 0
+            unripeCount += g.unripeCount ?: 0
+            overripeCount += g.overripeCount ?: 0
+            damagedCount += g.dryDamagedCount ?: 0
+        } else {
+            val (r, rg, u, o, d) = legacyBucketCounts(g.grade).toList()
+            ripeCount += r
+            ripeningCount += rg
+            unripeCount += u
+            overripeCount += o
+            damagedCount += d
+        }
+    }
 
     val totalScans = ripeCount + ripeningCount + unripeCount + overripeCount + damagedCount
     val totalCategorized = totalScans.coerceAtLeast(1)

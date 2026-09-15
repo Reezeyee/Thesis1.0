@@ -8,7 +8,6 @@ import com.melodypenero.coffeefarm.ml.RoboflowApiClient
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.RectF
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,7 +67,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocalFlorist
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
@@ -138,7 +136,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private val CLASS_COLORS = mapOf(
     "Unripe" to Color(0xFF228B22),      // Forest Green
@@ -294,7 +291,8 @@ fun CoffeeCherryScreen(
                                 treeId = "branch_scan",
                                 ripenessLabel = summary.harvestStatus,
                                 timestampMillis = summary.timestamp,
-                                sourceGrade = summary.harvestStatus
+                                sourceGrade = summary.harvestStatus,
+                                scannedByAuthUid = session.userId
                             ),
                             batchId = generatedBatchId,
                             grade = summary.harvestStatus,
@@ -306,7 +304,8 @@ fun CoffeeCherryScreen(
                             location = section,
                             scannedByWorkerName = session.displayName,
                             scannedByEmail = session.email,
-                            scannedByAuthUid = session.userId
+                            scannedByAuthUid = session.userId,
+                            classCounts = summary.classCounts
                         )
 
                         // Also push to Firebase repository in background
@@ -351,7 +350,6 @@ private fun PremiumCherryScannerTab(
     val mainExecutor = androidx.core.content.ContextCompat.getMainExecutor(context)
 
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var selectedImageUri by remember { mutableStateOf<String?>(null) }
     var selectedSection by remember { mutableStateOf(availableSections.firstOrNull()?.name ?: "Section A") }
     var showSectionDialog by remember { mutableStateOf(false) }
 
@@ -378,57 +376,10 @@ private fun PremiumCherryScannerTab(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasCameraPermission = granted }
 
-    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            selectedImageUri = uri.toString()
-            capturedBitmap = null
-            scanResult = null
-        }
-    }
-
     DisposableEffect(Unit) {
         onDispose {
             cameraExecutor.shutdown()
         }
-    }
-
-    // Process Gallery Photo Selection
-    LaunchedEffect(selectedImageUri) {
-        val uriStr = selectedImageUri ?: return@LaunchedEffect
-        inferenceRunning = true
-        val bmp = withContext(Dispatchers.IO) {
-            BitmapExifUtils.loadBitmapWithOrientation(context, Uri.parse(uriStr))
-        }
-        if (bmp != null) {
-            capturedBitmap = bmp
-            selectedImageUri = null
-            val (ripenessRes, speciesPred) = withContext(Dispatchers.Default) {
-                val ripeness = RoboflowApiClient.detect(bmp)
-                val spec = speciesClassifier.classify(bmp).getOrNull()
-                ripeness to spec
-            }
-
-            ripenessRes.fold(
-                onSuccess = { summary ->
-                    val speciesName = speciesPred?.speciesDisplay ?: "Undetermined"
-                    val speciesConf = speciesPred?.confidenceText ?: "0.0%"
-                    val finalSummary = summary.copy(
-                        detectedSpecies = speciesName,
-                        speciesConfidence = speciesConf
-                    )
-                    scanResult = finalSummary
-                    if (finalSummary.totalCount > 0) {
-                        showResultSheet = true
-                    } else {
-                        showNoCherryDialog = true
-                    }
-                },
-                onFailure = {
-                    showConnectionErrorDialog = true
-                }
-            )
-        }
-        inferenceRunning = false
     }
 
     // Scanning Animation Transition -- only drawn while inferenceRunning (see the `if
@@ -645,7 +596,7 @@ private fun PremiumCherryScannerTab(
             }
         }
 
-        // Action Buttons Row (Capture vs Gallery)
+        // Action Buttons Row (camera only -- scans must be taken live in the field, not picked from the gallery)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -669,7 +620,6 @@ private fun PremiumCherryScannerTab(
                                 if (bmp != null) {
                                     mainExecutor.execute {
                                         capturedBitmap = bmp
-                                        selectedImageUri = null
                                         inferenceRunning = true
                                     }
                                     cameraExecutor.execute {
@@ -717,20 +667,6 @@ private fun PremiumCherryScannerTab(
                 Icon(Icons.Default.CameraAlt, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Scan Camera", fontWeight = FontWeight.Bold)
-            }
-
-            Button(
-                onClick = { galleryPicker.launch("image/*") },
-                enabled = !inferenceRunning,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3E2D22)),
-                shape = CircleShape,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(54.dp)
-            ) {
-                Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = Color(0xFFF4EDE6))
-                Spacer(Modifier.width(8.dp))
-                Text("Select Gallery", color = Color(0xFFF4EDE6), fontWeight = FontWeight.Bold)
             }
         }
     }
