@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -57,13 +56,29 @@ import com.melodypenero.coffeefarm.auth.UserRole
 
 import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.location.Location
 import android.location.LocationManager
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalContext
 import java.io.ByteArrayOutputStream
+
+/** Acojido farm HQ (Limay); see BATAAN_MAP_HUBS in the website's bataanProvinceMap.ts. */
+private const val FARM_ORIGIN_LATITUDE = 14.5394408
+private const val FARM_ORIGIN_LONGITUDE = 120.5763727
+
+/** How far from farm HQ a time-in/time-out/correction can still count as on-site. */
+private const val FARM_GEOFENCE_RADIUS_METERS = 500f
+
+private fun isWithinFarmGeofence(latitude: Double, longitude: Double): Boolean {
+    val result = FloatArray(1)
+    Location.distanceBetween(latitude, longitude, FARM_ORIGIN_LATITUDE, FARM_ORIGIN_LONGITUDE, result)
+    return result[0] <= FARM_GEOFENCE_RADIUS_METERS
+}
 
 @Composable
 fun StaffAttendanceScreen(session: AuthSession) {
@@ -72,12 +87,29 @@ fun StaffAttendanceScreen(session: AuthSession) {
     val state by store.appState
     val palette = farmPalette()
 
-    var isLocationPermissionGranted by remember { mutableStateOf(false) }
+    fun hasCameraPermission() =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    fun hasLocationPermission() =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    var isLocationPermissionGranted by remember { mutableStateOf(hasLocationPermission()) }
+    // Set right before requesting permissions so the camera only opens once permission has
+    // actually been granted, instead of launching both activities back-to-back (which races the
+    // two ActivityResultLaunchers and can silently drop the camera capture).
+    var pendingCameraOpen by remember { mutableStateOf(false) }
+
+    val cameraLauncherRef = remember { mutableStateOf<(() -> Unit)?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         isLocationPermissionGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (pendingCameraOpen && permissions[Manifest.permission.CAMERA] == true) {
+            cameraLauncherRef.value?.invoke()
+        }
+        pendingCameraOpen = false
     }
 
     val locationManager = remember(context) {
@@ -90,6 +122,24 @@ fun StaffAttendanceScreen(session: AuthSession) {
         } catch (_: Exception) {
             true
         }
+    }
+
+    /** Best last-known fix across providers, or null if permission/GPS/network location is unavailable. */
+    fun getCurrentLocation(): Triple<Double, Double, String>? {
+        if (!hasLocationPermission()) return null
+        val lm = locationManager ?: return null
+        val best = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            .mapNotNull { provider ->
+                try {
+                    @Suppress("MissingPermission")
+                    lm.getLastKnownLocation(provider)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            .maxByOrNull { it.time }
+            ?: return null
+        return Triple(best.latitude, best.longitude, "%.6f, %.6f".format(best.latitude, best.longitude))
     }
     val today = remember { LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE) }
     val linkedWorker = remember(state.workers, session.userId, session.email) {
@@ -109,7 +159,6 @@ fun StaffAttendanceScreen(session: AuthSession) {
         }
     }
     var selectedWorker by remember(workerNames, session.userId) { mutableStateOf(workerNames.firstOrNull().orEmpty()) }
-    var workerMenuOpen by remember { mutableStateOf(false) }
     val isLinkedWorkerAccount = session.role == UserRole.FARM_STAFF && linkedWorker != null
 
     val linkedAttendanceIds = remember(state.payroll) {
@@ -145,8 +194,9 @@ fun StaffAttendanceScreen(session: AuthSession) {
     var showCorrectionDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var correctionDate by remember { mutableStateOf(today) }
-    var correctionClockIn by remember { mutableStateOf("08:00 AM") }
-    var correctionClockOut by remember { mutableStateOf("05:00 PM") }
+    /** Which punch the worker is correcting: true = Time In, false = Time Out. */
+    var correctingTimeIn by remember { mutableStateOf(true) }
+    var correctionTime by remember { mutableStateOf("08:00 AM") }
     var correctionReason by remember { mutableStateOf("") }
     var leaveType by remember { mutableStateOf("Sick Leave") }
     var leaveTypeMenuOpen by remember { mutableStateOf(false) }
@@ -183,22 +233,35 @@ fun StaffAttendanceScreen(session: AuthSession) {
             capturedBitmap = bitmap
         }
     }
+    cameraLauncherRef.value = { cameraLauncher.launch(null) }
 
     fun openCameraScan() {
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.CAMERA
+        // Ask for location permission alongside camera (best-effort; a "no" here just means the
+        // eventual submission goes through without a verified location) but only ever launch the
+        // camera once camera permission is actually granted -- launching both activities back to
+        // back races the two ActivityResultLaunchers and can silently drop the photo capture.
+        if (hasCameraPermission()) {
+            cameraLauncher.launch(null)
+            if (!hasLocationPermission()) {
+                permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            }
+        } else {
+            pendingCameraOpen = true
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
             )
-        )
-        cameraLauncher.launch(null)
+        }
     }
 
     fun nowClock(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("hh:mm a"))
 
     fun submitTimeInWithScan() {
         val facePhoto = capturedBitmap?.let { bitmapToBase64(it) } ?: ""
+        val loc = getCurrentLocation()
         store.addAttendance(
             workerName = selectedWorker,
             details = "",
@@ -206,14 +269,44 @@ fun StaffAttendanceScreen(session: AuthSession) {
             clockOut = "",
             date = today,
             staffSubmission = true,
-            timeInLatitude = 14.5394408,
-            timeInLongitude = 120.5763727,
-            timeInLocationName = "Sector A - Coffee Field",
+            timeInLatitude = loc?.first ?: FARM_ORIGIN_LATITUDE,
+            timeInLongitude = loc?.second ?: FARM_ORIGIN_LONGITUDE,
+            timeInLocationName = loc?.third ?: "Location unavailable",
             faceSnapshotBase64 = facePhoto,
-            isGeofenceVerified = true
+            isGeofenceVerified = loc?.let { isWithinFarmGeofence(it.first, it.second) } ?: false
         )
         showFaceScanDialog = false
         capturedBitmap = null
+    }
+
+    fun selectCorrectionType(timeIn: Boolean) {
+        correctingTimeIn = timeIn
+        correctionTime = if (timeIn) "08:00 AM" else "05:00 PM"
+    }
+
+    fun openCorrectionDialog() {
+        correctionDate = today
+        // Default to whichever punch is actually missing today.
+        selectCorrectionType(timeIn = !hasTimedInToday)
+        showCorrectionDialog = true
+    }
+
+    fun submitCorrection() {
+        if (selectedWorker.isBlank() || correctionReason.isBlank() || correctionTime.isBlank()) return
+        // Only the chosen punch is sent; the other stays blank so the store tags the request as
+        // field "clockIn"/"clockOut" and the website keeps the original value for the other side.
+        store.addTimesheetCorrection(
+            workerName = selectedWorker,
+            date = correctionDate,
+            requestedClockIn = if (correctingTimeIn) correctionTime else "",
+            requestedClockOut = if (correctingTimeIn) "" else correctionTime,
+            reason = correctionReason,
+            originalClockIn = todayAttendance?.clockIn ?: "",
+            originalClockOut = todayAttendance?.clockOut ?: "",
+            attendanceId = todayAttendance?.attendanceId ?: ""
+        )
+        showCorrectionDialog = false
+        correctionReason = ""
     }
 
     fun timeIn() {
@@ -233,11 +326,11 @@ fun StaffAttendanceScreen(session: AuthSession) {
             date = today,
             awaitingPayrollLine = true,
             submittedByStaff = true,
-            timeInLatitude = attendance.timeInLatitude ?: 14.5394408,
-            timeInLongitude = attendance.timeInLongitude ?: 120.5763727,
-            timeInLocationName = attendance.timeInLocationName.ifBlank { "Sector A - Coffee Field" },
+            timeInLatitude = attendance.timeInLatitude ?: FARM_ORIGIN_LATITUDE,
+            timeInLongitude = attendance.timeInLongitude ?: FARM_ORIGIN_LONGITUDE,
+            timeInLocationName = attendance.timeInLocationName.ifBlank { "Location unavailable" },
             faceSnapshotBase64 = attendance.faceSnapshotBase64.ifBlank { "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%234a2c2a'/><circle cx='50' cy='40' r='20' fill='%2384B626'/><path d='M 20 85 Q 50 60 80 85' fill='none' stroke='%2384B626' stroke-width='6'/></svg>" },
-            isGeofenceVerified = true
+            isGeofenceVerified = attendance.isGeofenceVerified ?: false
         )
     }
 
@@ -273,10 +366,7 @@ fun StaffAttendanceScreen(session: AuthSession) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         TextButton(
-                            onClick = {
-                                correctionDate = today
-                                showCorrectionDialog = true
-                            },
+                            onClick = { openCorrectionDialog() },
                             modifier = Modifier
                                 .weight(1f)
                                 .border(1.dp, Color(0xFFF3B562), RoundedCornerShape(12.dp))
@@ -308,48 +398,19 @@ fun StaffAttendanceScreen(session: AuthSession) {
                     fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleMedium
                 )
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, palette.border, RoundedCornerShape(16.dp))
-                            .padding(16.dp)
-                            .clickable(enabled = workerNames.isNotEmpty()) {
-                                workerMenuOpen = true
-                            }
-                    ) {
-                        Text("Worker", color = palette.textSecondary, style = MaterialTheme.typography.labelMedium)
-                        Text(
-                            selectedWorker.ifBlank {
-                                if (session.role == UserRole.FARM_STAFF) "Worker account not linked" else "No workers available"
-                            },
-                            color = palette.textPrimary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Icon(
-                        Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        tint = palette.accent,
-                        modifier = Modifier
-                            .padding(top = 28.dp, end = 12.dp)
-                            .align(Alignment.TopEnd)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, palette.border, RoundedCornerShape(16.dp))
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        selectedWorker.ifBlank {
+                            if (session.role == UserRole.FARM_STAFF) "Worker account not linked" else "No workers available"
+                        },
+                        color = palette.textPrimary,
+                        fontWeight = FontWeight.SemiBold
                     )
-                    DropdownMenu(
-                        expanded = workerMenuOpen,
-                        onDismissRequest = { workerMenuOpen = false }
-                    ) {
-                        workerNames.forEach { name ->
-                            DropdownMenuItem(
-                                text = { Text(name, color = palette.textPrimary) },
-                                colors = MenuDefaults.itemColors(textColor = palette.textPrimary),
-                                onClick = {
-                                    selectedWorker = name
-                                    workerMenuOpen = false
-                                }
-                            )
-                        }
-                    }
                 }
                 Text(
                     text = buildString {
@@ -392,10 +453,7 @@ fun StaffAttendanceScreen(session: AuthSession) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TextButton(
-                        onClick = {
-                            correctionDate = today
-                            showCorrectionDialog = true
-                        },
+                        onClick = { openCorrectionDialog() },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Request Correction", color = palette.accent, fontWeight = FontWeight.SemiBold)
@@ -626,21 +684,51 @@ fun StaffAttendanceScreen(session: AuthSession) {
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    OutlinedTextField(
-                        value = correctionClockIn,
-                        onValueChange = { correctionClockIn = it },
-                        label = { Text("Requested Time In (e.g. 08:00 AM)", color = Color(0xFFB8A99E)) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFFF4EDE6),
-                            unfocusedTextColor = Color(0xFFF4EDE6)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Text("What do you need to correct?", color = Color(0xFFB8A99E), style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(true to "Time In", false to "Time Out").forEach { (isTimeIn, label) ->
+                            val selected = correctingTimeIn == isTimeIn
+                            val tint = if (selected) Color(0xFF84B626) else Color(0xFFB8A99E)
+                            TextButton(
+                                onClick = { selectCorrectionType(isTimeIn) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(if (selected) 2.dp else 1.dp, tint, RoundedCornerShape(12.dp))
+                            ) {
+                                Text(
+                                    if (selected) "✓ $label" else label,
+                                    color = tint,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+
+                    val originalPunch = if (correctionDate == today) {
+                        if (correctingTimeIn) todayAttendance?.clockIn else todayAttendance?.clockOut
+                    } else {
+                        null
+                    }
+                    if (!originalPunch.isNullOrBlank()) {
+                        Text(
+                            "Currently recorded: ${FarmFinance.formatClock24h(originalPunch)}",
+                            color = Color(0xFFB8A99E),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
 
                     OutlinedTextField(
-                        value = correctionClockOut,
-                        onValueChange = { correctionClockOut = it },
-                        label = { Text("Requested Time Out (e.g. 05:00 PM)", color = Color(0xFFB8A99E)) },
+                        value = correctionTime,
+                        onValueChange = { correctionTime = it },
+                        label = {
+                            Text(
+                                if (correctingTimeIn) "Correct Time In (e.g. 08:00 AM)" else "Correct Time Out (e.g. 05:00 PM)",
+                                color = Color(0xFFB8A99E)
+                            )
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFFF4EDE6),
                             unfocusedTextColor = Color(0xFFF4EDE6)
@@ -663,23 +751,8 @@ fun StaffAttendanceScreen(session: AuthSession) {
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        if (selectedWorker.isNotBlank() && correctionReason.isNotBlank()) {
-                            store.addTimesheetCorrection(
-                                workerName = selectedWorker,
-                                date = correctionDate,
-                                requestedClockIn = correctionClockIn,
-                                requestedClockOut = correctionClockOut,
-                                reason = correctionReason,
-                                originalClockIn = todayAttendance?.clockIn ?: "",
-                                originalClockOut = todayAttendance?.clockOut ?: "",
-                                attendanceId = todayAttendance?.attendanceId ?: ""
-                            )
-                            showCorrectionDialog = false
-                            correctionReason = ""
-                        }
-                    },
-                    enabled = selectedWorker.isNotBlank() && correctionReason.isNotBlank()
+                    onClick = { submitCorrection() },
+                    enabled = selectedWorker.isNotBlank() && correctionReason.isNotBlank() && correctionTime.isNotBlank()
                 ) {
                     Text("Submit Request", color = Color(0xFF84B626), fontWeight = FontWeight.Bold)
                 }
@@ -778,7 +851,12 @@ fun StaffAttendanceScreen(session: AuthSession) {
                                 leaveType = leaveType,
                                 startDate = leaveStartDate,
                                 endDate = leaveEndDate,
-                                leaveDays = 1,
+                                leaveDays = runCatching {
+                                    java.time.temporal.ChronoUnit.DAYS.between(
+                                        LocalDate.parse(leaveStartDate.trim()),
+                                        LocalDate.parse(leaveEndDate.trim())
+                                    ).toInt() + 1
+                                }.getOrDefault(1).coerceAtLeast(1),
                                 reason = leaveReason
                             )
                             showLeaveDialog = false
@@ -806,7 +884,11 @@ fun StaffAttendanceScreen(session: AuthSession) {
             },
             containerColor = Color(0xFF2D211A),
             title = {
-                Text("Biometric Face Verification", color = Color(0xFFF4EDE6), fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Biometric Face Verification",
+                    color = Color(0xFFF4EDE6),
+                    fontWeight = FontWeight.SemiBold
+                )
             },
             text = {
                 Column(
@@ -848,6 +930,19 @@ fun StaffAttendanceScreen(session: AuthSession) {
                         text = if (bmp != null) "📸 Retake Face Photo" else "📸 Open Camera & Scan Face",
                         onClick = { openCameraScan() }
                     )
+
+                    val loc = if (isGpsEnabled && hasLocationPermission()) getCurrentLocation() else null
+                    Text(
+                        when {
+                            !hasLocationPermission() -> "⚠️ Location permission not granted -- this submission will be marked unverified."
+                            !isGpsEnabled -> "⚠️ Location (GPS) is off -- this submission will be marked unverified."
+                            loc == null -> "⚠️ No GPS fix yet -- this submission will be marked unverified."
+                            isWithinFarmGeofence(loc.first, loc.second) -> "📍 Location verified: on-site (${loc.third})"
+                            else -> "📍 Location captured but outside the farm geofence (${loc.third})"
+                        },
+                        color = if (loc != null && isWithinFarmGeofence(loc.first, loc.second)) AccentGreenBright else Color(0xFFB8A99E),
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             },
             confirmButton = {
@@ -855,7 +950,11 @@ fun StaffAttendanceScreen(session: AuthSession) {
                     onClick = { submitTimeInWithScan() },
                     enabled = capturedBitmap != null
                 ) {
-                    Text("Confirm Time In", color = Color(0xFF84B626), fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Confirm Time In",
+                        color = Color(0xFF84B626),
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             },
             dismissButton = {

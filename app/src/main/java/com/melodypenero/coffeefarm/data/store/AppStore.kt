@@ -996,8 +996,43 @@ class AppStore(context: Context) {
     private fun mergeAttendanceWithRemote(local: List<AttendanceRecord>, remote: List<AttendanceRecord>): List<AttendanceRecord> {
         val merged = LinkedHashMap<String, AttendanceRecord>()
         remote.forEach { item -> merged[attendanceKey(item)] = item }
-        local.forEach { item -> merged[attendanceKey(item)] = item }
+        local.forEach { item ->
+            val key = attendanceKey(item)
+            val cloud = merged[key]
+            merged[key] = if (cloud == null) item else mergeAttendanceRecord(localRecord = item, cloudRecord = cloud)
+        }
         return merged.values.toList()
+    }
+
+    /**
+     * Cloud copy wins (the website edits attendance: approved Time In/Time Out corrections,
+     * payroll status), except for a punch this device recorded that the cloud doesn't have yet --
+     * e.g. a Time Out tapped moments ago while a stale snapshot is still arriving. Letting the
+     * whole local record win used to revert admin-approved corrections on the next upload.
+     */
+    private fun mergeAttendanceRecord(localRecord: AttendanceRecord, cloudRecord: AttendanceRecord): AttendanceRecord {
+        val local = sanitizeAttendanceRecord(localRecord)
+        val cloud = sanitizeAttendanceRecord(cloudRecord)
+        val localAddedClockOut = cloud.clockOut.isBlank() && local.clockOut.isNotBlank()
+        val clockIn = cloud.clockIn.ifBlank { local.clockIn }
+        val clockOut = cloud.clockOut.ifBlank { local.clockOut }
+        return AttendanceRecord(
+            workerName = cloud.workerName.ifBlank { local.workerName },
+            details = cloud.details.ifBlank { local.details },
+            hoursWorked = FarmFinance.computeHoursFromClock(clockIn, clockOut) ?: cloud.hoursWorked ?: local.hoursWorked,
+            clockIn = clockIn,
+            clockOut = clockOut,
+            date = cloud.date.ifBlank { local.date },
+            attendanceId = cloud.attendanceId,
+            awaitingPayrollLine = if (localAddedClockOut) local.awaitingPayrollLine else cloud.awaitingPayrollLine,
+            submittedByStaff = cloud.submittedByStaff || local.submittedByStaff,
+            timeInLatitude = cloud.timeInLatitude ?: local.timeInLatitude,
+            timeInLongitude = cloud.timeInLongitude ?: local.timeInLongitude,
+            timeInLocationName = cloud.timeInLocationName.ifBlank { local.timeInLocationName },
+            faceSnapshotBase64 = cloud.faceSnapshotBase64.ifBlank { local.faceSnapshotBase64 },
+            isGeofenceVerified = cloud.isGeofenceVerified ?: local.isGeofenceVerified,
+            timestampMillis = cloudRecord.timestampMillis ?: localRecord.timestampMillis
+        )
     }
 
     private fun preferLongerList(local: List<*>, remote: List<*>): Boolean = remote.size > local.size
@@ -1091,11 +1126,23 @@ class AppStore(context: Context) {
     private fun smsMessageKey(m: SmsMessageRecord): String =
         (m.messageId ?: "").trim().ifBlank { listOf(m.senderName, m.recipientPhoneNumber, m.timestamp.toString()).joinToString("\u0001", transform = ::normKeyPart) }
 
+    /** Mirrors the website's timesheetCorrectionKey in mergeFarmState.ts. */
+    private fun timesheetCorrectionKey(r: TimesheetCorrectionRequest): String =
+        (r.correctionId ?: "").trim().ifBlank { listOf(r.workerName, r.date, r.submittedAt, r.field).joinToString("|", transform = ::normKeyPart) }
+
+    /** Mirrors the website's leaveRequestKey in mergeFarmState.ts. */
+    private fun leaveRequestKey(r: LeaveRequestRecord): String =
+        (r.leaveId ?: "").trim().ifBlank { listOf(r.workerName, r.leaveType, r.startDate, r.endDate, r.submittedAt).joinToString("|", transform = ::normKeyPart) }
+
     private fun mergeRemoteStatePreservingLocalGrades(local: AppState, remoteState: AppState): AppState =
         normalizeAppState(remoteState.copy(
             workers = mergeByKey(local.workers, remoteState.workers, ::workerKey),
             attendance = mergeAttendanceWithRemote(local.attendance, remoteState.attendance),
-            tasks = preferLongerListValue(local.tasks, remoteState.tasks),
+            // Without these two, remoteState.copy() kept only the cloud's lists, so a request
+            // submitted on this device was dropped by the very next upload/snapshot merge.
+            timesheetCorrections = mergeByKey(local.timesheetCorrections, remoteState.timesheetCorrections, ::timesheetCorrectionKey),
+            leaveRequests = mergeByKey(local.leaveRequests, remoteState.leaveRequests, ::leaveRequestKey),
+            tasks =preferLongerListValue(local.tasks, remoteState.tasks),
             sections = preferLongerListValue(local.sections, remoteState.sections),
             trees = mergeByKey(local.trees, remoteState.trees, ::treeKey),
             cherryGrades = mergeCherryGradesWithRemote(local.cherryGrades, remoteState.cherryGrades),
