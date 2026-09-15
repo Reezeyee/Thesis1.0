@@ -14,6 +14,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 import com.melodypenero.coffeefarm.data.firebase.FirebaseCollections
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
@@ -79,6 +80,22 @@ data class TimesheetCorrectionRequest(
     val status: String = "Pending",
     val submittedAt: String = "",
     val submittedBy: String = "",
+    /**
+     * Firebase auth uid of the worker who submitted this request; identifies which worker's
+     * private `app_state/{uid}` doc owns this record. Nullable (rather than a "" default, like
+     * [WorkerRecord.authUid]) because Gson bypasses the constructor when deserializing, so JSON
+     * from before this field existed would otherwise leave a fake non-null "" here that looks
+     * indistinguishable from "no owner"; see [CherryGradeRecord] for the same reasoning.
+     */
+    val submittedByAuthUid: String? = null,
+    /** Photo taken at submission time, proving the worker was present when filing this request. */
+    val faceSnapshotBase64: String? = null,
+    /** GPS fix captured at submission time; null if location permission/GPS was unavailable. */
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val locationName: String? = null,
+    /** True only when [latitude]/[longitude] were captured and fell within the farm geofence. */
+    val isGeofenceVerified: Boolean? = null,
     val reviewedAt: String = "",
     val reviewedBy: String = "",
     val managerRemarks: String = "",
@@ -96,6 +113,8 @@ data class LeaveRequestRecord(
     val status: String = "Pending",
     val submittedAt: String = "",
     val submittedBy: String = "",
+    /** Firebase auth uid of the worker who submitted this request; see [TimesheetCorrectionRequest.submittedByAuthUid]. */
+    val submittedByAuthUid: String? = null,
     val reviewedAt: String = "",
     val reviewedBy: String = "",
     val managerRemarks: String = ""
@@ -184,6 +203,8 @@ data class TreeRipenessScanRecord(
     val ripenessLabel: String,
     val timestampMillis: Long,
     val sourceGrade: String? = null,
+    /** Worker account that saved this scan; see [TimesheetCorrectionRequest.submittedByAuthUid]. */
+    val scannedByAuthUid: String? = null,
 )
 data class HarvestScheduleRecord(
     @SerializedName(value = "sectionName", alternate = ["farmBlockName"])
@@ -197,6 +218,8 @@ data class HarvestReadinessReportRecord(
     val zone: String = "",
     val expectedWeight: String = "",
     val reportedBy: String = "",
+    /** Firebase auth uid of the worker who submitted this report; see [TimesheetCorrectionRequest.submittedByAuthUid]. */
+    val reportedByAuthUid: String = "",
     val reportedAt: String = "",
     val status: String = "Pending Review",
     val notes: String = "",
@@ -251,6 +274,19 @@ data class CherryGradeRecord(
     val scannedByWorkerName: String? = null,
     val scannedByEmail: String? = null,
     val scannedByAuthUid: String? = null,
+    /**
+     * Per-cherry CNN detection counts for this scan (see [com.melodypenero.coffeefarm.ml.RoboflowApiClient.TARGET_CLASSES]).
+     * [grade] is only a single coarse branch-level recommendation ("Optimal Harvest Ready" /
+     * "Selective Picking Recommended" / "Wait / Unripe") derived from [ripeCount] -- it can never
+     * say "overripe", so the website's per-cherry ripe/unripe/overripe dashboard cards need these
+     * counts directly instead of inferring them from [grade]. Null for scans saved before this
+     * field existed.
+     */
+    val unripeCount: Int? = null,
+    val ripeningCount: Int? = null,
+    val ripeCount: Int? = null,
+    val overripeCount: Int? = null,
+    val dryDamagedCount: Int? = null,
 )
 
 data class EquipmentRecord(
@@ -276,6 +312,8 @@ data class EquipmentConditionReport(
     val notes: String = "",
     val reportedAt: String = "",
     val reportedBy: String? = null,
+    /** Firebase auth uid of the worker who submitted this report; see [TimesheetCorrectionRequest.submittedByAuthUid]. */
+    val reportedByAuthUid: String? = null,
     val reviewed: Boolean = false,
     val isFixedReport: Boolean = false,
     val fixedAt: String? = null,
@@ -375,6 +413,8 @@ data class PestControlRecord(
     val photoUrl: String = "",
     val photoBase64: String = "",
     val reportedBy: String = "",
+    /** Firebase auth uid of the worker who submitted this log; see [TimesheetCorrectionRequest.submittedByAuthUid]. */
+    val reportedByAuthUid: String? = null,
     val time: String = "",
     val notes: String = "",
     val timestampMillis: Long = 0L,
@@ -432,8 +472,14 @@ class AppStore(context: Context) {
     /** How long a recorded local edit is still trusted over an incoming server snapshot; see [shouldUploadLocalInsteadOfApplyingRemote]. */
     private val recentEditWindowMs = 2 * 60 * 1000L
     private var lastHardResetSeenKey = "last_hard_reset_seen_ms"
+    /** Same purpose as [lastHardResetSeenKey] but for this user's private doc (`app_state/{uid}`) --
+     * kept separate so a hardReset stamp on one doc can't be mistaken for "already seen" on the
+     * other when both are wiped in the same admin run. See the private listener below. */
+    private var lastPrivateHardResetSeenKey = "last_private_hard_reset_seen_ms"
     private var firestoreClient: FirebaseFirestore? = null
     private var cloudListener: ListenerRegistration? = null
+    /** Listens to this user's own private doc (`app_state/{uid}`); see [projectPrivateFields]. */
+    private var privateCloudListener: ListenerRegistration? = null
     private var networkSyncRegistered = false
     private var lastAutoSyncElapsedMs = 0L
     private var applyingCloudState = false
@@ -464,11 +510,14 @@ class AppStore(context: Context) {
         if (userId == activeUserId) return
         cloudListener?.remove()
         cloudListener = null
+        privateCloudListener?.remove()
+        privateCloudListener = null
         boundCloudUserId = null
         activeUserId = userId
         val keyForEdit = if (userId == null) "user_last_edit_wall_ms" else "user_last_edit_${userId}_wall_ms"
         userLastEditKey = keyForEdit
         lastHardResetSeenKey = if (userId == null) "last_hard_reset_seen_ms" else "last_hard_reset_seen_${userId}_ms"
+        lastPrivateHardResetSeenKey = if (userId == null) "last_private_hard_reset_seen_ms" else "last_private_hard_reset_seen_${userId}_ms"
         initializationAttempted = false
         if (userId == null) {
             appState.value = AppState()
@@ -557,6 +606,7 @@ class AppStore(context: Context) {
                     ripenessLabel = r.ripenessLabel,
                     timestampMillis = r.timestampMillis,
                     sourceGrade = r.sourceGrade,
+                    scannedByAuthUid = r.scannedByAuthUid,
                 )
             }
         )
@@ -630,6 +680,7 @@ class AppStore(context: Context) {
                 zone = (r.zone ?: "").trim(),
                 expectedWeight = (r.expectedWeight ?: "").trim(),
                 reportedBy = (r.reportedBy ?: "").trim(),
+                reportedByAuthUid = (r.reportedByAuthUid ?: "").trim(),
                 reportedAt = (r.reportedAt ?: "").trim(),
                 status = (r.status ?: "Pending Review").trim().ifBlank { "Pending Review" },
                 notes = (r.notes ?: "").trim(),
@@ -880,6 +931,7 @@ class AppStore(context: Context) {
                 ripenessLabel = r.ripenessLabel,
                 timestampMillis = r.timestampMillis,
                 sourceGrade = r.sourceGrade,
+                scannedByAuthUid = r.scannedByAuthUid,
             )
         }
         val extras = local.filter { key(it) !in remoteKeys }
@@ -917,6 +969,20 @@ class AppStore(context: Context) {
         return merged.values.toList()
     }
 
+    /**
+     * Unlike [mergeByKey] (remote wins on a matching key), local wins here: a worker's own device
+     * is the sole writer of its `attendanceId` rows (see the private-doc comment above), so when the
+     * cloud snapshot listener fires with a copy that still predates this device's latest Time In/Time
+     * Out edit -- routine right after that edit, before Firestore's serverTimestamp catches up --
+     * the freshly-edited local row must not be clobbered back to its pre-edit state.
+     */
+    private fun mergeAttendanceWithRemote(local: List<AttendanceRecord>, remote: List<AttendanceRecord>): List<AttendanceRecord> {
+        val merged = LinkedHashMap<String, AttendanceRecord>()
+        remote.forEach { item -> merged[attendanceKey(item)] = item }
+        local.forEach { item -> merged[attendanceKey(item)] = item }
+        return merged.values.toList()
+    }
+
     private fun preferLongerList(local: List<*>, remote: List<*>): Boolean = remote.size > local.size
 
     /**
@@ -925,7 +991,14 @@ class AppStore(context: Context) {
      * spacing or casing (common with old records saved before a stable id existed) still land on the
      * same key instead of silently duplicating forever.
      */
-    private fun normKeyPart(s: String): String = s.trim().lowercase().replace(Regex("\\s+"), " ")
+    // Accepts a nullable String even though every caller's declared field type is non-null --
+    // Gson bypasses the Kotlin constructor (and its "" defaults) when deserializing, so a record
+    // synced from a source (e.g. the admin website) that never set a given field arrives here as
+    // a real null despite the type saying otherwise. This crashed in production exactly this way
+    // via ExpenseRecord.expenseId ("Parameter specified as non-null is null: method
+    // kotlin.text.StringsKt__StringsKt.trim") once the website started writing expense records
+    // without that field.
+    private fun normKeyPart(s: String?): String = (s ?: "").trim().lowercase().replace(Regex("\\s+"), " ")
 
     /**
      * Unions local and remote by key, keeping remote's copy on a collision. Built as a key->item map
@@ -948,7 +1021,7 @@ class AppStore(context: Context) {
         if (preferLongerList(local, remote)) remote else local
 
     private fun workerKey(w: WorkerRecord): String =
-        w.workerId.trim().ifBlank { listOf(w.name, w.roleRate, w.phoneNumber).joinToString("\u0001", transform = ::normKeyPart) }
+        (w.workerId ?: "").trim().ifBlank { listOf(w.name ?: "", w.roleRate ?: "", w.phoneNumber ?: "").joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun attendanceKey(a: AttendanceRecord): String =
         (a.attendanceId ?: "").trim().ifBlank {
@@ -956,24 +1029,24 @@ class AppStore(context: Context) {
         }
 
     private fun treeKey(t: TreeRecord): String =
-        t.treeId.trim().ifBlank { listOf(t.sectionName, t.details, t.stage).joinToString("\u0001", transform = ::normKeyPart) }
+        (t.treeId ?: "").trim().ifBlank { listOf(t.sectionName, t.details, t.stage).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun harvestKey(h: CherryHarvestRecord): String =
-        h.harvestId.trim().ifBlank { listOf(h.batchId, h.date ?: "", h.weightText, h.details).joinToString("\u0001", transform = ::normKeyPart) }
+        (h.harvestId ?: "").trim().ifBlank { listOf(h.batchId, h.date ?: "", h.weightText, h.details).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun harvestReadinessReportKey(r: HarvestReadinessReportRecord): String =
-        r.reportId.trim().ifBlank { listOf(r.zone, r.expectedWeight, r.reportedBy, r.reportedAt).joinToString("\u0001", transform = ::normKeyPart) }
+        (r.reportId ?: "").trim().ifBlank { listOf(r.zone, r.expectedWeight, r.reportedBy, r.reportedAt).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun batchKey(b: BatchRecord): String =
-        b.batchId.trim().ifBlank { listOf(b.label, b.status, b.treeId.orEmpty()).joinToString("\u0001", transform = ::normKeyPart) }
+        (b.batchId ?: "").trim().ifBlank { listOf(b.label, b.status, b.treeId.orEmpty()).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun equipmentKey(e: EquipmentRecord): String = normKeyPart(e.name)
 
     private fun saleKey(s: SaleRecord): String =
-        s.saleId.trim().ifBlank { listOf(s.buyer, s.date, s.type, s.total.toString(), s.details).joinToString("\u0001", transform = ::normKeyPart) }
+        (s.saleId ?: "").trim().ifBlank { listOf(s.buyer, s.date, s.type, s.total.toString(), s.details).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun expenseKey(e: ExpenseRecord): String =
-        e.expenseId.trim().ifBlank { listOf(e.category, e.description, e.amount.toString(), e.date.orEmpty()).joinToString("\u0001", transform = ::normKeyPart) }
+        (e.expenseId ?: "").trim().ifBlank { listOf(e.category, e.description, e.amount.toString(), e.date.orEmpty()).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun payrollKey(p: PayrollRecord): String =
         (p.linkedAttendanceId ?: "").trim().ifBlank {
@@ -981,30 +1054,30 @@ class AppStore(context: Context) {
         }
 
     private fun coffeeFieldKey(f: CoffeeFieldRecord): String =
-        f.fieldId.trim().ifBlank { listOf(f.name, f.area, f.variety).joinToString("\u0001", transform = ::normKeyPart) }
+        (f.fieldId ?: "").trim().ifBlank { listOf(f.name, f.area, f.variety).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun irrigationKey(i: IrrigationSystemRecord): String =
-        i.irrigationId.trim().ifBlank { listOf(i.zone, i.type, i.coverage).joinToString("\u0001", transform = ::normKeyPart) }
+        (i.irrigationId ?: "").trim().ifBlank { listOf(i.zone, i.type, i.coverage).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun irrigationDamageReportKey(r: IrrigationDamageReportRecord): String =
-        r.reportId.trim().ifBlank { listOf(r.irrigationId, r.zone, r.sprinklerLabel, r.reportedAt, r.reportedBy).joinToString("\u0001", transform = ::normKeyPart) }
+        (r.reportId ?: "").trim().ifBlank { listOf(r.irrigationId, r.zone, r.sprinklerLabel, r.reportedAt, r.reportedBy).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun pestControlKey(p: PestControlRecord): String =
-        p.pestControlId.trim().ifBlank { listOf(p.date, p.field, p.issue, p.treatment).joinToString("\u0001", transform = ::normKeyPart) }
+        (p.pestControlId ?: "").trim().ifBlank { listOf(p.date, p.field, p.issue, p.treatment).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun consumableSupplyKey(s: ConsumableSupplyRecord): String =
-        s.supplyId.trim().ifBlank { listOf(s.name, s.category, s.unit).joinToString("\u0001", transform = ::normKeyPart) }
+        (s.supplyId ?: "").trim().ifBlank { listOf(s.name, s.category, s.unit).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun consumableReportKey(r: ConsumableSupplyReportRecord): String =
-        r.reportId.trim().ifBlank { listOf(r.supplyId, r.supplyName, r.reportedAt, r.reportedBy).joinToString("\u0001", transform = ::normKeyPart) }
+        (r.reportId ?: "").trim().ifBlank { listOf(r.supplyId, r.supplyName, r.reportedAt, r.reportedBy).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun smsMessageKey(m: SmsMessageRecord): String =
-        m.messageId.trim().ifBlank { listOf(m.senderName, m.recipientPhoneNumber, m.timestamp.toString()).joinToString("\u0001", transform = ::normKeyPart) }
+        (m.messageId ?: "").trim().ifBlank { listOf(m.senderName, m.recipientPhoneNumber, m.timestamp.toString()).joinToString("\u0001", transform = ::normKeyPart) }
 
     private fun mergeRemoteStatePreservingLocalGrades(local: AppState, remoteState: AppState): AppState =
         normalizeAppState(remoteState.copy(
             workers = mergeByKey(local.workers, remoteState.workers, ::workerKey),
-            attendance = mergeByKey(local.attendance, remoteState.attendance, ::attendanceKey),
+            attendance = mergeAttendanceWithRemote(local.attendance, remoteState.attendance),
             tasks = preferLongerListValue(local.tasks, remoteState.tasks),
             sections = preferLongerListValue(local.sections, remoteState.sections),
             trees = mergeByKey(local.trees, remoteState.trees, ::treeKey),
@@ -1038,7 +1111,7 @@ class AppStore(context: Context) {
 
     /** Count of all list rows; used to avoid clobbering local data with an empty or stale cloud snapshot. */
     private fun AppState.totalItemCount(): Int =
-        workers.size + attendance.size + tasks.size + sections.size + trees.size +
+        workers.size + attendance.size + timesheetCorrections.size + leaveRequests.size + tasks.size + sections.size + trees.size +
             harvestSchedules.size + harvestReadinessReports.size + flowering.size + cherryHarvests.size + batches.size + cherryGrades.size +
             treeRipenessScans.size +
             equipment.size + usageLogs.size + maintenanceLogs.size + equipmentReports.size + sales.size + expenses.size + payroll.size +
@@ -1046,6 +1119,86 @@ class AppStore(context: Context) {
             consumableReports.size + smsMessages.size
 
     private fun isEffectivelyEmpty(state: AppState): Boolean = state.totalItemCount() == 0
+
+    /**
+     * Every non-private (farm structure) field of [AppState], written to `app_state/farm` and
+     * readable by every signed-in user. See [projectPrivateFields] for the complement.
+     */
+    private fun projectSharedFields(state: AppState): AppState = AppState(
+        workers = state.workers,
+        tasks = state.tasks,
+        sections = state.sections,
+        trees = state.trees,
+        harvestSchedules = state.harvestSchedules,
+        flowering = state.flowering,
+        cherryHarvests = state.cherryHarvests,
+        batches = state.batches,
+        equipment = state.equipment,
+        usageLogs = state.usageLogs,
+        maintenanceLogs = state.maintenanceLogs,
+        sales = state.sales,
+        expenses = state.expenses,
+        payroll = state.payroll,
+        coffeeFields = state.coffeeFields,
+        irrigationSystems = state.irrigationSystems,
+        consumableSupplies = state.consumableSupplies,
+        smsMessages = state.smsMessages
+    )
+
+    /**
+     * Every private, worker-submitted field of [AppState] (attendance, leave requests, field
+     * reports, ...), written to that worker's own `app_state/{uid}` doc -- never the shared farm
+     * doc -- so one worker's submissions are never readable by another worker (see
+     * firestore.rules). See [projectSharedFields] for the complement.
+     */
+    private fun projectPrivateFields(state: AppState): AppState = AppState(
+        attendance = state.attendance,
+        timesheetCorrections = state.timesheetCorrections,
+        leaveRequests = state.leaveRequests,
+        treeRipenessScans = state.treeRipenessScans,
+        cherryGrades = state.cherryGrades,
+        harvestReadinessReports = state.harvestReadinessReports,
+        irrigationDamageReports = state.irrigationDamageReports,
+        equipmentReports = state.equipmentReports,
+        pestControlLogs = state.pestControlLogs,
+        consumableReports = state.consumableReports
+    )
+
+    /** Replaces every shared field of [base] with [sharedPart]'s, keeping [base]'s private fields. */
+    private fun mergeSharedInto(base: AppState, sharedPart: AppState): AppState = base.copy(
+        workers = sharedPart.workers,
+        tasks = sharedPart.tasks,
+        sections = sharedPart.sections,
+        trees = sharedPart.trees,
+        harvestSchedules = sharedPart.harvestSchedules,
+        flowering = sharedPart.flowering,
+        cherryHarvests = sharedPart.cherryHarvests,
+        batches = sharedPart.batches,
+        equipment = sharedPart.equipment,
+        usageLogs = sharedPart.usageLogs,
+        maintenanceLogs = sharedPart.maintenanceLogs,
+        sales = sharedPart.sales,
+        expenses = sharedPart.expenses,
+        payroll = sharedPart.payroll,
+        coffeeFields = sharedPart.coffeeFields,
+        irrigationSystems = sharedPart.irrigationSystems,
+        consumableSupplies = sharedPart.consumableSupplies,
+        smsMessages = sharedPart.smsMessages
+    )
+
+    /** Replaces every private field of [base] with [privatePart]'s, keeping [base]'s shared fields. */
+    private fun mergePrivateInto(base: AppState, privatePart: AppState): AppState = base.copy(
+        attendance = privatePart.attendance,
+        timesheetCorrections = privatePart.timesheetCorrections,
+        leaveRequests = privatePart.leaveRequests,
+        treeRipenessScans = privatePart.treeRipenessScans,
+        cherryGrades = privatePart.cherryGrades,
+        harvestReadinessReports = privatePart.harvestReadinessReports,
+        irrigationDamageReports = privatePart.irrigationDamageReports,
+        equipmentReports = privatePart.equipmentReports,
+        pestControlLogs = privatePart.pestControlLogs,
+        consumableReports = privatePart.consumableReports
+    )
 
     /**
      * If cloud has no rows but this device has data, the snapshot is wrong or never synced.
@@ -1196,7 +1349,12 @@ class AppStore(context: Context) {
         reason: String,
         originalClockIn: String = "",
         originalClockOut: String = "",
-        attendanceId: String = ""
+        attendanceId: String = "",
+        faceSnapshotBase64: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        locationName: String? = null,
+        isGeofenceVerified: Boolean? = null
     ) {
         val cid = "TC-${System.currentTimeMillis().toString().takeLast(7)}"
         val now = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("M/d/yyyy, h:mm:ss a"))
@@ -1214,6 +1372,12 @@ class AppStore(context: Context) {
             status = "Pending",
             submittedAt = now,
             submittedBy = workerName.trim(),
+            submittedByAuthUid = activeUserId,
+            faceSnapshotBase64 = faceSnapshotBase64,
+            latitude = latitude,
+            longitude = longitude,
+            locationName = locationName,
+            isGeofenceVerified = isGeofenceVerified,
             auditTrail = listOf(
                 TimesheetAuditEntry(
                     actorName = workerName.trim(),
@@ -1250,7 +1414,8 @@ class AppStore(context: Context) {
             reason = reason.trim(),
             status = "Pending",
             submittedAt = now,
-            submittedBy = workerName.trim()
+            submittedBy = workerName.trim(),
+            submittedByAuthUid = activeUserId
         )
         persist(
             state.copy(
@@ -1444,6 +1609,7 @@ class AppStore(context: Context) {
                 photoUrl = photoUrl,
                 photoBase64 = photoBase64,
                 reportedBy = reportedBy,
+                reportedByAuthUid = activeUserId,
                 time = time,
                 notes = notes,
                 timestampMillis = timestampMillis
@@ -1506,6 +1672,7 @@ class AppStore(context: Context) {
                 zone = zone.trim(),
                 expectedWeight = expectedWeight.trim(),
                 reportedBy = reportedBy.trim(),
+                reportedByAuthUid = activeUserId.orEmpty(),
                 reportedAt = reportedAt.trim(),
                 status = "Pending Review",
                 notes = notes.trim()
@@ -1628,6 +1795,7 @@ class AppStore(context: Context) {
         scannedByWorkerName: String? = null,
         scannedByEmail: String? = null,
         scannedByAuthUid: String? = null,
+        classCounts: Map<String, Int>? = null,
     ): Boolean {
         val tid = treeId?.trim()?.takeIf { it.isNotEmpty() }
         if (tid != null && !isTreeFruitingForCherryWork(tid)) return false
@@ -1647,6 +1815,11 @@ class AppStore(context: Context) {
                     scannedByWorkerName = scannedByWorkerName?.trim()?.ifBlank { null },
                     scannedByEmail = scannedByEmail?.trim()?.ifBlank { null },
                     scannedByAuthUid = scannedByAuthUid?.trim()?.ifBlank { null },
+                    unripeCount = classCounts?.get("Unripe"),
+                    ripeningCount = classCounts?.get("Ripening"),
+                    ripeCount = classCounts?.get("Ripe"),
+                    overripeCount = classCounts?.get("Overripe"),
+                    dryDamagedCount = classCounts?.get("Dry_Damaged"),
                 )
             )
         )
@@ -1669,6 +1842,7 @@ class AppStore(context: Context) {
         scannedByWorkerName: String? = null,
         scannedByEmail: String? = null,
         scannedByAuthUid: String? = null,
+        classCounts: Map<String, Int>? = null,
     ): Boolean {
         val tid = scan.treeId.trim().takeIf { it.isNotEmpty() && it != "branch_scan" }
         val matchingTree = tid?.let { id -> state.trees.find { it.treeId == id } }
@@ -1696,6 +1870,11 @@ class AppStore(context: Context) {
                     scannedByWorkerName = scannedByWorkerName?.trim()?.ifBlank { null },
                     scannedByEmail = scannedByEmail?.trim()?.ifBlank { null },
                     scannedByAuthUid = scannedByAuthUid?.trim()?.ifBlank { null },
+                    unripeCount = classCounts?.get("Unripe"),
+                    ripeningCount = classCounts?.get("Ripening"),
+                    ripeCount = classCounts?.get("Ripe"),
+                    overripeCount = classCounts?.get("Overripe"),
+                    dryDamagedCount = classCounts?.get("Dry_Damaged"),
                 )
             )
         )
@@ -1748,6 +1927,7 @@ class AppStore(context: Context) {
                     notes = details.trim(),
                     reportedAt = log.date.orEmpty().ifBlank { java.time.LocalDate.now().toString() },
                     reportedBy = reporter,
+                    reportedByAuthUid = activeUserId,
                     reviewed = false
                 )
             } else {
@@ -1780,6 +1960,7 @@ class AppStore(context: Context) {
             notes = details.trim(),
             reportedAt = today,
             reportedBy = reporter,
+            reportedByAuthUid = activeUserId,
             reviewed = false,
             isFixedReport = isFixedReport,
             fixedAt = if (isFixedReport) today else null,
@@ -2390,7 +2571,7 @@ class AppStore(context: Context) {
             cloudSyncStatusState.value = CloudSyncStatus.LOCAL_ONLY
             return
         }
-        if (boundCloudUserId == uid && cloudListener != null) return
+        if (boundCloudUserId == uid && cloudListener != null && privateCloudListener != null) return
         val db = getFirestore() ?: run {
             cloudSyncStatusState.value = CloudSyncStatus.ERROR
             return
@@ -2399,10 +2580,13 @@ class AppStore(context: Context) {
         // Offline persistence is enabled by default on Android; writes queue locally and sync when online.
         registerAutoSyncWhenOnline()
         cloudListener?.remove()
+        privateCloudListener?.remove()
         boundCloudUserId = uid
         val farmId = FirebaseCollections.SHARED_FARM_DOCUMENT_ID
         val docRef = db.collection(FirebaseCollections.APP_STATE).document(farmId)
+        val privateRef = db.collection(FirebaseCollections.APP_STATE).document(uid)
 
+        // Shared farm structure: `app_state/farm`, same doc for every signed-in user.
         cloudListener = docRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 cloudSyncStatusState.value = CloudSyncStatus.ERROR
@@ -2412,9 +2596,10 @@ class AppStore(context: Context) {
             val s = snapshot ?: return@addSnapshotListener
             val serverUpdatedAt = s.getLong("updatedAt") ?: 0L
             val remoteJson = s.getString("stateJson") ?: return@addSnapshotListener
-            val currentJson = gson.toJson(state)
-            if (remoteJson == currentJson) return@addSnapshotListener
+            val localShared = projectSharedFields(state)
+            if (remoteJson == gson.toJson(localShared)) return@addSnapshotListener
             val remoteState = runCatching { gson.fromJson(remoteJson, AppState::class.java) }.getOrNull() ?: return@addSnapshotListener
+            val remoteShared = projectSharedFields(remoteState)
             val serverHardReset = s.getLong("hardReset") ?: 0L
             if (serverHardReset > prefs.getLong(lastHardResetSeenKey, 0L)) {
                 // backend/wipe_farm_data.py or restore_farm_data_backup.py just wrote directly to
@@ -2423,16 +2608,16 @@ class AppStore(context: Context) {
                 // device's stale cached data over the wipe -- so trust the remote snapshot as-is instead.
                 prefs.edit().putLong(lastHardResetSeenKey, serverHardReset).apply()
                 applyingCloudState = true
-                persist(remoteState, pushToCloud = false)
+                persist(mergeSharedInto(state, normalizeAppState(remoteShared)), pushToCloud = false)
                 applyingCloudState = false
                 return@addSnapshotListener
             }
-            if (shouldUploadLocalInsteadOfApplyingRemote(state, remoteState,    serverUpdatedAt)) {
+            if (shouldUploadLocalInsteadOfApplyingRemote(localShared, remoteShared, serverUpdatedAt)) {
                 if (!applyingCloudState) syncFullStateToCloud(state)
                 return@addSnapshotListener
             }
             applyingCloudState = true
-            persist(mergeRemoteStatePreservingLocalGrades(state, remoteState), pushToCloud = false)
+            persist(mergeSharedInto(state, mergeRemoteStatePreservingLocalGrades(localShared, remoteShared)), pushToCloud = false)
             applyingCloudState = false
         }
 
@@ -2444,18 +2629,20 @@ class AppStore(context: Context) {
                 syncFullStateToCloud(state)
             } else {
                 val remoteState = runCatching { gson.fromJson(remoteJson, AppState::class.java) }.getOrNull()
-                if (remoteState != null && remoteJson != gson.toJson(state)) {
+                val localShared = projectSharedFields(state)
+                if (remoteState != null && remoteJson != gson.toJson(localShared)) {
+                    val remoteShared = projectSharedFields(remoteState)
                     val serverHardReset = snapshot.getLong("hardReset") ?: 0L
                     if (serverHardReset > prefs.getLong(lastHardResetSeenKey, 0L)) {
                         prefs.edit().putLong(lastHardResetSeenKey, serverHardReset).apply()
                         applyingCloudState = true
-                        persist(remoteState, pushToCloud = false)
+                        persist(mergeSharedInto(state, normalizeAppState(remoteShared)), pushToCloud = false)
                         applyingCloudState = false
-                    } else if (shouldUploadLocalInsteadOfApplyingRemote(state, remoteState, serverUpdatedAt)) {
+                    } else if (shouldUploadLocalInsteadOfApplyingRemote(localShared, remoteShared, serverUpdatedAt)) {
                         if (!applyingCloudState) syncFullStateToCloud(state)
                     } else {
                         applyingCloudState = true
-                        persist(mergeRemoteStatePreservingLocalGrades(state, remoteState), pushToCloud = false)
+                        persist(mergeSharedInto(state, mergeRemoteStatePreservingLocalGrades(localShared, remoteShared)), pushToCloud = false)
                         applyingCloudState = false
                     }
                 }
@@ -2463,12 +2650,77 @@ class AppStore(context: Context) {
         }.addOnFailureListener {
             cloudSyncStatusState.value = CloudSyncStatus.ERROR
         }
+
+        // This worker's own private, worker-submitted records: `app_state/{uid}`. No other
+        // worker's uid is ever read here -- only the website (signed in as the admin account)
+        // reads every worker's private doc, per firestore.rules.
+        privateCloudListener = privateRef.addSnapshotListener { snapshot, error ->
+            if (error != null) return@addSnapshotListener
+            val s = snapshot ?: return@addSnapshotListener
+            val serverUpdatedAt = s.getLong("updatedAt") ?: 0L
+            val remoteJson = s.getString("stateJson") ?: return@addSnapshotListener
+            val localPrivate = projectPrivateFields(state)
+            if (remoteJson == gson.toJson(localPrivate)) return@addSnapshotListener
+            val remoteState = runCatching { gson.fromJson(remoteJson, AppState::class.java) }.getOrNull() ?: return@addSnapshotListener
+            val remotePrivate = projectPrivateFields(remoteState)
+            val serverHardReset = s.getLong("hardReset") ?: 0L
+            if (serverHardReset > prefs.getLong(lastPrivateHardResetSeenKey, 0L)) {
+                // An admin wipe/restore just rewrote this doc directly (see wipe_farm_data.py) --
+                // trust it as-is instead of merging, so a device that still has this worker's old
+                // attendance/scans/etc. cached from before the wipe doesn't get
+                // shouldUploadLocalInsteadOfApplyingRemote's "cloud has no rows, keep mine" guard
+                // triggering and silently re-uploading them, undoing the wipe. Mirrors the shared
+                // farm doc's hardReset handling above.
+                prefs.edit().putLong(lastPrivateHardResetSeenKey, serverHardReset).apply()
+                applyingCloudState = true
+                persist(mergePrivateInto(state, normalizeAppState(remotePrivate)), pushToCloud = false)
+                applyingCloudState = false
+                return@addSnapshotListener
+            }
+            if (shouldUploadLocalInsteadOfApplyingRemote(localPrivate, remotePrivate, serverUpdatedAt)) {
+                if (!applyingCloudState) syncFullStateToCloud(state)
+                return@addSnapshotListener
+            }
+            applyingCloudState = true
+            persist(mergePrivateInto(state, mergeRemoteStatePreservingLocalGrades(localPrivate, remotePrivate)), pushToCloud = false)
+            applyingCloudState = false
+        }
+
+        privateRef.get().addOnSuccessListener { snapshot ->
+            val serverUpdatedAt = snapshot.getLong("updatedAt") ?: 0L
+            val remoteJson = snapshot.getString("stateJson")
+            if (remoteJson.isNullOrBlank()) {
+                syncFullStateToCloud(state)
+            } else {
+                val remoteState = runCatching { gson.fromJson(remoteJson, AppState::class.java) }.getOrNull()
+                val localPrivate = projectPrivateFields(state)
+                if (remoteState != null && remoteJson != gson.toJson(localPrivate)) {
+                    val remotePrivate = projectPrivateFields(remoteState)
+                    val serverHardReset = snapshot.getLong("hardReset") ?: 0L
+                    if (serverHardReset > prefs.getLong(lastPrivateHardResetSeenKey, 0L)) {
+                        prefs.edit().putLong(lastPrivateHardResetSeenKey, serverHardReset).apply()
+                        applyingCloudState = true
+                        persist(mergePrivateInto(state, normalizeAppState(remotePrivate)), pushToCloud = false)
+                        applyingCloudState = false
+                    } else if (shouldUploadLocalInsteadOfApplyingRemote(localPrivate, remotePrivate, serverUpdatedAt)) {
+                        if (!applyingCloudState) syncFullStateToCloud(state)
+                    } else {
+                        applyingCloudState = true
+                        persist(mergePrivateInto(state, mergeRemoteStatePreservingLocalGrades(localPrivate, remotePrivate)), pushToCloud = false)
+                        applyingCloudState = false
+                    }
+                }
+            }
+        }
     }
 
     /**
-     * Writes the full [AppState] snapshot to Firestore (`app_state/farm`). Called after every
-     * domain change so admin and worker accounts stay aligned. Retries [connectFirebaseIfAvailable]
-     * when the client was not connected yet (e.g. first save after cold start).
+     * Writes the full [AppState] snapshot to Firestore: the shared portion to `app_state/farm`
+     * (readable by every signed-in user) and the private, worker-submitted portion to this
+     * user's own `app_state/{uid}` doc (see [projectSharedFields] / [projectPrivateFields]).
+     * Called after every domain change so admin and worker accounts stay aligned. Retries
+     * [connectFirebaseIfAvailable] when the client was not connected yet (e.g. first save after
+     * cold start).
      */
     private fun syncFullStateToCloud(next: AppState) {
         if (FirebaseApp.getApps(appContext).isEmpty()) {
@@ -2491,32 +2743,79 @@ class AppStore(context: Context) {
         cloudSyncStatusState.value = CloudSyncStatus.SYNCING
         val farmId = FirebaseCollections.SHARED_FARM_DOCUMENT_ID
         val mainRef = db.collection(FirebaseCollections.APP_STATE).document(farmId)
+        val privateRef = db.collection(FirebaseCollections.APP_STATE).document(uid)
+        val sharedNext = projectSharedFields(next)
+        val privateNext = projectPrivateFields(next)
+
         mainRef.get()
             .addOnSuccessListener { snapshot ->
                 val remoteJson = snapshot.getString("stateJson")
                 val remoteState = remoteJson
                     ?.takeIf { it.isNotBlank() }
                     ?.let { runCatching { gson.fromJson(it, AppState::class.java) }.getOrNull() }
-                val merged = if (remoteState == null) normalizeAppState(next) else mergeStateForCloudUpload(next, remoteState)
-                commitStateSnapshotToCloud(db, merged)
+                val remoteHardReset = snapshot.getLong("hardReset") ?: 0L
+                if (remoteState != null && remoteHardReset > prefs.getLong(lastHardResetSeenKey, 0L)) {
+                    // A wipe/restore just rewrote app_state/farm directly (see wipe_farm_data.py)
+                    // -- mergeStateForCloudUpload's "cloud has no rows, keep mine" rule has no
+                    // concept of a deliberate wipe, so blindly merging-and-pushing `sharedNext`
+                    // here (this device's possibly-stale full state) would silently undo it the
+                    // moment this device makes any edit or reconnects. Trust the wipe instead.
+                    prefs.edit().putLong(lastHardResetSeenKey, remoteHardReset).apply()
+                    val remoteShared = normalizeAppState(projectSharedFields(remoteState))
+                    applyingCloudState = true
+                    persist(mergeSharedInto(state, remoteShared), pushToCloud = false)
+                    applyingCloudState = false
+                    commitSharedSnapshotToCloud(db, remoteShared)
+                } else {
+                    val merged = if (remoteState == null) normalizeAppState(sharedNext) else mergeStateForCloudUpload(sharedNext, projectSharedFields(remoteState))
+                    commitSharedSnapshotToCloud(db, merged)
+                }
             }
             .addOnFailureListener {
                 // Firestore may be offline; still enqueue the local snapshot so it syncs when connectivity returns.
-                commitStateSnapshotToCloud(db, normalizeAppState(next))
+                commitSharedSnapshotToCloud(db, normalizeAppState(sharedNext))
+            }
+
+        privateRef.get()
+            .addOnSuccessListener { snapshot ->
+                val remoteJson = snapshot.getString("stateJson")
+                val remoteState = remoteJson
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { runCatching { gson.fromJson(it, AppState::class.java) }.getOrNull() }
+                val remoteHardReset = snapshot.getLong("hardReset") ?: 0L
+                if (remoteState != null && remoteHardReset > prefs.getLong(lastPrivateHardResetSeenKey, 0L)) {
+                    // Same reasoning as the shared-doc branch above, for this worker's private doc.
+                    prefs.edit().putLong(lastPrivateHardResetSeenKey, remoteHardReset).apply()
+                    val remotePrivate = normalizeAppState(projectPrivateFields(remoteState))
+                    applyingCloudState = true
+                    persist(mergePrivateInto(state, remotePrivate), pushToCloud = false)
+                    applyingCloudState = false
+                    commitPrivateSnapshotToCloud(db, uid, remotePrivate)
+                } else {
+                    val merged = if (remoteState == null) normalizeAppState(privateNext) else mergeStateForCloudUpload(privateNext, projectPrivateFields(remoteState))
+                    commitPrivateSnapshotToCloud(db, uid, merged)
+                }
+            }
+            .addOnFailureListener {
+                commitPrivateSnapshotToCloud(db, uid, normalizeAppState(privateNext))
             }
     }
 
-    private fun commitStateSnapshotToCloud(db: FirebaseFirestore, next: AppState) {
+    private fun commitSharedSnapshotToCloud(db: FirebaseFirestore, next: AppState) {
         val now = System.currentTimeMillis()
         val batch = db.batch()
         val farmId = FirebaseCollections.SHARED_FARM_DOCUMENT_ID
         val mainRef = db.collection(FirebaseCollections.APP_STATE).document(farmId)
+        // merge:true so a normal sync write can never silently drop the `hardReset` marker a
+        // wipe/restore stamped on this doc (a plain .set() replaces the whole document) -- losing
+        // that marker would permanently disable every device's "was this doc just wiped?" check.
         batch.set(
             mainRef,
             mapOf(
                 "stateJson" to gson.toJson(next),
                 "updatedAt" to now
-            )
+            ),
+            SetOptions.merge()
         )
 
         fun mirrorList(collectionName: String, itemsJson: String, itemCount: Int) {
@@ -2535,31 +2834,28 @@ class AppStore(context: Context) {
             )
         }
 
+        // Only shared (farm structure) fields are mirrored under the shared `user_data/farm/...`
+        // tree -- mirroring a private, worker-submitted field there would leak it to every
+        // worker reading that mirror, defeating the whole point of this split. Nothing in this
+        // app or the website reads `user_data` back (it is a write-only legacy mirror), so
+        // private fields are simply omitted rather than mirrored under each worker's own uid.
         mirrorList(FirebaseCollections.WORKERS, gson.toJson(next.workers), next.workers.size)
-        mirrorList(FirebaseCollections.ATTENDANCE, gson.toJson(next.attendance), next.attendance.size)
         mirrorList(FirebaseCollections.TASKS, gson.toJson(next.tasks), next.tasks.size)
         mirrorList(FirebaseCollections.FARM_SECTIONS, gson.toJson(next.sections), next.sections.size)
         mirrorList(FirebaseCollections.TREES, gson.toJson(next.trees), next.trees.size)
-        mirrorList(FirebaseCollections.TREE_RIPENESS_SCANS, gson.toJson(next.treeRipenessScans), next.treeRipenessScans.size)
         mirrorList(FirebaseCollections.HARVEST_SCHEDULES, gson.toJson(next.harvestSchedules), next.harvestSchedules.size)
-        mirrorList(FirebaseCollections.HARVEST_READINESS_REPORTS, gson.toJson(next.harvestReadinessReports), next.harvestReadinessReports.size)
         mirrorList(FirebaseCollections.FLOWERING, gson.toJson(next.flowering), next.flowering.size)
         mirrorList(FirebaseCollections.HARVEST_RECORDS, gson.toJson(next.cherryHarvests), next.cherryHarvests.size)
         mirrorList(FirebaseCollections.BATCHES, gson.toJson(next.batches), next.batches.size)
-        mirrorList(FirebaseCollections.CNN_CLASSIFICATIONS, gson.toJson(next.cherryGrades), next.cherryGrades.size)
         mirrorList(FirebaseCollections.EQUIPMENT, gson.toJson(next.equipment), next.equipment.size)
         mirrorList(FirebaseCollections.EQUIPMENT_USAGE, gson.toJson(next.usageLogs), next.usageLogs.size)
         mirrorList(FirebaseCollections.MAINTENANCE_LOGS, gson.toJson(next.maintenanceLogs), next.maintenanceLogs.size)
-        mirrorList(FirebaseCollections.EQUIPMENT_REPORTS, gson.toJson(next.equipmentReports), next.equipmentReports.size)
         mirrorList(FirebaseCollections.SALES, gson.toJson(next.sales), next.sales.size)
         mirrorList(FirebaseCollections.EXPENSES, gson.toJson(next.expenses), next.expenses.size)
         mirrorList(FirebaseCollections.PAYROLL, gson.toJson(next.payroll), next.payroll.size)
         mirrorList(FirebaseCollections.COFFEE_FIELDS, gson.toJson(next.coffeeFields), next.coffeeFields.size)
         mirrorList(FirebaseCollections.IRRIGATION_SYSTEMS, gson.toJson(next.irrigationSystems), next.irrigationSystems.size)
-        mirrorList(FirebaseCollections.IRRIGATION_DAMAGE_REPORTS, gson.toJson(next.irrigationDamageReports), next.irrigationDamageReports.size)
-        mirrorList(FirebaseCollections.PEST_CONTROL_LOGS, gson.toJson(next.pestControlLogs), next.pestControlLogs.size)
         mirrorList(FirebaseCollections.CONSUMABLE_SUPPLIES, gson.toJson(next.consumableSupplies), next.consumableSupplies.size)
-        mirrorList(FirebaseCollections.CONSUMABLE_REPORTS, gson.toJson(next.consumableReports), next.consumableReports.size)
         mirrorList(FirebaseCollections.SMS_MESSAGES, gson.toJson(next.smsMessages), next.smsMessages.size)
 
         batch
@@ -2575,6 +2871,67 @@ class AppStore(context: Context) {
                     else -> CloudSyncStatus.ERROR
                 }
             }
+    }
+
+    /**
+     * Writes one worker's private slice to `app_state/{uid}`. Never mirrored under `user_data`
+     * -- see [commitSharedSnapshotToCloud].
+     */
+    private fun commitPrivateSnapshotToCloud(db: FirebaseFirestore, uid: String, next: AppState) {
+        val now = System.currentTimeMillis()
+        db.collection(FirebaseCollections.APP_STATE).document(uid)
+            .set(mapOf("stateJson" to gson.toJson(next), "updatedAt" to now), SetOptions.merge())
+            .addOnSuccessListener {
+                lastCloudSyncAtState.value = System.currentTimeMillis()
+                cloudSyncStatusState.value = CloudSyncStatus.CONNECTED
+            }
+            .addOnFailureListener { e ->
+                cloudSyncStatusState.value = when ((e as? FirebaseFirestoreException)?.code) {
+                    FirebaseFirestoreException.Code.UNAVAILABLE,
+                    FirebaseFirestoreException.Code.DEADLINE_EXCEEDED -> CloudSyncStatus.PENDING_UPLOAD
+                    else -> CloudSyncStatus.ERROR
+                }
+            }
+    }
+
+    /**
+     * Admin-only: patches a specific worker's private doc (`app_state/{uid}`) directly, without
+     * requiring that worker to be signed in on this device. Mirrors the website's
+     * `syncPrivateFieldsToCloud` write path -- for an admin review/approve/resolve action that
+     * needs to mutate a private, worker-submitted record this device does not own.
+     * `firestore.rules` is the actual enforcement boundary (only the admin account may write a
+     * `app_state/{uid}` doc that is not its own); this method does not check the caller's role.
+     */
+    fun adminUpdateWorkerPrivateState(uid: String, updater: (AppState) -> AppState, onComplete: (Boolean) -> Unit = {}) {
+        val id = uid.trim()
+        if (id.isBlank()) {
+            onComplete(false)
+            return
+        }
+        val db = getFirestore()
+        if (db == null) {
+            onComplete(false)
+            return
+        }
+        val ref = db.collection(FirebaseCollections.APP_STATE).document(id)
+        ref.get()
+            .addOnSuccessListener { snapshot ->
+                val remoteJson = snapshot.getString("stateJson")
+                val current = remoteJson
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { runCatching { gson.fromJson(it, AppState::class.java) }.getOrNull() }
+                    ?.let { normalizeAppState(it) }
+                    ?: AppState()
+                val updated = normalizeAppState(updater(current))
+                val privateToWrite = projectPrivateFields(updated)
+                ref.set(
+                    mapOf("stateJson" to gson.toJson(privateToWrite), "updatedAt" to System.currentTimeMillis()),
+                    SetOptions.merge()
+                )
+                    .addOnSuccessListener { onComplete(true) }
+                    .addOnFailureListener { onComplete(false) }
+            }
+            .addOnFailureListener { onComplete(false) }
     }
 
     private fun registerAutoSyncWhenOnline() {
