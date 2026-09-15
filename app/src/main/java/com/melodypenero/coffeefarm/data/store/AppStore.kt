@@ -432,7 +432,9 @@ data class ConsumableSupplyRecord(
     val lastRestocked: String,
     /** Set by the website's Supplies inventory form; pass-through only -- see [SmsMessageRecord] for why this app must still declare fields it never reads. */
     val referenceStock: Int? = null,
-    val lowStockThreshold: Int? = null
+    val lowStockThreshold: Int? = null,
+    /** Price per unit (PHP), e.g. per bag/liter/kg; pass-through only, set from the website's Supplies form. */
+    val costPerUnit: Double? = null
 )
 
 /** Worker-submitted consumable availability report; admins review it on the website. */

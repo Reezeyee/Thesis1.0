@@ -71,6 +71,16 @@ export interface TimesheetCorrectionRequest {
   status: ApprovalStatus;
   submittedAt: string;
   submittedBy: string;
+  /** Firebase auth uid of the worker who submitted this request; identifies which worker's private app_state/{uid} doc owns this record. */
+  submittedByAuthUid?: string;
+  /** Photo taken at submission time, proving the worker was present when filing this request. */
+  faceSnapshotBase64?: string | null;
+  /** GPS fix captured at submission time; null if location permission/GPS was unavailable. */
+  latitude?: number | null;
+  longitude?: number | null;
+  locationName?: string | null;
+  /** True only when latitude/longitude were captured and fell within the farm geofence. */
+  isGeofenceVerified?: boolean | null;
   reviewedAt?: string;
   reviewedBy?: string;
   managerRemarks?: string;
@@ -88,6 +98,8 @@ export interface LeaveRequestRecord {
   status: ApprovalStatus;
   submittedAt: string;
   submittedBy: string;
+  /** Firebase auth uid of the worker who submitted this request; identifies which worker's private app_state/{uid} doc owns this record. */
+  submittedByAuthUid?: string;
   reviewedAt?: string;
   reviewedBy?: string;
   managerRemarks?: string;
@@ -117,6 +129,8 @@ export interface TreeRipenessScanRecord {
   ripenessLabel: string;
   timestampMillis: number;
   sourceGrade?: string | null;
+  /** Firebase auth uid of the worker who saved this scan; identifies which worker's private app_state/{uid} doc owns this record. */
+  scannedByAuthUid?: string | null;
 }
 
 export interface HarvestScheduleRecord {
@@ -139,6 +153,8 @@ export interface HarvestReadinessReportRecord {
   zone?: string;
   expectedWeight?: string;
   reportedBy?: string;
+  /** Firebase auth uid of the worker who submitted this report; identifies which worker's private app_state/{uid} doc owns this record. */
+  reportedByAuthUid?: string;
   reportedAt?: string;
   notes?: string;
   reviewedAt?: string;
@@ -188,6 +204,19 @@ export interface CherryGradeRecord {
   scannedByWorkerName?: string | null;
   scannedByEmail?: string | null;
   scannedByAuthUid?: string | null;
+  /**
+   * Per-cherry CNN detection counts for this scan. `grade` is only a single coarse branch-level
+   * recommendation ("Optimal Harvest Ready" / "Selective Picking Recommended" / "Wait / Unripe")
+   * derived from `ripeCount` -- it can never say "overripe", so accurate per-cherry ripe/unripe/
+   * overripe dashboard totals need these counts directly. Undefined for scans saved before this
+   * field existed (the Android app's `cherry_scans` Firestore collection has always captured this
+   * breakdown, but it never reached `app_state/farm` until this field was added).
+   */
+  unripeCount?: number | null;
+  ripeningCount?: number | null;
+  ripeCount?: number | null;
+  overripeCount?: number | null;
+  dryDamagedCount?: number | null;
 }
 
 export interface EquipmentRecord {
@@ -220,6 +249,8 @@ export interface EquipmentConditionReport {
   notes: string;
   reportedAt: string;
   reportedBy?: string | null;
+  /** Firebase auth uid of the worker who submitted this report; identifies which worker's private app_state/{uid} doc owns this record. */
+  reportedByAuthUid?: string;
   reviewed?: boolean;
   /** Worker submitted a repair / fixed report (not merely "working OK"). */
   isFixedReport?: boolean;
@@ -314,6 +345,8 @@ export interface PestControlRecord {
   photoUrl?: string;
   photoBase64?: string;
   reportedBy?: string;
+  /** Firebase auth uid of the worker who submitted this log; identifies which worker's private app_state/{uid} doc owns this record. */
+  reportedByAuthUid?: string;
   time?: string;
   notes?: string;
   timestampMillis?: number;
@@ -331,6 +364,8 @@ export interface ConsumableSupplyRecord {
   lastRestocked: string;
   referenceStock?: number;
   lowStockThreshold?: number;
+  /** Price per unit (₱), e.g. per bag/liter/kg -- optional, set from the Add/Edit Supply form. */
+  costPerUnit?: number;
 }
 
 export function computeLowStockThreshold(item: Partial<ConsumableSupplyRecord>): number {
@@ -472,6 +507,12 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
       status: r.status ?? 'Pending',
       submittedAt: r.submittedAt ?? '',
       submittedBy: r.submittedBy ?? '',
+      submittedByAuthUid: r.submittedByAuthUid ?? '',
+      faceSnapshotBase64: r.faceSnapshotBase64 ?? null,
+      latitude: r.latitude ?? null,
+      longitude: r.longitude ?? null,
+      locationName: r.locationName ?? null,
+      isGeofenceVerified: r.isGeofenceVerified ?? null,
       reviewedAt: r.reviewedAt ?? '',
       reviewedBy: r.reviewedBy ?? '',
       managerRemarks: r.managerRemarks ?? '',
@@ -493,6 +534,7 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
       status: r.status ?? 'Pending',
       submittedAt: r.submittedAt ?? '',
       submittedBy: r.submittedBy ?? '',
+      submittedByAuthUid: r.submittedByAuthUid ?? '',
       reviewedAt: r.reviewedAt ?? '',
       reviewedBy: r.reviewedBy ?? '',
       managerRemarks: r.managerRemarks ?? '',
@@ -521,6 +563,7 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
         zone: section,
         expectedWeight: r.expectedWeight ?? (readinessStatus === 'Ready for Harvest' ? 'Harvest Ready' : 'Maturing'),
         reportedBy: workerName,
+        reportedByAuthUid: r.reportedByAuthUid ?? '',
         reportedAt,
         notes: r.notes ?? '',
         reviewedAt: r.reviewedAt ?? '',
@@ -541,6 +584,7 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
       notes: r.notes ?? '',
       reportedAt: r.reportedAt ?? '',
       reportedBy: r.reportedBy ?? null,
+      reportedByAuthUid: r.reportedByAuthUid ?? '',
       reviewed: Boolean(r.reviewed),
       isFixedReport: Boolean(r.isFixedReport),
       fixedAt: r.fixedAt ?? null,
@@ -574,6 +618,7 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
       photoUrl: p.photoUrl ?? (p.photoBase64 ?? ''),
       photoBase64: p.photoBase64 ?? (p.photoUrl ?? ''),
       reportedBy: p.reportedBy ?? 'Juan Dela Cruz',
+      reportedByAuthUid: p.reportedByAuthUid ?? '',
       notes: p.notes ?? '',
       timestampMillis: p.timestampMillis ?? (Date.parse(p.date || '') || Date.now() - index * 60000),
       reviewedAt: p.reviewedAt ?? '',
@@ -595,6 +640,7 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
           lastRestocked: s.lastRestocked ?? '',
           referenceStock,
           lowStockThreshold,
+          ...(typeof s.costPerUnit === 'number' ? { costPerUnit: s.costPerUnit } : {}),
         };
       }) ?? defaultConsumableSupplies(),
     consumableReports: (raw.consumableReports ?? base.consumableReports).map((r) => ({
@@ -621,6 +667,69 @@ export function normalizeAppState(raw: Partial<AppState> | null | undefined): Ap
       sentViaCellularSms: Boolean(m.sentViaCellularSms),
     })),
   };
+}
+
+/**
+ * Worker-submitted record lists. Each of these is written to the owning worker's own
+ * `app_state/{uid}` document instead of the shared `app_state/farm` document, so one worker's
+ * submissions are never readable by another worker (see firestore.rules). Everything else in
+ * [AppState] describes shared farm structure and is written to `app_state/farm`.
+ */
+export const PRIVATE_FIELD_KEYS = [
+  'attendance',
+  'timesheetCorrections',
+  'leaveRequests',
+  'treeRipenessScans',
+  'cherryGrades',
+  'harvestReadinessReports',
+  'irrigationDamageReports',
+  'equipmentReports',
+  'pestControlLogs',
+  'consumableReports',
+] as const satisfies readonly (keyof AppState)[];
+
+export type PrivateFieldKey = (typeof PRIVATE_FIELD_KEYS)[number];
+
+const PRIVATE_FIELD_KEY_SET: ReadonlySet<string> = new Set(PRIVATE_FIELD_KEYS);
+
+export const SHARED_FIELD_KEYS = (Object.keys(emptyAppState()) as (keyof AppState)[]).filter(
+  (key) => !PRIVATE_FIELD_KEY_SET.has(key),
+);
+
+/** Returns a copy of `state` with every private field emptied, safe to write to `app_state/farm`. */
+export function projectSharedFields(state: AppState): AppState {
+  const result = { ...emptyAppState(), ...state };
+  for (const key of PRIVATE_FIELD_KEYS) {
+    (result[key] as unknown[]) = [];
+  }
+  return result;
+}
+
+/** Returns a copy of `state` with every shared field emptied, safe to write to `app_state/{uid}`. */
+export function projectPrivateFields(state: AppState): AppState {
+  const result = { ...emptyAppState(), ...state };
+  for (const key of SHARED_FIELD_KEYS) {
+    (result[key] as unknown[]) = [];
+  }
+  return result;
+}
+
+/**
+ * Combines every worker's private slice (each read from that worker's own `app_state/{uid}`
+ * document) into one aggregate view for the admin website. `sharedState` supplies every
+ * non-private field untouched.
+ */
+export function mergeWorkerPrivateStates(
+  sharedState: AppState,
+  privateStatesByUid: Record<string, AppState>,
+): AppState {
+  const result = { ...sharedState };
+  for (const key of PRIVATE_FIELD_KEYS) {
+    (result[key] as unknown[]) = Object.values(privateStatesByUid).flatMap(
+      (s) => (s[key] as unknown[]) ?? [],
+    );
+  }
+  return result;
 }
 
 export function totalItemCount(state: AppState): number {

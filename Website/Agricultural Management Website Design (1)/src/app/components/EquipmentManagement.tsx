@@ -109,6 +109,7 @@ const EQUIPMENT_CATEGORIES = [
 ] as const;
 
 const SUPPLY_CATEGORIES = ['Fertilizer', 'Pesticides', 'Vitamins', 'Packaging', 'Cleaning', 'Other'] as const;
+const SUPPLY_UNITS = ['Bags', 'Liters', 'Kg', 'Sacks', 'Bottles', 'Pieces', 'Boxes', 'Other'] as const;
 
 type SupplyForm = {
   name: string;
@@ -117,6 +118,7 @@ type SupplyForm = {
   unit: string;
   referenceStock: string;
   lowStockThreshold: string;
+  costPerUnit: string;
 };
 
 function emptyEquipmentRecord(): EquipmentRecord {
@@ -137,6 +139,7 @@ function emptySupplyForm(): SupplyForm {
     unit: 'bags',
     referenceStock: '',
     lowStockThreshold: '',
+    costPerUnit: '',
   };
 }
 
@@ -177,7 +180,7 @@ export function EquipmentManagement() {
   // Activity stock usage deduction state
   const [activityUsageOpen, setActivityUsageOpen] = useState(false);
   const [activityUsageSupply, setActivityUsageSupply] = useState<ConsumableSupplyRecord | null>(null);
-  const [activityUsageQuantity, setActivityUsageQuantity] = useState('1');
+  const [activityUsageQuantity, setActivityUsageQuantity] = useState('');
   const [activityUsagePurpose, setActivityUsagePurpose] = useState('Crop Care / Plot Treatment');
   const [activityUsageWorker, setActivityUsageWorker] = useState('Juan Dela Cruz (Worker)');
 
@@ -268,7 +271,7 @@ export function EquipmentManagement() {
     if (ok) {
       setActivityUsageOpen(false);
       setActivityUsageSupply(null);
-      setActivityUsageQuantity('1');
+      setActivityUsageQuantity('');
     }
   };
 
@@ -288,6 +291,7 @@ export function EquipmentManagement() {
     const referenceStock = parsedRef !== null ? Math.round(parsedRef) : Math.max(stock, 30);
     const parsedThreshold = parsePositiveAmount(supplyForm.lowStockThreshold);
     const lowStockThreshold = parsedThreshold !== null ? Math.round(parsedThreshold) : Math.ceil(referenceStock * 0.3);
+    const parsedCost = parsePositiveAmount(supplyForm.costPerUnit);
 
     const partialRecord = {
       supplyId: `C-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
@@ -298,6 +302,7 @@ export function EquipmentManagement() {
       referenceStock,
       lowStockThreshold,
       lastRestocked: new Date().toISOString().slice(0, 10),
+      ...(parsedCost !== null ? { costPerUnit: parsedCost } : {}),
     };
     const record: ConsumableSupplyRecord = {
       ...partialRecord,
@@ -553,7 +558,19 @@ export function EquipmentManagement() {
             date: today,
           },
         ];
-        return { ...prev, equipmentReports, equipment, maintenanceLogs };
+        // Repair costs are real farm spending -- record them as an expense so Profit & Sales
+        // reflects equipment upkeep instead of only tracking it in the maintenance log text.
+        const expenses = [
+          ...prev.expenses,
+          {
+            category: 'Equipment Repair',
+            description: `Repair: ${report.equipmentName}`,
+            amount: Math.round(parsedRepairCost),
+            date: today,
+            linkedEquipmentName: report.equipmentName,
+          },
+        ];
+        return { ...prev, equipmentReports, equipment, maintenanceLogs, expenses };
       }),
     );
     if (ok) closeFixReportDialog();
@@ -585,12 +602,27 @@ export function EquipmentManagement() {
       currentValue: editForm.currentValue ?? 0,
     };
     const ok = await runSave('Equipment', () =>
-      updateState((prev) => ({
-        ...prev,
-        equipment: isNew
+      updateState((prev) => {
+        const equipment = isNew
           ? [...prev.equipment, record]
-          : prev.equipment.map((e, i) => (i === editingIndex ? record : e)),
-      })),
+          : prev.equipment.map((e, i) => (i === editingIndex ? record : e));
+        // Only a brand-new purchase counts as farm spending -- editing an existing item's
+        // recorded value later is a book-value correction, not a new expense.
+        const expenses =
+          isNew && record.currentValue > 0
+            ? [
+                ...prev.expenses,
+                {
+                  category: 'Equipment',
+                  description: `Purchased: ${record.name}`,
+                  amount: Math.round(record.currentValue),
+                  date: new Date().toISOString().slice(0, 10),
+                  linkedEquipmentName: record.name,
+                },
+              ]
+            : prev.expenses;
+        return { ...prev, equipment, expenses };
+      }),
     );
     if (ok) closeEquipmentDialog();
   };
@@ -714,9 +746,17 @@ export function EquipmentManagement() {
               <div className="space-y-2">
                 <Label>Value (₱)</Label>
                 <Input
-                  type="number"
-                  value={editForm.currentValue}
-                  onChange={(e) => setEditForm({ ...editForm, currentValue: Number(e.target.value) || 0 })}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={editForm.currentValue || ''}
+                  onChange={(e) => {
+                    // Digits only -- a plain type="number" input still lets "-", "+", "e"/"E",
+                    // and "." through, which could otherwise produce a negative or invalid value.
+                    const digitsOnly = e.target.value.replace(/[^0-9]/g, '');
+                    setEditForm({ ...editForm, currentValue: digitsOnly ? Number(digitsOnly) : 0 });
+                  }}
+                  placeholder="e.g. 5000"
                 />
               </div>
             </div>
@@ -753,10 +793,11 @@ export function EquipmentManagement() {
             <div className="space-y-2">
               <Label>Repair cost (₱)</Label>
               <Input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={repairCost}
-                onChange={(e) => setRepairCost(e.target.value)}
+                onChange={(e) => setRepairCost(e.target.value.replace(/[^0-9]/g, ''))}
                 placeholder="120"
               />
             </div>
@@ -799,24 +840,24 @@ export function EquipmentManagement() {
                 selectClassName={SELECT_CLASS}
                 otherPlaceholder="Type custom supply category..."
               />
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Unit of Measure</Label>
-                <Input
-                  value={supplyForm.unit}
-                  onChange={(e) => setSupplyForm({ ...supplyForm, unit: e.target.value })}
-                  placeholder="Sample: bags, liters, kg"
-                  className="text-xs"
-                />
-              </div>
+              <SelectWithOther
+                label="Unit of Measure"
+                value={supplyForm.unit}
+                onChange={(unit) => setSupplyForm({ ...supplyForm, unit })}
+                options={SUPPLY_UNITS}
+                selectClassName={SELECT_CLASS}
+                otherPlaceholder="Type custom unit..."
+              />
             </div>
             <div className="grid grid-cols-3 gap-2.5">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Current Stock *</Label>
                 <Input
-                  type="number"
-                  min="0"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={supplyForm.stock}
-                  onChange={(e) => setSupplyForm({ ...supplyForm, stock: e.target.value })}
+                  onChange={(e) => setSupplyForm({ ...supplyForm, stock: e.target.value.replace(/[^0-9]/g, '') })}
                   placeholder="Sample: 50"
                   className="text-xs"
                 />
@@ -824,10 +865,11 @@ export function EquipmentManagement() {
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Base Stock</Label>
                 <Input
-                  type="number"
-                  min="1"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={supplyForm.referenceStock}
-                  onChange={(e) => setSupplyForm({ ...supplyForm, referenceStock: e.target.value })}
+                  onChange={(e) => setSupplyForm({ ...supplyForm, referenceStock: e.target.value.replace(/[^0-9]/g, '') })}
                   placeholder="Sample: 50"
                   className="text-xs"
                 />
@@ -835,14 +877,36 @@ export function EquipmentManagement() {
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">30% Threshold</Label>
                 <Input
-                  type="number"
-                  min="1"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={supplyForm.lowStockThreshold}
-                  onChange={(e) => setSupplyForm({ ...supplyForm, lowStockThreshold: e.target.value })}
+                  onChange={(e) => setSupplyForm({ ...supplyForm, lowStockThreshold: e.target.value.replace(/[^0-9]/g, '') })}
                   placeholder="Sample: 15"
                   className="text-xs"
                 />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Cost per Unit (₱)</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={supplyForm.costPerUnit}
+                onChange={(e) => setSupplyForm({ ...supplyForm, costPerUnit: e.target.value.replace(/[^0-9.]/g, '') })}
+                placeholder="Sample: 850"
+                className="text-xs"
+              />
+              {(() => {
+                const cost = parsePositiveAmount(supplyForm.costPerUnit);
+                const stock = parseNonNegativeAmount(supplyForm.stock);
+                if (cost === null || stock === null) return null;
+                return (
+                  <p className="text-[11px] text-muted-foreground">
+                    Total value: <span className="font-bold text-foreground">₱{(cost * stock).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  </p>
+                );
+              })()}
             </div>
             <p className="text-[11px] text-muted-foreground bg-muted/30 p-2.5 rounded-lg border border-border/50">
               💡 <strong>Low Stock Threshold:</strong> When stock drops below 30% of base capacity (or custom threshold), the system automatically creates a low-stock alert in the notification center.
@@ -892,11 +956,11 @@ export function EquipmentManagement() {
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Quantity to Deduct ({activityUsageSupply.unit}) *</Label>
                 <Input
-                  type="number"
-                  min="1"
-                  max={activityUsageSupply.stock}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={activityUsageQuantity}
-                  onChange={(e) => setActivityUsageQuantity(e.target.value)}
+                  onChange={(e) => setActivityUsageQuantity(e.target.value.replace(/[^0-9]/g, ''))}
                   placeholder="Sample: 2"
                   className="text-xs"
                 />
@@ -1383,7 +1447,7 @@ export function EquipmentManagement() {
                             type="button"
                             onClick={() => {
                               setActivityUsageSupply(item);
-                              setActivityUsageQuantity('1');
+                              setActivityUsageQuantity('');
                               setActivityUsagePurpose(`Plot Treatment with ${item.name}`);
                               setActivityUsageOpen(true);
                             }}
@@ -1405,6 +1469,14 @@ export function EquipmentManagement() {
                           <span>Base capacity: {item.referenceStock} {item.unit}</span>
                         )}
                       </div>
+                      {typeof item.costPerUnit === 'number' && item.costPerUnit > 0 && (
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1.5 mt-1.5 border-t border-border/40">
+                          <span>₱{item.costPerUnit.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {item.unit}</span>
+                          <span className="font-bold text-foreground">
+                            Value: ₱{(item.costPerUnit * item.stock).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
