@@ -38,8 +38,8 @@ export const SystemHealthGauge: React.FC<SystemHealthGaugeProps> = ({
 
   return (
     <Card className={`border border-border/80 bg-card/95 backdrop-blur-md shadow-sm rounded-xl p-6 flex flex-col justify-between ${className}`}>
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-500 border border-emerald-500/20 shadow-2xs">
             <Activity className="w-4 h-4 stroke-[2.5]" />
           </div>

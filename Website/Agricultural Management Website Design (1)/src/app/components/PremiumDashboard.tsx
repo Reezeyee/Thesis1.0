@@ -28,10 +28,10 @@ import { useFarmData } from '../store/FarmDataProvider';
 import {
   totalIncome,
   totalExpenses,
-  netProfit,
   parseHarvestKg,
   saleLineTotal,
 } from '../lib/farmFinance';
+import { netProfitAccrualAware } from '../lib/profitUi';
 import { buildMonthlyProfitExpenses } from '../lib/dashboardData';
 import { formatCurrency } from '../lib/currencyFormat';
 import { isWorkerActive } from '../lib/workerUi';
@@ -191,7 +191,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
 
   // Compute Live System Metrics from AppState
   const totalSalesVal = useMemo(() => totalIncome(state.sales), [state.sales]);
-  const netProfitVal = useMemo(() => netProfit(state), [state]);
+  const netProfitVal = useMemo(() => netProfitAccrualAware(state), [state]);
   const harvestTotalKg = useMemo(
     () => state.cherryHarvests.reduce((s, h) => s + parseHarvestKg(h), 0),
     [state.cherryHarvests]
@@ -342,7 +342,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
       {/* Header Section */}
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
               Dashboard Overview
             </h1>
@@ -511,16 +511,16 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
           <GridItem span={{ default: 12, lg: 5 }}>
             <Card className="h-full border border-border/80 shadow-sm rounded-xl p-6 flex flex-col justify-between bg-card/95">
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-y-2 gap-x-3">
                   <h3 className="font-bold text-sm font-heading text-foreground">Quick Management Actions</h3>
                   <Badge variant="secondary" className="text-[10px] font-mono">Instant</Badge>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3 mb-6">
                   <Button
                     variant="outline"
                     onClick={() => onNavigateModule?.('cherry')}
-                    className="h-auto py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
+                    className="h-auto min-w-0 whitespace-normal py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
                   >
                     <div className="flex items-center justify-between w-full">
                       <Cherry className="w-4 h-4 text-accent" />
@@ -533,7 +533,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
                   <Button
                     variant="outline"
                     onClick={() => onNavigateModule?.('equipment')}
-                    className="h-auto py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
+                    className="h-auto min-w-0 whitespace-normal py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
                   >
                     <div className="flex items-center justify-between w-full">
                       <Wrench className="w-4 h-4 text-emerald-500" />
@@ -546,7 +546,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
                   <Button
                     variant="outline"
                     onClick={() => onNavigateModule?.('profit')}
-                    className="h-auto py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
+                    className="h-auto min-w-0 whitespace-normal py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
                   >
                     <div className="flex items-center justify-between w-full">
                       <FileText className="w-4 h-4 text-purple-500" />
@@ -559,7 +559,7 @@ export function PremiumDashboard({ onNavigateModule }: PremiumDashboardProps) {
                   <Button
                     variant="outline"
                     onClick={() => onNavigateModule?.('sms')}
-                    className="h-auto py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
+                    className="h-auto min-w-0 whitespace-normal py-3 px-3 flex flex-col items-start gap-1 justify-start border-border/80 hover:bg-accent/10 hover:border-accent/40 text-left group transition-all rounded-xl cursor-pointer"
                   >
                     <div className="flex items-center justify-between w-full">
                       <Activity className="w-4 h-4 text-amber-500" />

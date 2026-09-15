@@ -25,6 +25,7 @@ import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { useFarmData } from '../store/FarmDataProvider';
 import { isWorkerActive } from '../lib/workerUi';
+import { cherryGradeBucket } from '../lib/chartTheme';
 
 // Dynamic scan trend builder from real CNN classifications in Firestore / AppState
 function buildScanTrendData(
@@ -138,13 +139,23 @@ export function FarmMonitoringDashboard() {
 
   const harvestReadinessRatio = useMemo(() => {
     if (state.cherryGrades.length > 0) {
-      const ripeCount = state.cherryGrades.filter(
-        (g) => (g.grade ?? '').toLowerCase().includes('ripe') || (g.grade ?? '').toLowerCase().includes('a')
-      ).length;
+      // Was previously `.includes('ripe') || .includes('a')` -- "ripe" is a substring of
+      // "unripe"/"overripe" too, and the "a" fallback matched almost any English grade string
+      // ("Wait", "Harvest", ...), so this counted nearly every scan as ready regardless of its
+      // actual ripeness. Use the same bucket classifier as the Coffee Cherries page instead.
+      const ripeCount = state.cherryGrades.filter((g) => {
+        const bucket = cherryGradeBucket(g.grade);
+        return bucket === 'ripe' || bucket === 'nearRipe';
+      }).length;
       return `${((ripeCount / state.cherryGrades.length) * 100).toFixed(1)}% Ready to Harvest`;
     }
     if (state.treeRipenessScans && state.treeRipenessScans.length > 0) {
-      const ripeScans = state.treeRipenessScans.filter((s) => (s.ripenessLabel ?? '').toLowerCase().includes('ripe')).length;
+      // ripenessLabel carries the same coarse recommendation phrase as cherryGrades.grade (the
+      // Android app stamps both from the same scan) -- same substring bug applies, same fix.
+      const ripeScans = state.treeRipenessScans.filter((s) => {
+        const bucket = cherryGradeBucket(s.ripenessLabel);
+        return bucket === 'ripe' || bucket === 'nearRipe';
+      }).length;
       return `${((ripeScans / state.treeRipenessScans.length) * 100).toFixed(1)}% Ready to Harvest`;
     }
     return '0.0% Ready to Harvest';
@@ -308,11 +319,11 @@ export function FarmMonitoringDashboard() {
             <ScanLine className="w-6 h-6 stroke-[2]" />
           </div>
           <div>
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
               <h1 className="text-xl sm:text-2xl font-extrabold font-heading text-foreground tracking-tight">
                 Coffee Cherry Scan & Harvest Readiness Monitor
               </h1>
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 whitespace-nowrap">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" /> CNN Engine Active
               </span>
             </div>
@@ -493,7 +504,7 @@ export function FarmMonitoringDashboard() {
       {/* Row 4: Coffee Plot Sector Ripeness & Readiness Matrix Table */}
       <motion.div variants={itemVariants}>
         <Card className="border border-border/80 shadow-sm rounded-xl overflow-hidden bg-card/95">
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
             <div>
               <CardTitle className="text-base font-bold font-heading text-foreground">
                 Plot Sector Ripeness & Harvest Readiness Matrix

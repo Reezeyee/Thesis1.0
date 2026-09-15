@@ -13,11 +13,14 @@ import { db } from '../firebase/config';
 import { COLLECTIONS, SHARED_FARM_DOCUMENT_ID } from '../firebase/collections';
 import {
   emptyAppState,
+  mergeWorkerPrivateStates,
   normalizeAppState,
+  projectPrivateFields,
+  projectSharedFields,
   type AppState,
 } from '../types/appState';
 import { mergeRemoteStatePreservingLocalGrades } from './mergeFarmState';
-import { syncToCloud } from './syncToCloud';
+import { groupPrivateFieldsByOwner, syncPrivateFieldsToCloud, syncToCloud, UNASSIGNED_OWNER_ID } from './syncToCloud';
 import { useAuth } from '../auth/AuthProvider';
 
 export type SyncStatus = 'loading' | 'connected' | 'syncing' | 'error' | 'offline';
@@ -68,6 +71,12 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
   const lastHardResetRef = useRef(0);
   const isSavingRef = useRef(false);
 
+  // `state` is the shared farm doc (app_state/farm) merged with every worker's own private doc
+  // (app_state/{uid}) -- see `firestore.rules` / `syncToCloud.ts` for why worker-submitted
+  // records (attendance, leaveRequests, ...) live in per-worker docs instead of the shared one.
+  const sharedStateRef = useRef<AppState>(emptyAppState());
+  const privateStatesRef = useRef<Record<string, AppState>>({});
+
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -76,8 +85,17 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
     lastUpdatedAtRef.current = lastUpdatedAt;
   }, [lastUpdatedAt]);
 
+  const recomputeState = useCallback(() => {
+    const merged = mergeWorkerPrivateStates(sharedStateRef.current, privateStatesRef.current);
+    setState(merged);
+    stateRef.current = merged;
+  }, []);
+
+  // Shared farm doc: `app_state/farm`.
   useEffect(() => {
     if (!user) {
+      sharedStateRef.current = emptyAppState();
+      privateStatesRef.current = {};
       setState(emptyAppState());
       setLoading(false);
       setSyncStatus('offline');
@@ -91,7 +109,8 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
       ref,
       (snap) => {
         if (!snap.exists()) {
-          setState(emptyAppState());
+          sharedStateRef.current = emptyAppState();
+          recomputeState();
           setLoading(false);
           setSyncStatus('connected');
           return;
@@ -105,7 +124,7 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
           return;
         }
         try {
-          const remote = normalizeAppState(JSON.parse(json) as Partial<AppState>);
+          const remote = projectSharedFields(normalizeAppState(JSON.parse(json) as Partial<AppState>));
           if (isSavingRef.current && remoteUpdatedAt <= (lastUpdatedAtRef.current ?? 0)) {
             return;
           }
@@ -119,9 +138,9 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
           // before the wipe doesn't put its stale in-memory records back.
           const merged = isFreshHardReset
             ? remote
-            : mergeRemoteStatePreservingLocalGrades(stateRef.current, remote);
-          setState(merged);
-          stateRef.current = merged;
+            : mergeRemoteStatePreservingLocalGrades(sharedStateRef.current, remote);
+          sharedStateRef.current = projectSharedFields(merged);
+          recomputeState();
           setLastUpdatedAt(remoteUpdatedAt);
           setError(null);
           setSyncStatus('connected');
@@ -138,23 +157,80 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
       },
     );
     return unsub;
-  }, [user]);
+  }, [user, recomputeState]);
+
+  // One listener per known worker's private doc (app_state/{authUid}), plus a fixed fallback
+  // bucket (UNASSIGNED_OWNER_ID) for legacy private records that predate the owner-uid fields
+  // and can't be matched to a worker by name -- see `syncToCloud.ownerUidFor`.
+  const workerUidListKey = useMemo(() => {
+    const uids = new Set<string>();
+    for (const w of state.workers) {
+      const uid = w.authUid?.trim();
+      if (uid) uids.add(uid);
+    }
+    uids.add(UNASSIGNED_OWNER_ID);
+    return Array.from(uids).sort().join(',');
+  }, [state.workers]);
+
+  useEffect(() => {
+    if (!user) return;
+    const uids = workerUidListKey ? workerUidListKey.split(',').filter(Boolean) : [];
+    const unsubs = uids.map((uid) =>
+      onSnapshot(
+        doc(db, COLLECTIONS.APP_STATE, uid),
+        (snap) => {
+          if (!snap.exists()) {
+            if (privateStatesRef.current[uid]) {
+              const next = { ...privateStatesRef.current };
+              delete next[uid];
+              privateStatesRef.current = next;
+              recomputeState();
+            }
+            return;
+          }
+          const json = snap.data().stateJson as string | undefined;
+          if (!json) return;
+          try {
+            const remote = projectPrivateFields(normalizeAppState(JSON.parse(json) as Partial<AppState>));
+            privateStatesRef.current = { ...privateStatesRef.current, [uid]: remote };
+            recomputeState();
+          } catch {
+            /* ignore a corrupt worker doc; keep this worker's last-known-good private state */
+          }
+        },
+        () => {
+          /* one worker's private doc failing to load (e.g. mid-provisioning) shouldn't take
+           * down the whole admin dashboard */
+        },
+      ),
+    );
+    return () => unsubs.forEach((unsub) => unsub());
+  }, [user, workerUidListKey, recomputeState]);
 
   const updateState = useCallback(async (updater: (prev: AppState) => AppState) => {
     if (!user) {
       throw new Error('You must be signed in to save changes.');
     }
 
-    const next = updater(stateRef.current);
+    const prev = stateRef.current;
+    const next = updater(prev);
     isSavingRef.current = true;
     setSaving(true);
     setSyncStatus('syncing');
     setError(null);
 
     try {
-      const written = await syncToCloud(next);
-      stateRef.current = written;
-      setState(written);
+      const privateChanged =
+        JSON.stringify(projectPrivateFields(next)) !== JSON.stringify(projectPrivateFields(prev));
+      const written = await syncToCloud(next, prev);
+      if (privateChanged) {
+        await syncPrivateFieldsToCloud(written);
+        // Apply optimistically so the UI reflects the edit immediately instead of waiting for
+        // each affected worker's onSnapshot listener to round-trip through Firestore.
+        privateStatesRef.current = { ...privateStatesRef.current, ...groupPrivateFieldsByOwner(written) };
+      }
+      sharedStateRef.current = projectSharedFields(written);
+      recomputeState();
       setLastUpdatedAt(Date.now());
       setSyncStatus('connected');
     } catch (e) {
@@ -166,10 +242,10 @@ export function FarmDataProvider({ children }: { children: ReactNode }) {
       isSavingRef.current = false;
       setSaving(false);
     }
-  }, [user]);
+  }, [user, recomputeState]);
 
   const refresh = useCallback(() => {
-    /* listener keeps data live */
+    /* listeners keep data live */
   }, []);
 
   const value = useMemo(

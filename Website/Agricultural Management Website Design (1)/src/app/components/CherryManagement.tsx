@@ -34,6 +34,7 @@ import {
   monthSortKeyFromDate,
   compactAxisFormatter,
 } from '../lib/chartTheme';
+import type { CherryGradeRecord } from '../types/appState';
 import {
   categoryXAxisProps,
   ChartGradientDefs,
@@ -68,6 +69,34 @@ interface CherryRecord {
   location?: string;
 }
 
+
+/**
+ * Real per-cherry counts when the scan carried them (Android app, post class-counts fix); falls
+ * back to treating the whole scan as one classification event bucketed by its coarse recommendation
+ * phrase for older scans that predate per-cherry counts. "Ripening" cherries count as unripe (not
+ * yet ready) and "Dry_Damaged" cherries count as overripe (past prime), since the dashboard only
+ * has three buckets for the CNN's five detection classes.
+ */
+function cherryCountsForRecord(
+  g: CherryGradeRecord,
+  bucket: ReturnType<typeof cherryGradeBucket>,
+): { ripe: number; unripe: number; overripe: number } {
+  const hasRealCounts = [g.unripeCount, g.ripeningCount, g.ripeCount, g.overripeCount, g.dryDamagedCount].some(
+    (v) => typeof v === 'number',
+  );
+  if (hasRealCounts) {
+    return {
+      ripe: g.ripeCount ?? 0,
+      unripe: (g.unripeCount ?? 0) + (g.ripeningCount ?? 0),
+      overripe: (g.overripeCount ?? 0) + (g.dryDamagedCount ?? 0),
+    };
+  }
+  return {
+    ripe: bucket === 'ripe' || bucket === 'nearRipe' ? 1 : 0,
+    unripe: bucket === 'unripe' ? 1 : 0,
+    overripe: bucket === 'overripe' ? 1 : 0,
+  };
+}
 
 function gradeTrendKey(savedAtMillis: number | null | undefined): { label: string; sortKey: string } {
   if (savedAtMillis != null && savedAtMillis > 0) {
@@ -124,6 +153,7 @@ export function CherryManagement() {
         }
         const qualityLevel: 'excellent' | 'good' | 'fair' =
           conf >= 90 ? 'excellent' : conf >= 75 ? 'good' : 'fair';
+        const counts = cherryCountsForRecord(g, bucket);
 
         return {
           id,
@@ -135,9 +165,9 @@ export function CherryManagement() {
           grade: g.grade?.trim() || 'Unknown',
           species: g.species?.trim() || '—',
           treeId: trimmedTreeId || '—',
-          ripe: bucket === 'ripe' || bucket === 'nearRipe' ? 1 : 0,
-          unripe: bucket === 'unripe' ? 1 : 0,
-          overripe: bucket === 'overripe' ? 1 : 0,
+          ripe: counts.ripe,
+          unripe: counts.unripe,
+          overripe: counts.overripe,
           quality: qualityLevel,
           confidence: Math.round(conf <= 1 ? conf * 100 : conf),
           source: isInactive ? `${sourceName} (inactive)` : sourceName,
@@ -153,10 +183,11 @@ export function CherryManagement() {
     for (const g of state.cherryGrades) {
       const { label, sortKey } = gradeTrendKey(g.savedAtMillis);
       const bucket = cherryGradeBucket(g.grade);
+      const counts = cherryCountsForRecord(g, bucket);
       const cur = buckets.get(label) ?? { ripe: 0, unripe: 0, overripe: 0, sortKey };
-      if (bucket === 'ripe' || bucket === 'nearRipe') cur.ripe += 1;
-      else if (bucket === 'unripe') cur.unripe += 1;
-      else if (bucket === 'overripe') cur.overripe += 1;
+      cur.ripe += counts.ripe;
+      cur.unripe += counts.unripe;
+      cur.overripe += counts.overripe;
       buckets.set(label, cur);
     }
     return [...buckets.entries()]
@@ -179,10 +210,10 @@ export function CherryManagement() {
 
   const monthlyProduction = useMemo(() => buildHarvestByMonth(state), [state]);
 
-  const totalRipe = cherryRecords.filter((r) => r.ripe).length;
-  const totalUnripe = cherryRecords.filter((r) => r.unripe).length;
-  const totalOverripe = cherryRecords.filter((r) => r.overripe).length;
-  const totalClassifications = cherryRecords.length;
+  const totalRipe = cherryRecords.reduce((sum, r) => sum + r.ripe, 0);
+  const totalUnripe = cherryRecords.reduce((sum, r) => sum + r.unripe, 0);
+  const totalOverripe = cherryRecords.reduce((sum, r) => sum + r.overripe, 0);
+  const totalClassifications = totalRipe + totalUnripe + totalOverripe;
   const totalKg = state.cherryHarvests.reduce((sum, h) => sum + parseHarvestKg(h), 0);
   const ripeRate = totalClassifications > 0 ? Math.round((totalRipe / totalClassifications) * 100) : 0;
 
@@ -204,11 +235,11 @@ export function CherryManagement() {
     >
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap gap-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
               CNN Coffee Cherry Classification & Vision
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Model v2.4 Active
             </span>
           </div>
@@ -278,13 +309,13 @@ export function CherryManagement() {
                   key={record.id}
                   className="bg-muted/40 rounded-xl p-4 border border-border/60 hover:border-border/80 transition-all"
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                  <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
+                    <div className="flex h-12 w-12 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
                       <Cherry className="h-7 w-7" />
                     </div>
-                    <div className="flex-1">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
+                    <div className="@container flex-1 min-w-0 w-full">
+                    <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                      <div className="min-w-0">
                         <h4 className="mb-1 text-foreground font-bold">{record.location && record.location !== '—' ? record.location : 'Farm Section'}</h4>
                         <p className="text-xs text-muted-foreground">{record.date}</p>
                         {record.treeId && record.treeId !== 'branch_scan' && (
@@ -309,28 +340,28 @@ export function CherryManagement() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
-                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                    <div className="grid grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-5 gap-3 mt-3">
+                      <div className="min-w-0 bg-background/90 rounded-lg p-2.5 border border-border/60">
                         <p className="text-xs text-muted-foreground mb-1 font-semibold">Grade / Ripeness</p>
                         <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{record.grade}</p>
                       </div>
-                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                      <div className="min-w-0 bg-background/90 rounded-lg p-2.5 border border-border/60">
                         <p className="text-xs text-muted-foreground mb-1 font-semibold">Species (CNN)</p>
-                        <span className="inline-flex items-center text-xs font-extrabold px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                        <span className="inline-flex max-w-full truncate items-center text-xs font-extrabold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
                           {record.species}
                         </span>
                       </div>
-                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                      <div className="min-w-0 bg-background/90 rounded-lg p-2.5 border border-border/60">
                         <p className="text-xs text-muted-foreground mb-1 font-semibold">Confidence</p>
                         <p className="text-sm font-bold text-foreground">{record.confidence}%</p>
                       </div>
-                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                      <div className="min-w-0 bg-background/90 rounded-lg p-2.5 border border-border/60">
                         <p className="text-xs text-muted-foreground mb-1 font-semibold">Location</p>
                         <p className="text-sm font-medium text-foreground truncate" title={record.location}>{record.location}</p>
                       </div>
-                      <div className="bg-background/90 rounded-lg p-2.5 border border-border/60">
+                      <div className="min-w-0 bg-background/90 rounded-lg p-2.5 border border-border/60">
                         <p className="text-xs text-muted-foreground mb-1 font-semibold">Source</p>
-                        <p className="text-sm font-medium text-muted-foreground break-all">{record.source}</p>
+                        <p className="text-sm font-medium text-muted-foreground break-words">{record.source}</p>
                       </div>
                     </div>
                     </div>

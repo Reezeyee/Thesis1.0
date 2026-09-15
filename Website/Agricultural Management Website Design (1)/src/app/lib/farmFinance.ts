@@ -56,11 +56,10 @@ export function totalPayrollExpenses(payroll: PayrollRecord[]): number {
 }
 
 export function totalExpenses(state: AppState): number {
-  return (
-    totalOperatingExpenses(state.expenses) +
-    totalMaintenanceExpenses(state.maintenanceLogs) +
-    totalPayrollExpenses(state.payroll)
-  );
+  // Maintenance-log entries with a cost are always paired with a matching `expenses` record
+  // (see EquipmentManagement's markReportFixed), so totalMaintenanceExpenses is NOT added here
+  // to avoid double-counting the same repair cost twice.
+  return totalOperatingExpenses(state.expenses) + totalPayrollExpenses(state.payroll);
 }
 
 export function netProfit(state: AppState): number {

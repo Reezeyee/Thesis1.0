@@ -109,12 +109,12 @@ export const AreaChartCard: React.FC<AreaChartCardProps> = ({
 }) => {
   return (
     <Card className={`border border-border/70 shadow-sm rounded-xl overflow-hidden ${className}`}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-4">
+        <div className="min-w-0 flex-1 basis-48">
           <CardTitle className="text-base font-bold text-foreground font-heading">{title}</CardTitle>
           {description && <CardDescription className="text-xs text-muted-foreground mt-0.5">{description}</CardDescription>}
         </div>
-        {action && <div>{action}</div>}
+        {action && <div className="shrink-0">{action}</div>}
       </CardHeader>
       <CardContent className="px-2 pb-4">
         {loading ? (
@@ -198,12 +198,12 @@ export const BarChartCard: React.FC<BarChartCardProps> = ({
 }) => {
   return (
     <Card className={`border border-border/70 shadow-sm rounded-xl overflow-hidden ${className}`}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-4">
+        <div className="min-w-0 flex-1 basis-48">
           <CardTitle className="text-base font-bold text-foreground font-heading">{title}</CardTitle>
           {description && <CardDescription className="text-xs text-muted-foreground mt-0.5">{description}</CardDescription>}
         </div>
-        {action && <div>{action}</div>}
+        {action && <div className="shrink-0">{action}</div>}
       </CardHeader>
       <CardContent className="px-2 pb-4">
         {loading ? (
@@ -280,12 +280,12 @@ export const DonutChartCard: React.FC<DonutChartCardProps> = ({
 
   return (
     <Card className={`border border-border/70 shadow-sm rounded-xl overflow-hidden ${className}`}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <div>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+        <div className="min-w-0 flex-1 basis-48">
           <CardTitle className="text-base font-bold text-foreground font-heading">{title}</CardTitle>
           {description && <CardDescription className="text-xs text-muted-foreground mt-0.5">{description}</CardDescription>}
         </div>
-        {action && <div>{action}</div>}
+        {action && <div className="shrink-0">{action}</div>}
       </CardHeader>
       <CardContent className="pb-4">
         {loading ? (

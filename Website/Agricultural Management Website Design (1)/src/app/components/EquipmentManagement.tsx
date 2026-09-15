@@ -594,7 +594,7 @@ export function EquipmentManagement() {
         const expenses = [
           ...prev.expenses,
           {
-            category: 'Equipment Repair',
+            category: 'Equipment & maintenance',
             description: `Repair: ${report.equipmentName}`,
             amount: Math.round(parsedRepairCost),
             date: today,
@@ -644,7 +644,7 @@ export function EquipmentManagement() {
             ? [
                 ...prev.expenses,
                 {
-                  category: 'Equipment',
+                  category: 'Equipment & maintenance',
                   description: `Purchased: ${record.name}`,
                   amount: Math.round(record.currentValue),
                   date: new Date().toISOString().slice(0, 10),
@@ -688,11 +688,11 @@ export function EquipmentManagement() {
     >
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap gap-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
               Equipment & Fleet Management
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live Fleet Status
             </span>
           </div>
@@ -1062,7 +1062,7 @@ export function EquipmentManagement() {
             </p>
           </div>
           {pendingReportCount > 0 ? (
-            <span className="text-xs px-3 py-1 rounded-full bg-[#d4183d] text-white shrink-0">
+            <span className="text-xs px-3 py-1 rounded-full bg-[#d4183d] text-white shrink-0 whitespace-nowrap">
               {pendingReportCount} pending
             </span>
           ) : null}
@@ -1194,12 +1194,12 @@ export function EquipmentManagement() {
                     key={equipment.id}
                     className="bg-muted/40 rounded-xl p-4 border border-border/60 hover:border-border/80 transition-all"
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-start gap-3 flex-1">
-                        <div className="w-12 h-12 rounded-lg bg-background/80 flex items-center justify-center border border-border/60">
+                    <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="w-12 h-12 shrink-0 rounded-lg bg-background/80 flex items-center justify-center border border-border/60">
                           <Wrench className="w-6 h-6 text-foreground" />
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           <h4 className="mb-1 font-bold text-foreground">{equipment.name}</h4>
                           <p className="text-xs text-muted-foreground">{equipment.type}</p>
                         </div>
@@ -1314,14 +1314,14 @@ export function EquipmentManagement() {
 
               <div className={`space-y-3 max-h-[540px] ${SCROLL_PANEL_CLASS}`}>
                 <div className="bg-background/80 rounded-xl p-4 border border-border/60">
-                  <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center justify-between gap-3 mb-3 flex-wrap gap-y-2">
                     <div>
                       <h4 className="font-bold text-foreground">Worker supply reports</h4>
                       <p className="text-xs text-muted-foreground">
                         Mobile reports show whether consumables ran out or still have stock.
                       </p>
                     </div>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground uppercase">
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground uppercase whitespace-nowrap">
                       {pendingConsumableReports} pending
                     </span>
                   </div>
@@ -1417,8 +1417,8 @@ export function EquipmentManagement() {
                           : 'bg-muted/40 border-border/60 hover:border-border/80'
                       }`}
                     >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-start gap-3 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                        <div className="flex items-start gap-3 flex-1 min-w-0 basis-44">
                           <div className="w-12 h-12 rounded-lg bg-background/80 flex items-center justify-center font-bold text-[10px] text-muted-foreground border border-border/60 shrink-0">
                             {item.category.slice(0, 4).toUpperCase()}
                           </div>
@@ -1436,7 +1436,7 @@ export function EquipmentManagement() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 mb-3 bg-background/50 rounded-lg p-3 backdrop-blur-sm">
+                      <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 mb-3 bg-background/50 rounded-lg p-3 backdrop-blur-sm">
                         <div className="flex flex-col justify-center">
                           <p className="text-xs text-muted-foreground mb-0.5">Current Stock Level</p>
                           <p className="text-base font-extrabold text-foreground">
@@ -1446,8 +1446,8 @@ export function EquipmentManagement() {
                             30% Threshold: <span className="font-bold">{threshold} {item.unit}</span>
                           </p>
                         </div>
-                        <div className="flex flex-col items-end justify-center gap-1.5">
-                          <div className="flex items-center gap-1">
+                        <div className="flex flex-col items-start min-[420px]:items-end justify-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1">
                             <button
                               type="button"
                               onClick={() => void adjustConsumableStock(item.supplyId, 5)}
@@ -1682,7 +1682,7 @@ function MaintenanceLogReportCard({ log }: { log: MaintenanceRecord }) {
           <h4 className="font-medium">{log.equipmentName}</h4>
           <p className="text-sm text-muted-foreground">{log.date ?? '—'}</p>
         </div>
-        <span className="text-xs px-3 py-1 rounded-full bg-[#4a2c2a] text-white">
+        <span className="text-xs px-3 py-1 rounded-full bg-[#4a2c2a] text-white whitespace-nowrap">
           Maintenance note (app)
         </span>
       </div>

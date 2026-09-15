@@ -365,6 +365,16 @@ export function accruedUnpaidPayrollTotal(
     .reduce((sum, r) => sum + r.monthlyGross, 0);
 }
 
+/**
+ * Single source of truth for "Net Profit" everywhere it's shown (Dashboard and Profit & Finance).
+ * Cash income minus cash expenses, minus wages already earned this period but not yet paid out.
+ */
+export function netProfitAccrualAware(state: AppState, currentPeriod: string = currentPayPeriodLabel()): number {
+  const roster = payrollRosterFromWorkers(state.workers, state.payroll, state.attendance, currentPeriod);
+  const accrued = accruedUnpaidPayrollTotal(roster, state.payroll, currentPeriod);
+  return totalIncome(state.sales) - totalExpenses(state) - accrued;
+}
+
 export function payrollPaymentMethodLabel(method: PayrollPaymentMethod): string {
   switch (method) {
     case 'cash':
@@ -444,7 +454,7 @@ export function revenueChartFromState(state: AppState): { month: string; revenue
   if (rows.length === 0) {
     const rev = totalIncome(state.sales);
     const exp = totalExpenses(state);
-    return [{ month: 'All time', revenue: rev, expenses: exp, profit: rev - exp }];
+    return [{ month: 'All time', revenue: rev, expenses: exp, profit: netProfitAccrualAware(state) }];
   }
   return rows.map(({ month, sales, expenses, profit }) => ({
     month,

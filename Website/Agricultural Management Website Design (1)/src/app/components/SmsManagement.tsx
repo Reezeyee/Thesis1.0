@@ -12,7 +12,8 @@ import {
   Clock, 
   ExternalLink,
   Edit2,
-  Check
+  Check,
+  ArrowLeft
 } from 'lucide-react';
 
 const containerVariants = {
@@ -37,6 +38,8 @@ export function SmsManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
+  // Below md there is no room for both panes: show the directory, then the thread once a worker is tapped.
+  const [showThreadOnMobile, setShowThreadOnMobile] = useState(false);
   const [messageText, setMessageText] = useState('');
   
   // Admin details
@@ -130,11 +133,11 @@ export function SmsManagement() {
     >
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-2 border-b border-border/60">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap gap-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
               SMS Broadcast & Worker Communication
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Cellular Gateway Active
             </span>
           </div>
@@ -187,11 +190,11 @@ export function SmsManagement() {
       <motion.div variants={itemVariants} className="h-[calc(100vh-15rem)] min-h-[500px] bg-card/95 border border-border/80 rounded-xl overflow-hidden shadow-sm flex">
         
         {/* Left Pane: Workers list */}
-        <div className="w-[320px] border-r border-border/60 flex flex-col shrink-0">
+        <div className={`${showThreadOnMobile ? 'hidden md:flex' : 'flex'} w-full md:w-[280px] lg:w-[320px] md:border-r border-border/60 flex-col shrink-0`}>
           <div className="p-3 border-b border-border/60 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold font-heading text-foreground">Staff Directory</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold whitespace-nowrap">
                 {activeWorkersCount} Active / {workers.length} Total
               </span>
             </div>
@@ -248,7 +251,10 @@ export function SmsManagement() {
                   <button
                     key={w.workerId || w.name}
                     type="button"
-                    onClick={() => setSelectedWorkerId(w.workerId || '')}
+                    onClick={() => {
+                      setSelectedWorkerId(w.workerId || '');
+                      setShowThreadOnMobile(true);
+                    }}
                     className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all ${
                       isActive
                         ? 'bg-accent/15 border border-accent/30 text-accent font-bold'
@@ -286,17 +292,25 @@ export function SmsManagement() {
         </div>
 
         {/* Right Pane: Thread View */}
-        <div className="flex-1 flex flex-col bg-card">
+        <div className={`${showThreadOnMobile ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 flex-col bg-card`}>
           {activeWorker ? (
             <>
               {/* Thread Header */}
-              <div className="p-4 border-b border-border/60 flex items-center justify-between bg-muted/20">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center font-bold text-sm font-mono">
+              <div className="p-3 sm:p-4 border-b border-border/60 flex flex-wrap items-center justify-between gap-2 bg-muted/20">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowThreadOnMobile(false)}
+                    aria-label="Back to staff directory"
+                    className="md:hidden -ml-1 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <div className="w-10 h-10 shrink-0 rounded-xl bg-accent/15 text-accent flex items-center justify-center font-bold text-sm font-mono">
                     {activeWorker.name ? activeWorker.name.split(' ').map(p => p[0]).join('').substring(0, 2).toUpperCase() : '?'}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap gap-y-1">
                       <h3 className="font-bold text-sm font-heading text-foreground">{activeWorker.name}</h3>
                       <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full border ${
                         isWorkerActive(activeWorker)
@@ -341,7 +355,7 @@ export function SmsManagement() {
                         className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}
                       >
                         <div
-                          className={`max-w-[75%] rounded-2xl p-3.5 text-xs shadow-2xs ${
+                          className={`max-w-[85%] sm:max-w-[75%] break-words rounded-2xl p-3.5 text-xs shadow-2xs ${
                             isAdmin
                               ? 'bg-accent text-accent-foreground rounded-tr-xs'
                               : 'bg-muted/60 text-foreground border border-border/60 rounded-tl-xs'
@@ -367,7 +381,7 @@ export function SmsManagement() {
 
               {/* Message Composer */}
               <div className="p-3 border-t border-border/60 bg-card space-y-2">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground font-mono">
                   <span>Send to: <strong className="text-foreground">{activeWorker.phoneNumber || activeWorker.name}</strong></span>
                   <span className={isOverLimit ? 'text-rose-500 font-bold' : ''}>
                     {charsLeft} chars remaining ({Math.ceil(messageText.length / 160) || 1} SMS)
@@ -385,7 +399,7 @@ export function SmsManagement() {
                         handleSendMessage(false);
                       }
                     }}
-                    className="flex-1 bg-background border border-border/80 focus:border-accent rounded-xl px-3.5 py-2 text-xs focus:outline-none text-foreground placeholder:text-muted-foreground font-sans"
+                    className="flex-1 min-w-0 bg-background border border-border/80 focus:border-accent rounded-xl px-3.5 py-2 text-xs focus:outline-none text-foreground placeholder:text-muted-foreground font-sans"
                   />
                   <button
                     type="button"

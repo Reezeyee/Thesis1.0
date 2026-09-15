@@ -1253,7 +1253,7 @@ export function FarmManagement() {
                   <AlertTriangle className="h-5 w-5 relative z-10 text-[#d4183d]" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap gap-y-1">
                     <h4 className="text-xs font-black text-foreground uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
                       Worker Problem Reported!
                     </h4>
@@ -1321,11 +1321,11 @@ export function FarmManagement() {
 
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap gap-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
               Farm Operations Management
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live System
             </span>
           </div>
@@ -2081,7 +2081,7 @@ export function FarmManagement() {
           {/* Timesheet Corrections Column / Card */}
           {(approvalsTypeFilter === 'all' || approvalsTypeFilter === 'timesheets') && (
             <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-y-2 gap-x-3">
                 <div className="flex items-center gap-2">
                   <FileClock className="w-4 h-4 text-amber-500" />
                   <h4 className="text-sm font-bold text-foreground font-heading">
@@ -2241,7 +2241,7 @@ export function FarmManagement() {
           {/* Leave Requests Column / Card */}
           {(approvalsTypeFilter === 'all' || approvalsTypeFilter === 'leaves') && (
             <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-y-2 gap-x-3">
                 <div className="flex items-center gap-2">
                   <CalendarDays className="w-4 h-4 text-emerald-500" />
                   <h4 className="text-sm font-bold text-foreground font-heading">
@@ -2374,7 +2374,7 @@ export function FarmManagement() {
               <p className="text-xs text-muted-foreground mt-0.5">Mobile time-in and time-out records synced from worker accounts</p>
             </div>
           </div>
-          <span className="rounded-full bg-muted border border-border/60 px-3 py-1 text-xs font-mono font-medium text-foreground">
+          <span className="rounded-full bg-muted border border-border/60 px-3 py-1 text-xs font-mono font-medium text-foreground whitespace-nowrap">
             {filteredAttendance.length} of {state.attendance.length} record{state.attendance.length === 1 ? '' : 's'}
           </span>
         </div>
@@ -2420,7 +2420,7 @@ export function FarmManagement() {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-bold text-sm text-foreground font-heading">{attendance.workerName || 'Unnamed worker'}</p>
-                      <span className="rounded-full bg-background/80 border border-border/40 px-2.5 py-0.5 text-xs text-muted-foreground font-medium">
+                      <span className="max-w-full truncate rounded-full bg-background/80 border border-border/40 px-2.5 py-0.5 text-xs text-muted-foreground font-medium whitespace-nowrap">
                         {worker?.roleRate || 'No role rate'}
                       </span>
                       <span
@@ -2537,9 +2537,9 @@ export function FarmManagement() {
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap gap-y-1">
                 <h3 className="font-bold text-lg font-heading text-foreground">Harvest Readiness Board</h3>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold whitespace-nowrap">
                   {state.harvestReadinessReports?.length || 0} Total
                 </span>
               </div>
@@ -2759,9 +2759,9 @@ export function FarmManagement() {
             <Cherry className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap gap-y-1">
               <h3 className="font-bold text-lg font-heading text-foreground">Harvest Log</h3>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold whitespace-nowrap">
                 {state.cherryHarvests?.length || 0} Total
               </span>
             </div>
@@ -2819,7 +2819,7 @@ export function FarmManagement() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
         <div className="flex h-full min-h-[560px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap gap-y-2">
             <h3 className="font-bold text-base font-heading text-foreground">Coffee Fields</h3>
             <button
               type="button"
@@ -2842,9 +2842,9 @@ export function FarmManagement() {
                 key={field.fieldId || field.name}
                 className="bg-muted/40 rounded-xl p-4 border border-border/60 transition-all duration-300"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-10 h-10 shrink-0 rounded-xl bg-emerald-500/15 flex items-center justify-center">
                       <TreePine className="w-5 h-5 text-emerald-500" />
                     </div>
                     <div>
@@ -2903,7 +2903,7 @@ export function FarmManagement() {
 
         <div className="space-y-6">
           <div className="flex h-[420px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap gap-y-2">
               <h3 className="font-bold text-base font-heading text-foreground">Irrigation Info</h3>
               <button
                 type="button"
@@ -2924,7 +2924,7 @@ export function FarmManagement() {
                   const inactiveCount = group.systems.filter((s) => s.status === 'Inactive').length;
                   return (
                     <div key={group.section} className="bg-muted/40 rounded-xl border border-border/60 overflow-hidden">
-                      <div className="flex items-center justify-between px-4 py-3 bg-[#4a2c2a]/5 border-b border-border/60">
+                      <div className="flex items-center justify-between px-4 py-3 bg-[#4a2c2a]/5 border-b border-border/60 flex-wrap gap-y-2 gap-x-3">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-lg bg-background/80 flex items-center justify-center shadow-sm">
                             <Droplets className="w-4 h-4 text-foreground" />
@@ -2964,7 +2964,7 @@ export function FarmManagement() {
                           return (
                             <div
                               key={system.irrigationId || system.zone}
-                              className={`flex items-center justify-between px-4 py-2.5 transition-colors ${
+                              className={`flex items-center justify-between gap-2 px-4 py-2.5 transition-colors ${
                                 isInactive ? 'bg-gray-100/70' : 'hover:bg-background/50'
                               }`}
                             >
@@ -2981,13 +2981,13 @@ export function FarmManagement() {
                                   }`}
                                 />
                                 <span
-                                  className={`text-sm font-medium ${
+                                  className={`text-sm font-medium whitespace-nowrap ${
                                     isInactive ? 'text-gray-400 line-through' : 'text-foreground'
                                   }`}
                                 >
                                   {system.zone}
                                 </span>
-                                <span className="text-[10px] font-semibold text-foreground/60 ml-1">
+                                <span className="hidden min-[400px]:inline text-[10px] font-semibold text-foreground/60 ml-1">
                                   ({system.coverage || '100%'})
                                 </span>
                               </div>
@@ -3036,7 +3036,7 @@ export function FarmManagement() {
           </div>
 
           <div id="sprinkler-damage-reports-section" className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm transition-all duration-300">
-            <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap gap-y-2">
               <div>
                 <h3 className="font-bold text-base font-heading text-foreground">Sprinkler Damage Reports</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Reports are submitted by workers through the mobile app</p>
@@ -3124,9 +3124,9 @@ export function FarmManagement() {
                   <Bug className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap gap-y-1">
                     <h3 className="font-bold text-base font-heading text-foreground">Pest and Disease Issues Report</h3>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-500 font-bold">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-500 font-bold whitespace-nowrap">
                       {state.pestControlLogs?.length || 0} Total
                     </span>
                   </div>
@@ -3381,7 +3381,7 @@ export function FarmManagement() {
                       <img
                         src={worker.image}
                         alt={worker.name}
-                        className="w-16 h-16 rounded-xl object-cover border border-border shrink-0"
+                        className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl object-cover border border-border shrink-0"
                       />
                       <div className="flex-1 min-w-0">
                         <h4 className="mb-1 truncate font-bold text-foreground">{worker.name}</h4>
@@ -3398,7 +3398,7 @@ export function FarmManagement() {
                           <p className="mt-1 truncate text-xs text-muted-foreground">{worker.accountEmail}</p>
                         ) : null}
                         <div className="mt-2 flex flex-wrap gap-2">
-                          <span className="rounded-full bg-background/80 px-2 py-1 text-[11px] text-muted-foreground font-mono">
+                          <span className="max-w-full truncate rounded-full bg-background/80 px-2 py-1 text-[11px] text-muted-foreground font-mono whitespace-nowrap">
                             ID {worker.workerId}
                           </span>
                           <span
@@ -3412,7 +3412,7 @@ export function FarmManagement() {
                           </span>
                         </div>
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex flex-col sm:flex-row gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditDialog(worker); }}
@@ -3443,7 +3443,7 @@ export function FarmManagement() {
         <div className="space-y-4">
           {selectedWorker ? (
             <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-              <div className="flex items-center justify-between gap-2 mb-4">
+              <div className="flex items-center justify-between gap-2 mb-4 flex-wrap gap-y-2">
                 <h3 className="font-bold text-base font-heading text-foreground">Employee Profile</h3>
                 <Button
                   type="button"

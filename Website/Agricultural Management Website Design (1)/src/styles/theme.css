@@ -188,3 +188,15 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Hide the browser's native up/down stepper on every number input site-wide (Coffee Fields'
+   Tree count, Equipment quantities, Latitude/Longitude, etc.) -- it's a plain number field, not
+   a stepper control, and the spinner buttons offered no real way to enter values by typing. */
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

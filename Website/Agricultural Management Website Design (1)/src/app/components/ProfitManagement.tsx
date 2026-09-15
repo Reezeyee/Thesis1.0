@@ -10,6 +10,7 @@ import {
   buyersFromSales,
   currentPayPeriodLabel,
   isWorkerPaidForPeriod,
+  netProfitAccrualAware,
   payrollHistoryFromRecords,
   payrollRecordForWorker,
   payrollRosterFromWorkers,
@@ -372,8 +373,11 @@ export function ProfitManagement() {
   const totalExpenses = transactions.filter((t) => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
   // Accrual-aware: subtracts wages already earned this period even if payday hasn't happened yet,
   // so a fresh sale can't look like pure profit while the pickers who produced it are still owed.
-  const netProfit = totalIncome - totalExpenses - accruedPayroll;
-  const incomeCount = transactions.filter((t) => t.type === 'income').length;
+  // Uses the same shared calculation as the Dashboard's "Net Profit" card, so the two always agree.
+  const netProfit = netProfitAccrualAware(state, currentPeriod);
+  // Excludes zero-amount records (e.g. registering a buyer with no purchase yet) so they
+  // don't drag down the average — no money actually changed hands for those.
+  const incomeCount = transactions.filter((t) => t.type === 'income' && t.amount !== 0).length;
 
   const kgSold = useMemo(() => totalKgSold(state.sales), [state.sales]);
   const avgSellPricePerKg = kgSold > 0 ? totalIncome / kgSold : 0;
@@ -427,14 +431,14 @@ export function ProfitManagement() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap gap-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
               Profit & Finance Management
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live Ledger
             </span>
           </div>
@@ -667,7 +671,7 @@ export function ProfitManagement() {
                         ) : null}
                       </div>
                       {row.status === 'inactive' ? (
-                        <span className="inline-flex items-center text-xs font-semibold text-[#8b6f47] bg-[#8b6f47]/15 px-2 py-0.5 rounded-full shrink-0">
+                        <span className="inline-flex items-center text-xs font-semibold text-[#8b6f47] bg-[#8b6f47]/15 px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">
                           Inactive
                         </span>
                       ) : paid ? (
@@ -887,10 +891,10 @@ export function ProfitManagement() {
                   key={transaction.id}
                   className="bg-muted/40 rounded-xl p-4 border border-border/60 hover:border-border/80 transition-all"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3 flex-1">
+                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                    <div className="flex items-start gap-3 flex-1 min-w-0 basis-48">
                       <div
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                        className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center ${
                           transaction.type === 'income' ? 'bg-[#2d5016]/20' : 'bg-[#d4a574]/20'
                         }`}
                       >
@@ -900,8 +904,8 @@ export function ProfitManagement() {
                           <TrendingDown className="w-5 h-5 text-[#d4a574]" />
                         )}
                       </div>
-                      <div className="flex-1">
-                        <h4 className="mb-1">{transaction.description}</h4>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="mb-1 break-words">{transaction.description}</h4>
                         <p className="text-xs text-muted-foreground mb-1">
                           {transaction.category}
                           {transaction.buyer && ` • ${transaction.buyer}`}
@@ -912,13 +916,13 @@ export function ProfitManagement() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right ml-auto">
                       <p
-                        className={`text-xl font-medium ${
+                        className={`text-lg sm:text-xl font-medium whitespace-nowrap ${
                           transaction.type === 'income' ? 'text-[#2d5016]' : 'text-[#d4a574]'
                         }`}
                       >
-                        {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                        {transaction.amount >= 0 ? '+' : '-'}{formatCurrency(Math.abs(transaction.amount))}
                       </p>
                     </div>
                   </div>

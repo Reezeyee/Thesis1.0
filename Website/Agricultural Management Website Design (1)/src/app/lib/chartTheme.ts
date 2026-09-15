@@ -91,10 +91,27 @@ const CHERRY_BUCKET_LABELS: Record<CherryGradeBucket, string> = {
   unknown: 'Unknown',
 };
 
-/** Map CNN / mobile grade strings into chart buckets (matches CherryGradeTfliteClassifier labels). */
+/**
+ * Map CNN / mobile grade strings into chart buckets (matches CherryGradeTfliteClassifier labels).
+ *
+ * CherryGradeRecord.grade for a Roboflow branch scan holds one of exactly three fixed harvest
+ * recommendation phrases from the Android app's BranchScanSummary.computeHarvestStatus():
+ *   "Optimal Harvest Ready (Strip/Batch Pick)"   (>=75% ripe)
+ *   "Selective Picking Recommended (Red Only)"   (40-75% ripe)
+ *   "Wait / Unripe (Delay Harvest)"              (<40% ripe)
+ * These must be matched exactly and take priority over the generic substring heuristics below --
+ * the first phrase contains neither "ripe" nor "unripe" anywhere in it, so without this check
+ * every fully-ripe branch scan silently fell through to the "unknown" bucket and vanished from
+ * the Ripe/Unripe/Overripe dashboard totals (while still counting toward Total Classifications).
+ * The generic heuristics remain for the tree-ripeness-scan fallback path (simple labels like
+ * "Ripe"/"Unripe"/"Semi-ripe") and any older or differently-labeled hosted model grade text.
+ */
 export function cherryGradeBucket(grade: string | null | undefined): CherryGradeBucket {
   const k = (grade ?? '').toLowerCase().trim();
   if (!k || k === 'unknown' || k.includes('uncertain')) return 'unknown';
+  if (k.includes('optimal harvest ready')) return 'ripe';
+  if (k.includes('selective picking')) return 'nearRipe';
+  if (k.includes('wait') || k.includes('delay harvest')) return 'unripe';
   if (k.includes('overripe') || k.includes('over-ripe') || k.includes('defect')) return 'overripe';
   if (k.includes('semi') || k.includes('near') || k.includes('yellow')) return 'nearRipe';
   if (k.includes('unripe') || k.includes('green')) return 'unripe';

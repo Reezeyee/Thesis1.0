@@ -499,8 +499,17 @@ export function WorkerFormDialog({
                   value={form.emergencyName}
                   onChange={(e) => setForm((f) => ({ ...f, emergencyName: e.target.value }))}
                   placeholder="Sample: Maria Santos"
-                  className="bg-background/90 text-sm"
+                  className={`bg-background/90 text-sm ${
+                    form.emergencyName && !isValidNamePart(form.emergencyName)
+                      ? 'border-destructive focus-visible:ring-destructive'
+                      : ''
+                  }`}
                 />
+                {form.emergencyName && !isValidNamePart(form.emergencyName) && (
+                  <p className="text-[11px] text-destructive font-medium">
+                    Only letters, hyphens (-), and apostrophes (') allowed.
+                  </p>
+                )}
               </div>
 
               <SelectWithOther
@@ -614,7 +623,7 @@ export function WorkerFormDialog({
                   type="file"
                   accept="image/*"
                   onChange={handlePhotoChange}
-                  className="sr-only"
+                  className="sr-only w-px h-px"
                 />
                 {photoError ? (
                   <p className="text-xs text-destructive font-medium" role="alert">

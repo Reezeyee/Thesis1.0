@@ -79,12 +79,27 @@ export function FarmMonthTick({
   x = 0,
   y = 0,
   payload,
+  index = 0,
+  width = 0,
+  visibleTicksCount = 0,
 }: {
   x?: number;
   y?: number;
   payload?: { value?: string };
+  /** Injected by Recharts: tick position, axis width and how many ticks share it. */
+  index?: number;
+  width?: number;
+  visibleTicksCount?: number;
 }) {
-  const label = String(payload?.value ?? '');
+  const full = String(payload?.value ?? '');
+  // interval=0 draws every label; on a narrow chart (phone, split screen) they overlap, so
+  // shorten "Apr 2026" to "Apr", and if even that is too tight, label every other tick.
+  const slot = width > 0 && visibleTicksCount > 0 ? width / visibleTicksCount : Infinity;
+  const approxWidth = (text: string) => text.length * 7;
+  let label = full;
+  if (approxWidth(label) > slot - 6) label = full.split(/\s+/)[0] ?? full;
+  if (approxWidth(label) > slot * 2 - 6) label = label.slice(0, 3);
+  else if (approxWidth(label) > slot - 6 && index % 2 === 1) label = '';
   return (
     <g transform={`translate(${x},${y})`}>
       <text
@@ -180,7 +195,8 @@ export function ColoredDonutChart({
         innerRadius={inner}
         paddingAngle={chartData.length > 1 ? 2 : 0}
         labelLine={false}
-        label={showLabels ? renderPieLabel : false}
+        // Outside labels get clipped when the chart is narrow; the legend already lists every slice.
+        label={showLabels && chartWidth >= 360 ? renderPieLabel : false}
         stroke="#ffffff"
         strokeWidth={2}
         isAnimationActive={false}
@@ -196,7 +212,8 @@ export function ColoredDonutChart({
             y={cy - (centerSubLabel ? 8 : 0)}
             textAnchor="middle"
             dominantBaseline="central"
-            fontSize={centerSubLabel ? 20 : 22}
+            // Shrink long totals (e.g. "36,000.00") so they stay inside the hole.
+            fontSize={Math.max(10, Math.min(centerSubLabel ? 20 : 22, (inner * 2 - 10) / (centerValue.length * 0.6)))}
             fontWeight={700}
             fill="#292524"
           >

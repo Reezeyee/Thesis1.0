@@ -477,7 +477,7 @@ export function GlobalNotificationBanner({
 
   return (
     <>
-      <div className="fixed bottom-6 right-6 z-50 max-w-md w-full animate-in slide-in-from-bottom-6 fade-in duration-300 pointer-events-auto">
+      <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:right-6 sm:left-auto sm:w-full z-50 max-w-md animate-in slide-in-from-bottom-6 fade-in duration-300 pointer-events-auto">
         <div className="bg-card/95 backdrop-blur-md border-2 border-[#d4183d]/40 rounded-2xl p-4 shadow-2xl ring-4 ring-[#d4183d]/15 relative overflow-hidden">
           <div className="absolute -top-10 -right-10 w-28 h-28 bg-[#d4183d]/15 rounded-full blur-xl pointer-events-none animate-pulse" />
 
@@ -491,7 +491,7 @@ export function GlobalNotificationBanner({
                 <AlertTriangle className="h-5 w-5 relative z-10 text-[#d4183d]" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap gap-y-1">
                   <h4 className="text-xs font-black text-foreground uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
                     Worker Problem Reported!
                   </h4>
@@ -702,7 +702,7 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
 
         {/* Slide-out Drawer */}
         <div className="relative w-full max-w-md bg-card h-full shadow-2xl flex flex-col border-l border-border/60 animate-in slide-in-from-right duration-300">
-          <div className="p-5 border-b border-border/60 bg-[#4a2c2a] text-[#fdfbf7] flex items-center justify-between">
+          <div className="p-5 border-b border-border/60 bg-[#4a2c2a] text-[#fdfbf7] flex items-center justify-between flex-wrap gap-y-2 gap-x-3">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-[#2d5016] flex items-center justify-center text-white">
                 <Bell className="w-5 h-5" />

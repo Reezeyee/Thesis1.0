@@ -62,7 +62,7 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-y-2 gap-x-3">
         <div>
           <h1>Farm Dashboard</h1>
           <p className="text-muted-foreground">Welcome back to Acojido Farm Management</p>
@@ -202,7 +202,7 @@ export function Dashboard() {
                 <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                   <ShoppingCart className="w-5 h-5 text-primary" />
                 </div>
-                <span className="text-xs px-2.5 py-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold rounded-full border border-emerald-500/25">{buyer.orders} orders</span>
+                <span className="text-xs px-2.5 py-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold rounded-full border border-emerald-500/25 whitespace-nowrap">{buyer.orders} orders</span>
               </div>
               <h4 className="mb-1 text-foreground font-semibold">{buyer.name}</h4>
               <p className="text-2xl text-emerald-600 dark:text-emerald-400 font-bold mb-2">{buyer.amount}</p>

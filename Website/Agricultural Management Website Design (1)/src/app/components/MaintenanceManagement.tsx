@@ -412,19 +412,21 @@ export function MaintenanceManagement() {
 
     const ok = await runSave('Buyer', () =>
       updateState((prev) => {
+        // Renaming/re-tagging a buyer updates their profile fields, but must never rewrite the
+        // `date` of past sales -- that field drives revenue-by-month charts, and stamping every
+        // historical sale with today's "Last order" value would move real income into the wrong month.
         let nextSales = prev.sales.map((s) => {
           if (s.buyer !== existing.name) return s;
           return {
             ...s,
             buyer: nameTrim,
             details: detailsPayload,
-            date: lastOrder,
           };
         });
         const currentTotal = nextSales
           .filter((s) => s.buyer === nameTrim)
           .reduce((sum, s) => sum + saleLineTotal(s), 0);
-        if (amount > 0 && amount !== currentTotal) {
+        if (amount !== currentTotal) {
           nextSales = [
             ...nextSales,
             saleRecordFromBuyerForm(nameTrim, detailsPayload, lastOrder, amount - currentTotal),
@@ -526,23 +528,48 @@ export function MaintenanceManagement() {
     const attendanceId = attendance.attendanceId?.trim();
     if (!attendanceId || linkedAttendanceIds.has(attendanceId)) return;
     const worker = workerForAttendance(state.workers, attendance);
+    if (!worker) {
+      showSaveError('No worker on the roster matches this attendance record\'s name — fix the worker name first.');
+      return;
+    }
     const payroll = payrollFromAttendance(attendance, worker);
+    if (payroll.amount <= 0) {
+      showSaveError('Could not work out a pay amount for this worker\'s role — payroll line was not created.');
+      return;
+    }
     const ok = await runSave('Attendance payroll', () =>
-      updateState((prev) => ({
-        ...prev,
-        attendance: prev.attendance.map((row) =>
-          row.attendanceId?.trim() === attendanceId
-            ? { ...row, awaitingPayrollLine: false }
-            : row
-        ),
-        payroll: [...prev.payroll, payroll],
-      }))
+      updateState((prev) => {
+        // Re-check inside the updater: guards against a double-click race creating two payroll
+        // lines for the same attendance record before the button has a chance to disable.
+        if (prev.payroll.some((p) => p.linkedAttendanceId?.trim() === attendanceId)) return prev;
+        return {
+          ...prev,
+          attendance: prev.attendance.map((row) =>
+            row.attendanceId?.trim() === attendanceId
+              ? { ...row, awaitingPayrollLine: false }
+              : row
+          ),
+          payroll: [...prev.payroll, payroll],
+        };
+      })
     );
     if (!ok) showSaveError('Attendance payroll');
   };
 
   const clearAttendanceHistory = async () => {
     if (state.attendance.length === 0) return;
+    if (pendingAttendance.length > 0) {
+      showSaveError(
+        `${pendingAttendance.length} attendance record${pendingAttendance.length === 1 ? '' : 's'} still ` +
+          'awaiting a payroll line. Add payroll for those first — clearing history now would erase them ' +
+          'without ever paying that time.',
+      );
+      return;
+    }
+    const confirmed = window.confirm(
+      `This permanently deletes all ${state.attendance.length} attendance record(s). This cannot be undone. Continue?`,
+    );
+    if (!confirmed) return;
     await runSave('Attendance history', () =>
       updateState((prev) => ({
         ...prev,
@@ -561,14 +588,14 @@ export function MaintenanceManagement() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap gap-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
               Maintenance & Operations
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Active Operations
             </span>
           </div>
@@ -868,7 +895,7 @@ export function MaintenanceManagement() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-muted/40 px-3 py-1 text-xs font-medium text-foreground">
+            <span className="rounded-full bg-muted/40 px-3 py-1 text-xs font-medium text-foreground whitespace-nowrap">
               {pendingAttendance.length} pending payroll
             </span>
             <Button
@@ -892,9 +919,16 @@ export function MaintenanceManagement() {
               const isInactive = worker ? parseWorkerDetails(worker.details).status === 'inactive' : false;
               const attendanceId = attendance.attendanceId?.trim();
               const hasPayroll = Boolean(attendanceId && linkedAttendanceIds.has(attendanceId));
-              const canCreatePayroll =
-                Boolean(attendance.awaitingPayrollLine && attendanceId && !hasPayroll && (attendance.hoursWorked ?? 0) > 0);
               const previewPayroll = payrollFromAttendance(attendance, worker);
+              const canCreatePayroll = Boolean(
+                attendance.awaitingPayrollLine &&
+                  attendanceId &&
+                  !hasPayroll &&
+                  (attendance.hoursWorked ?? 0) > 0 &&
+                  previewPayroll.amount > 0,
+              );
+              const noMatchingWorker =
+                attendance.awaitingPayrollLine && attendanceId && !hasPayroll && previewPayroll.amount <= 0;
               return (
                 <div
                   key={attendanceId || `${attendance.workerName}-${attendance.date}-${attendance.clockIn}-${index}`}
@@ -904,32 +938,38 @@ export function MaintenanceManagement() {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-medium text-foreground">{attendance.workerName || 'Unnamed worker'}</p>
-                        <span className="rounded-full bg-background/80 px-2.5 py-1 text-xs text-[#6b5d56]">
+                        <span className="max-w-full truncate rounded-full bg-background/80 px-2.5 py-1 text-xs text-[#6b5d56] whitespace-nowrap">
                           {worker?.roleRate || 'No role rate'}
                         </span>
                         {isInactive ? (
-                          <span className="rounded-full bg-[#b0bec5] px-2.5 py-1 text-xs font-medium text-[#263238]">
+                          <span className="rounded-full bg-[#b0bec5] px-2.5 py-1 text-xs font-medium text-[#263238] whitespace-nowrap">
                             Inactive
                           </span>
                         ) : null}
                         {hasPayroll ? (
-                          <span className="rounded-full bg-[#2d5016] px-2.5 py-1 text-xs font-medium text-white">
+                          <span className="rounded-full bg-[#2d5016] px-2.5 py-1 text-xs font-medium text-white whitespace-nowrap">
                             Payroll line added
                           </span>
                         ) : attendance.awaitingPayrollLine ? (
-                          <span className="rounded-full bg-[#d4a574]/30 px-2.5 py-1 text-xs font-medium text-foreground">
+                          <span className="rounded-full bg-[#d4a574]/30 px-2.5 py-1 text-xs font-medium text-foreground whitespace-nowrap">
                             Awaiting payroll
                           </span>
                         ) : (
-                          <span className="rounded-full bg-background/80 px-2.5 py-1 text-xs text-[#6b5d56]">
+                          <span className="rounded-full bg-background/80 px-2.5 py-1 text-xs text-[#6b5d56] whitespace-nowrap">
                             Recorded
                           </span>
                         )}
                       </div>
                       <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-                        <span className="text-sm font-medium text-[#2d5016]">
-                          Payroll: {formatCurrency(previewPayroll.amount)}
-                        </span>
+                        {noMatchingWorker ? (
+                          <span className="text-sm font-medium text-red-600">
+                            No matching worker/role rate — can't add payroll
+                          </span>
+                        ) : (
+                          <span className="text-sm font-medium text-[#2d5016]">
+                            Payroll: {formatCurrency(previewPayroll.amount)}
+                          </span>
+                        )}
                         <Button
                           size="sm"
                           className="bg-[#2d5016] text-white"
@@ -1040,8 +1080,8 @@ export function MaintenanceManagement() {
                           <MapPin className="w-3 h-3 shrink-0" />
                           <span>{channelBuyer?.location ?? `${hub.municipality}, Bataan`}</span>
                         </div>
-                        <div className="flex items-center justify-between text-xs pt-2 border-t border-border/60 gap-2">
-                          <span className="text-muted-foreground">Synced channel volume</span>
+                        <div className="flex flex-wrap items-center justify-between text-xs pt-2 border-t border-border/60 gap-2">
+                          <span className="text-muted-foreground whitespace-nowrap">Synced channel volume</span>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="font-medium text-[#2d5016] tabular-nums">
                               {formatCurrency(channelBuyer?.totalPurchases ?? 0)}

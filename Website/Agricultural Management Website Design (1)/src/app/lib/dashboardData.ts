@@ -9,12 +9,12 @@ import {
   monthSortKeyFromDate,
 } from './chartTheme';
 import {
-  netProfit,
   parseHarvestKg,
   saleLineTotal,
   totalExpenses,
   totalIncome,
 } from './farmFinance';
+import { netProfitAccrualAware } from './profitUi';
 import { accumulateMonthChartRows, padMonthChartRows } from './monthChartBuckets';
 import { formatCurrency } from './currencyFormat';
 import { isWorkerActive } from './workerUi';
@@ -38,7 +38,7 @@ function formatActivityDate(raw: string): string {
 export function buildDashboardStats(state: AppState) {
   const income = totalIncome(state.sales);
   const expenses = totalExpenses(state);
-  const profit = netProfit(state);
+  const profit = netProfitAccrualAware(state);
   const harvestKg = state.cherryHarvests.reduce((s, h) => s + parseHarvestKg(h), 0);
   const activeEquipment = state.equipment.filter((e) => e.status.toLowerCase() === 'active').length;
   const activeWorkers = state.workers.filter(isWorkerActive).length;
@@ -181,7 +181,7 @@ export function buildSalesByMonth(state: AppState) {
     const income = totalIncome(state.sales);
     const expenses = totalExpenses(state);
     if (income <= 0 && expenses <= 0) return [];
-    return [{ month: 'All time', sales: income, profit: income - expenses }];
+    return [{ month: 'All time', sales: income, profit: netProfitAccrualAware(state) }];
   }
   return dated.map(({ month, sales, profit }) => ({ month, sales, profit }));
 }
@@ -192,7 +192,7 @@ export function buildMonthlyProfitExpenses(state: AppState) {
   const dated = rows.filter((r) => r.sortKey !== '0000-00');
   if (dated.length === 0) {
     const expenses = totalExpenses(state);
-    const profit = netProfit(state);
+    const profit = netProfitAccrualAware(state);
     if (profit === 0 && expenses === 0) return [];
     return [{ month: 'All time', profit, expenses }];
   }
