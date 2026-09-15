@@ -23,11 +23,50 @@ object RoboflowApiClient {
 
     val TARGET_CLASSES = listOf("Unripe", "Ripening", "Ripe", "Overripe", "Dry_Damaged")
 
+    /**
+     * The numeric class_id this hosted model version actually returns, verified against the
+     * labeled validation set in yolo_detection/dataset: querying detect.roboflow.com directly and
+     * spatially matching each returned box to its nearest annotated ground-truth box showed
+     * class_id=4 landing on annotated Unripe cherries ~95% of the time (n=150+, confidence up to
+     * 0.97 -- too consistent and too confident to be model uncertainty) and class_id=0 never
+     * appearing at all, while class_id 1/2/3 lined up with Ripening/Ripe/Overripe as expected. So
+     * despite yolo_detection/dataset/data.yaml declaring 0=Unripe/4=Dry_Damaged (the order
+     * TARGET_CLASSES above still uses for display), this hosted model version's real 0 and 4 are
+     * swapped from that -- only those two positions differ from TARGET_CLASSES.
+     */
+    private val HOSTED_CLASS_ID_ORDER = listOf("Dry_Damaged", "Ripening", "Ripe", "Overripe", "Unripe")
+
+
+    /**
+     * Detections come back in this image's pixel space, so callers scanning at full camera
+     * resolution (routinely 3000px+ on one side) would otherwise upload several megabytes of
+     * base64 over what can be a weak rural mobile connection on a farm -- easily blowing past the
+     * old 8s timeout and surfacing as "Ripeness Check Unavailable" with no indication that it was
+     * really an upload-size/timeout problem. The model doesn't need more than this to detect
+     * cherries, so downscale before upload and scale detections back up to the original bitmap's
+     * coordinate space afterward.
+     */
+    private const val MAX_UPLOAD_DIMENSION = 1280
 
     fun detect(bitmap: Bitmap): Result<BranchScanSummary> {
+        var uploadBitmap = bitmap
         return try {
+            val longestSide = maxOf(bitmap.width, bitmap.height).toFloat()
+            val downscale = if (longestSide > MAX_UPLOAD_DIMENSION) MAX_UPLOAD_DIMENSION / longestSide else 1f
+            if (downscale < 1f) {
+                uploadBitmap = Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * downscale).toInt().coerceAtLeast(1),
+                    (bitmap.height * downscale).toInt().coerceAtLeast(1),
+                    true
+                )
+            }
+            // Maps a coordinate from the (possibly downscaled) uploaded image back to the
+            // original bitmap's pixel space.
+            val scaleBack = if (downscale < 1f) 1f / downscale else 1f
+
             val baos = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+            uploadBitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
             val imageBytes = baos.toByteArray()
             val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
 
@@ -38,8 +77,11 @@ object RoboflowApiClient {
             conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
             conn.doOutput = true
             conn.doInput = true
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
+            // A resized upload is normally small (tens of KB), but rural mobile connections on a
+            // farm can still be slow to establish/complete a request -- give it real headroom
+            // instead of failing fast on flaky signal.
+            conn.connectTimeout = 20000
+            conn.readTimeout = 20000
 
             OutputStreamWriter(conn.outputStream).use { writer ->
                 writer.write(base64Image)
@@ -77,25 +119,33 @@ object RoboflowApiClient {
                 val conf = pred.optDouble("confidence", 0.0).toFloat()
                 if (conf < 0.50f) continue
 
-                val cx = pred.optDouble("x", 0.0).toFloat()
-                val cy = pred.optDouble("y", 0.0).toFloat()
-                val w = pred.optDouble("width", 0.0).toFloat()
-                val h = pred.optDouble("height", 0.0).toFloat()
+                // The model returns coordinates in the uploaded (possibly downscaled) image's
+                // pixel space; scale back up so the box lines up with the original bitmap.
+                val cx = pred.optDouble("x", 0.0).toFloat() * scaleBack
+                val cy = pred.optDouble("y", 0.0).toFloat() * scaleBack
+                val w = pred.optDouble("width", 0.0).toFloat() * scaleBack
+                val h = pred.optDouble("height", 0.0).toFloat() * scaleBack
                 val rawClass = pred.optString("class", "mentah")
 
-
-                // An unrecognized class name (a hosted-model retrain, relabeling, or a raw label
-                // this mapping doesn't know about yet) used to silently fall back to "Ripe" --
-                // meaning any label drift on Roboflow's end would quietly inflate the ripe count
-                // and skew the harvest recommendation with no error surfaced anywhere. Skip
-                // detections we can't confidently classify instead of miscounting them.
-                val normalizedClass = when (rawClass.lowercase().trim()) {
-                    "matang", "ripe" -> "Ripe"
-                    "matang sempurna", "overripe" -> "Overripe"
-                    "setengah matang", "semi_ripe", "ripening" -> "Ripening"
-                    "mentah", "unripe" -> "Unripe"
-                    "diseased", "dry" -> "Dry_Damaged"
-                    else -> null
+                // The hosted model's Roboflow project has no class names configured (its
+                // "classes" metadata is empty), so every prediction comes back as "class":"0".."4"
+                // / class_id 0..4, never a semantic string like "ripe" -- map the numeric id via
+                // HOSTED_CLASS_ID_ORDER (see its doc comment for why that differs from
+                // TARGET_CLASSES), and only fall back to semantic-string matching for a
+                // differently-configured or future hosted model version.
+                val classId = pred.optInt("class_id", -1).takeIf { it in HOSTED_CLASS_ID_ORDER.indices }
+                    ?: rawClass.trim().toIntOrNull()?.takeIf { it in HOSTED_CLASS_ID_ORDER.indices }
+                val normalizedClass = if (classId != null) {
+                    HOSTED_CLASS_ID_ORDER[classId]
+                } else {
+                    when (rawClass.lowercase().trim()) {
+                        "matang", "ripe" -> "Ripe"
+                        "matang sempurna", "overripe" -> "Overripe"
+                        "setengah matang", "semi_ripe", "ripening" -> "Ripening"
+                        "mentah", "unripe" -> "Unripe"
+                        "diseased", "dry", "dry_damaged" -> "Dry_Damaged"
+                        else -> null
+                    }
                 } ?: continue
 
                 classCounts[normalizedClass] = (classCounts[normalizedClass] ?: 0) + 1
@@ -133,6 +183,8 @@ object RoboflowApiClient {
 
         } catch (t: Throwable) {
             Result.failure(t)
+        } finally {
+            if (uploadBitmap !== bitmap) uploadBitmap.recycle()
         }
     }
 }
