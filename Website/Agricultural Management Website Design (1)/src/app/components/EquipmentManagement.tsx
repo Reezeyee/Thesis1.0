@@ -67,6 +67,7 @@ import {
   type ConsumableSupplyRecord,
   type EquipmentConditionReport,
   type EquipmentRecord,
+  type ExpenseRecord,
   type MaintenanceRecord,
   type WorkerRecord,
 } from '../types/appState';
@@ -201,6 +202,21 @@ export function EquipmentManagement() {
   const pendingConsumableReports = consumableReports.filter((r) => !r.reviewed).length;
 
   const adjustConsumableStock = async (id: string, delta: number) => {
+    const target = state.consumableSupplies.find((c) => c.supplyId === id);
+    // Restocking (delta > 0) is another purchase, same as the initial stock in saveSupply --
+    // log it as an expense too when this supply has a known cost per unit. A deduction (delta <
+    // 0, the quick "-1" button) is consumption, not a purchase, so it never adds an expense.
+    const restockExpense: ExpenseRecord | null =
+      delta > 0 && target && typeof target.costPerUnit === 'number' && target.costPerUnit > 0
+        ? {
+            expenseId: crypto.randomUUID(),
+            category: 'Supplies & farm inputs',
+            description: `Restock: ${target.name} (+${delta} ${target.unit})`,
+            amount: Math.round(target.costPerUnit * delta),
+            date: new Date().toISOString().slice(0, 10),
+          }
+        : null;
+
     const ok = await runSave('Consumable supply', () =>
       updateState((prev) => ({
         ...prev,
@@ -217,6 +233,7 @@ export function EquipmentManagement() {
             status: computeSupplyStatus(updated),
           };
         }),
+        expenses: restockExpense ? [...prev.expenses, restockExpense] : prev.expenses,
       })),
     );
     if (!ok) showSaveError('Could not update supply stock.');
@@ -308,11 +325,25 @@ export function EquipmentManagement() {
       ...partialRecord,
       status: computeSupplyStatus(partialRecord),
     };
+    // Buying the initial stock cost real money -- log it as an expense too so it hits the
+    // Profit & Sales expense breakdown and net profit, not just the inventory's own valuation.
+    // Category string must match EXPENSE_CATEGORY_OPTIONS in ProfitManagement.tsx.
+    const purchaseExpense: ExpenseRecord | null =
+      parsedCost !== null && stock > 0
+        ? {
+            expenseId: crypto.randomUUID(),
+            category: 'Supplies & farm inputs',
+            description: `Initial stock: ${name} (${stock} ${record.unit})`,
+            amount: Math.round(parsedCost * stock),
+            date: record.lastRestocked,
+          }
+        : null;
 
     const ok = await runSave('Consumable supply', () =>
       updateState((prev) => ({
         ...prev,
         consumableSupplies: [...prev.consumableSupplies, record],
+        expenses: purchaseExpense ? [...prev.expenses, purchaseExpense] : prev.expenses,
       })),
     );
     if (!ok) return;
