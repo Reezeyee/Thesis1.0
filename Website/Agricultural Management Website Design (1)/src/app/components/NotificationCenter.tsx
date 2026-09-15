@@ -11,7 +11,7 @@ import type { AppModuleId } from '../App';
 
 export interface PendingReportItem {
   id: string;
-  type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest' | 'password_reset';
+  type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest' | 'harvest_log' | 'password_reset';
   title: string;
   subtitle: string;
   details: string;
@@ -235,7 +235,25 @@ export function usePendingReports() {
       }
     });
 
-    // 6. Low-stock inventory items
+    // 6. Picked harvest logs -- plain weight records with no reviewed/status field, so dismissal
+    // relies entirely on dismissedReportIds (localStorage) rather than a mutable record flag.
+    (state.cherryHarvests ?? []).forEach((h, idx) => {
+      const rawId = h.harvestId || '';
+      const id = rawId || `harvest-log-${idx}-${h.date}`;
+      list.push({
+        id,
+        type: 'harvest_log',
+        title: `Harvest Logged: ${h.weightText || '0 kg'}`,
+        subtitle: `Block: ${h.farmBlock || 'General Farm'}`,
+        details: h.details || 'Picked harvest weight logged by worker',
+        reportedBy: h.pickerWorkerName || 'Worker',
+        reportedAt: h.date || 'Just now',
+        timestamp: Date.parse(h.date || '') || (Date.now() - idx),
+        rawReportId: rawId,
+      });
+    });
+
+    // 7. Low-stock inventory items
     (state.consumableSupplies ?? []).forEach((s, idx) => {
       const threshold = computeLowStockThreshold(s);
       if (s.stock <= threshold) {
@@ -263,6 +281,7 @@ export function usePendingReports() {
     state.consumableReports,
     state.pestControlLogs,
     state.harvestReadinessReports,
+    state.cherryHarvests,
     state.consumableSupplies,
   ]);
 
@@ -391,6 +410,9 @@ export function GlobalNotificationBanner({
     } else if (item.type === 'harvest') {
       targetModule = 'farm';
       targetElementId = item.rawReportId ? `harvest-${item.rawReportId}` : 'harvest-readiness-reports-section';
+    } else if (item.type === 'harvest_log') {
+      targetModule = 'farm';
+      targetElementId = item.rawReportId ? `harvest-log-${item.rawReportId}` : 'harvest-logs-section';
     } else if (item.type === 'password_reset') {
       targetModule = 'settings';
       targetElementId = 'password-reset-requests-section';
@@ -553,8 +575,35 @@ export function GlobalNotificationBanner({
 
 export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: NotificationCenterProps) {
   const { state, updateState, saving } = useFarmData();
-  const pendingReports = usePendingReports();
+  const allPendingReports = usePendingReports();
   const [passwordReveal, setPasswordReveal] = useState<TempPasswordReveal | null>(null);
+
+  // harvest_log items have no reviewed/status field to mutate, so -- unlike every other type,
+  // which drops off the list once handleResolve flips its status -- they can only be dismissed
+  // here, sharing the same localStorage key GlobalNotificationBanner already dismisses into.
+  const [dismissedReportIds, setDismissedReportIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('dismissed_irrigation_report_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const dismissNotification = (id: string) => {
+    if (!id) return;
+    setDismissedReportIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      try {
+        localStorage.setItem('dismissed_irrigation_report_ids', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+  const pendingReports = useMemo(
+    () => allPendingReports.filter((r) => !dismissedReportIds.includes(r.id)),
+    [allPendingReports, dismissedReportIds]
+  );
 
   const handleNavigate = (item: PendingReportItem) => {
     onClose();
@@ -573,6 +622,9 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
     } else if (item.type === 'harvest') {
       targetModule = 'farm';
       targetElementId = item.rawReportId ? `harvest-${item.rawReportId}` : 'harvest-readiness-reports-section';
+    } else if (item.type === 'harvest_log') {
+      targetModule = 'farm';
+      targetElementId = item.rawReportId ? `harvest-log-${item.rawReportId}` : 'harvest-logs-section';
     } else if (item.type === 'password_reset') {
       targetModule = 'settings';
       targetElementId = 'password-reset-requests-section';
@@ -628,6 +680,7 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
       }
       return prev;
     });
+    dismissNotification(item.id);
   };
 
   const handleClearDismissed = () => {

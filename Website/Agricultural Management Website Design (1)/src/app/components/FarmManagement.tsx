@@ -28,6 +28,7 @@ import {
   XCircle,
   FileText,
   Camera,
+  Cherry,
 } from 'lucide-react';
 import { SelectWithOther } from './ui/SelectWithOther';
 import { SpeciesPicker } from './ui/SpeciesPicker';
@@ -352,7 +353,7 @@ export function FarmManagement() {
   const [irrigationDialogOpen, setIrrigationDialogOpen] = useState(false);
   const [irrigationEditIndex, setIrrigationEditIndex] = useState<number | null>(null);
   const [sprinklerAddSection, setSprinklerAddSection] = useState('');
-  const [sprinklerAddCount, setSprinklerAddCount] = useState(1);
+  const [sprinklerAddCount, setSprinklerAddCount] = useState(0);
   const [sprinklerAddCoverage, setSprinklerAddCoverage] = useState('100%');
   const [pestDialogOpen, setPestDialogOpen] = useState(false);
   const [pestEditIndex, setPestEditIndex] = useState<number | null>(null);
@@ -413,7 +414,7 @@ export function FarmManagement() {
   const latestPendingReport = useMemo(() => {
     const pendingList: Array<{
       id: string;
-      type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest';
+      type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest' | 'harvest_log';
       title: string;
       subtitle: string;
       details: string;
@@ -516,6 +517,23 @@ export function FarmManagement() {
       }
     });
 
+    // 6. Picked harvest logs -- these are plain weight records (no reviewed/status field), so
+    // dismissal relies entirely on dismissedReportIds below rather than a mutable record flag.
+    (state.cherryHarvests ?? []).forEach((h, idx) => {
+      const id = h.harvestId || `harvest-log-${idx}-${h.date}`;
+      pendingList.push({
+        id,
+        type: 'harvest_log',
+        title: `Harvest Logged: ${h.weightText || '0 kg'}`,
+        subtitle: `Block: ${h.farmBlock || 'General Farm'}`,
+        details: h.details || 'Picked harvest weight logged by worker',
+        reportedBy: h.pickerWorkerName || 'Worker',
+        reportedAt: h.date || 'Just now',
+        timestamp: Date.parse(h.date || '') || (Date.now() - idx),
+        rawReportId: h.harvestId || '',
+      });
+    });
+
     if (pendingList.length === 0) return null;
     return pendingList.sort((a, b) => b.timestamp - a.timestamp)[0];
   }, [
@@ -524,6 +542,7 @@ export function FarmManagement() {
     state.consumableReports,
     state.pestControlLogs,
     state.harvestReadinessReports,
+    state.cherryHarvests,
   ]);
 
   const dismissNotification = (notificationId: string) => {
@@ -550,6 +569,9 @@ export function FarmManagement() {
       targetId = item.rawReportId ? `pest-${item.rawReportId}` : '';
     } else if (item.type === 'harvest') {
       sectionId = 'harvest-readiness-reports-section';
+    } else if (item.type === 'harvest_log') {
+      sectionId = 'harvest-logs-section';
+      targetId = item.rawReportId ? `harvest-log-${item.rawReportId}` : '';
     }
 
     const targetElement = targetId ? document.getElementById(targetId) : null;
@@ -1016,7 +1038,7 @@ export function FarmManagement() {
     setIrrigationEditIndex(null);
     setIrrigationForm(null);
     setSprinklerAddSection('');
-    setSprinklerAddCount(1);
+    setSprinklerAddCount(0);
     setSprinklerAddCoverage('100%');
   };
 
@@ -1024,7 +1046,7 @@ export function FarmManagement() {
     setIrrigationEditIndex(null);
     setIrrigationForm(null);
     setSprinklerAddSection('');
-    setSprinklerAddCount(1);
+    setSprinklerAddCount(0);
     setSprinklerAddCoverage('100%');
     setIrrigationDialogOpen(true);
   };
@@ -1169,29 +1191,11 @@ export function FarmManagement() {
       showSaveError('Farm zone selection is required.');
       return;
     }
-    if (!pestForm?.treeNumber?.trim()) {
-      showSaveError('Tree number is required.');
-      return;
-    }
-
-    // Duplicate validation check: same tree number & same issue type
-    const isDuplicate = state.pestControlLogs.some(
-      (log, idx) =>
-        idx !== pestEditIndex &&
-        log.treeNumber?.trim() === pestForm.treeNumber?.trim() &&
-        log.issue.trim().toLowerCase() === pestForm.issue.trim().toLowerCase()
-    );
-
-    if (isDuplicate) {
-      showSaveError('Error: A report for this tree and issue already exists. Duplicate reports are blocked.');
-      return;
-    }
 
     const record = {
       ...pestForm,
       issue: pestForm.issue.trim(),
       field: pestForm.field.trim(),
-      treeNumber: pestForm.treeNumber?.trim()
     };
     const ok = await runSave('Pest control log', () =>
       updateState((prev) => ({
@@ -1433,9 +1437,18 @@ export function FarmManagement() {
                 <div className="space-y-2">
                   <Label>Trees</Label>
                   <Input
-                    type="number"
-                    value={coffeeForm.trees}
-                    onChange={(e) => setCoffeeForm({ ...coffeeForm, trees: Number(e.target.value) || 0 })}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={coffeeForm.trees || ''}
+                    onChange={(e) => {
+                      // Strip anything that isn't a digit -- a plain type="number" input still
+                      // lets "-", "+", "e"/"E" (scientific notation), and "." through, which can
+                      // produce a negative or non-integer tree count. Digits-only can't.
+                      const digitsOnly = e.target.value.replace(/[^0-9]/g, '');
+                      setCoffeeForm({ ...coffeeForm, trees: digitsOnly ? Number(digitsOnly) : 0 });
+                    }}
+                    placeholder="e.g. 250"
                   />
                 </div>
                 <SpeciesPicker
@@ -1443,11 +1456,13 @@ export function FarmManagement() {
                   onChange={(val) => setCoffeeForm({ ...coffeeForm, variety: val })}
                 />
                 <div className="space-y-2">
-                  <Label>Age</Label>
-                  <Input
+                  <SelectWithOther
+                    label="Growth Stage"
                     value={coffeeForm.age}
-                    onChange={(e) => setCoffeeForm({ ...coffeeForm, age: e.target.value })}
-                    placeholder="e.g. 3 years"
+                    onChange={(val) => setCoffeeForm({ ...coffeeForm, age: val })}
+                    options={['Growing', 'Grown']}
+                    selectClassName={SELECT_CLASS}
+                    otherPlaceholder="Type custom growth stage..."
                   />
                 </div>
                 <div className="space-y-2">
@@ -1530,11 +1545,17 @@ export function FarmManagement() {
               <div className="space-y-2">
                 <Label>Number of Sprinklers to Add</Label>
                 <Input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={sprinklerAddCount}
-                  onChange={(e) => setSprinklerAddCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={sprinklerAddCount || ''}
+                  onChange={(e) => {
+                    // Digits only -- a plain type="number" input still lets "-", "+", "e"/"E",
+                    // and "." through, which could otherwise produce a negative or non-integer count.
+                    const digitsOnly = e.target.value.replace(/[^0-9]/g, '');
+                    setSprinklerAddCount(digitsOnly ? Number(digitsOnly) : 0);
+                  }}
+                  placeholder="e.g. 5"
                 />
                 <p className="text-xs text-muted-foreground">IDs will be auto-generated (Sprinkler 1, Sprinkler 2, …)</p>
               </div>
@@ -1785,8 +1806,7 @@ export function FarmManagement() {
                   <span className="font-mono text-muted-foreground">{pestForm.date} {pestForm.time ? `· ${pestForm.time}` : ''}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div><span className="text-muted-foreground">Section:</span> <strong className="text-foreground">{pestForm.field || '—'}</strong></div>
-                  <div><span className="text-muted-foreground">Tree #:</span> <strong className="text-foreground">{pestForm.treeNumber || '—'}</strong></div>
+                  <div className="col-span-2"><span className="text-muted-foreground">Section:</span> <strong className="text-foreground">{pestForm.field || '—'}</strong></div>
                   <div className="col-span-2"><span className="text-muted-foreground">Diagnosed Issue:</span> <strong className="text-rose-500">{pestForm.issue || '—'}</strong></div>
                 </div>
 
@@ -2121,6 +2141,32 @@ export function FarmManagement() {
                           Reason: <span className="text-foreground font-medium">{request.reason}</span>
                         </p>
                       </div>
+
+                      {(request.faceSnapshotBase64 || request.locationName) && (
+                        <div className="flex items-center gap-2 rounded-lg bg-muted/30 p-2 border border-border/50">
+                          {request.faceSnapshotBase64 && (
+                            <img
+                              src={request.faceSnapshotBase64}
+                              alt={`${request.workerName} verification photo`}
+                              className="h-9 w-9 rounded-full object-cover border border-border/70 shrink-0"
+                            />
+                          )}
+                          <p className="text-[11px] text-muted-foreground">
+                            {request.locationName ? (
+                              <>
+                                📍 {request.isGeofenceVerified ? (
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Verified on-site</span>
+                                ) : (
+                                  <span className="text-amber-600 dark:text-amber-400 font-semibold">Outside farm geofence</span>
+                                )}{' '}
+                                ({request.locationName})
+                              </>
+                            ) : (
+                              <span className="text-amber-600 dark:text-amber-400 font-semibold">⚠️ Location not verified</span>
+                            )}
+                          </p>
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                         <span>Submitted {request.submittedAt}</span>
@@ -2705,6 +2751,72 @@ export function FarmManagement() {
         </div>
       </div>
 
+      {/* Harvest Log Board -- individual "Log Picked Harvest" entries from the mobile app; these
+          are simple weight records (no approve/reject step), unlike the readiness board above. */}
+      <div id="harvest-logs-section" className="bg-card/95 border border-border/80 rounded-2xl p-6 shadow-sm space-y-5 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
+            <Cherry className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-lg font-heading text-foreground">Harvest Log</h3>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/15 text-accent font-bold">
+                {state.cherryHarvests?.length || 0} Total
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Cherries picked and weighed by workers, logged from the Field Worker Scanner & Attendance App.
+            </p>
+          </div>
+        </div>
+
+        {(!state.cherryHarvests || state.cherryHarvests.length === 0) ? (
+          <div className="py-12 text-center rounded-xl border border-dashed border-border/80 bg-muted/20">
+            <Cherry className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+            <p className="text-xs font-bold text-foreground">No harvest logs yet</p>
+            <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
+              Weights logged from "Log Picked Harvest" in the worker app will appear here in real-time.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {[...state.cherryHarvests]
+              .reverse()
+              .slice(0, 12)
+              .map((harvest) => (
+                <div
+                  key={harvest.harvestId || `${harvest.batchId}-${harvest.date}`}
+                  id={harvest.harvestId ? `harvest-log-${harvest.harvestId}` : undefined}
+                  className="rounded-xl border border-border/70 bg-card p-4 space-y-2 transition-all hover:border-border hover:shadow-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-extrabold text-sm font-heading text-foreground flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+                      {harvest.farmBlock || 'General Farm'}
+                    </span>
+                    <span className="text-[10px] font-extrabold font-mono px-2.5 py-1 rounded-xl uppercase tracking-wider border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shrink-0">
+                      {harvest.weightText || '0 kg'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Picked by: <span className="font-semibold text-foreground">{harvest.pickerWorkerName || 'Worker'}</span>
+                  </p>
+                  {harvest.details && (
+                    <p className="text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-lg border border-border/50">
+                      {harvest.details}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center justify-between text-[10px] font-mono text-muted-foreground gap-1 pt-1 border-t border-border/40">
+                    <span>{harvest.date || 'Undated'}</span>
+                    <span>ID: {harvest.harvestId}</span>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
         <div className="flex h-full min-h-[560px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3 mb-4">
@@ -2780,7 +2892,7 @@ export function FarmManagement() {
                     <p className="text-xs font-bold text-foreground font-heading">{field.variety}</p>
                   </div>
                   <div className="bg-background/80 rounded-lg p-2.5 border border-border/40">
-                    <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Age</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Growth Stage</p>
                     <p className="text-xs font-bold text-foreground font-heading">{field.age}</p>
                   </div>
                 </div>
