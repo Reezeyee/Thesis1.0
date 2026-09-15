@@ -1,10 +1,17 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // App snapshot: legacy per-uid docs OR shared farm doc `farm` (admin + workers).
+    // App snapshot: `app_state/farm` holds shared farm structure (readable/writable by any
+    // authenticated user). `app_state/{authUid}` holds that worker's own private,
+    // worker-submitted records (attendance, leave requests, field reports, ...) -- a worker may
+    // only read/write their own doc. The admin account may read/write every doc so the website
+    // can merge every worker's private records for review and write back approve/reject/resolve
+    // decisions to the correct worker's doc.
     match /app_state/{docId} {
       allow read, write: if request.auth != null && (
-        request.auth.uid == docId || docId == 'farm'
+        request.auth.uid == docId ||
+        docId == 'farm' ||
+        request.auth.token.email == 'farmacojido@gmail.com'
       );
     }
 

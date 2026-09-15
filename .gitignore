@@ -58,3 +58,6 @@ backend/farm_data_backups/
 
 __pycache__/
 **/__pycache__/
+
+# Claude Code local tooling (launch config, agent worktrees with local.properties copies)
+.claude/

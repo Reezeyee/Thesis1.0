@@ -49,10 +49,17 @@ if not backup_path.exists():
 with open(backup_path, "r", encoding="utf-8") as f:
     restored_state = json.load(f)
 
+# Per-worker private docs (app_state/<authUid>) were backed up separately under "_privateDocs" by
+# wipe_farm_data.py -- pull them out before printing/restoring the shared fields so this key
+# (a dict of dicts, not a record list) doesn't get treated as a record list below.
+private_docs_restore = restored_state.pop("_privateDocs", {})
+
 print("=== Record counts in this backup ===")
 for key, items in restored_state.items():
     if isinstance(items, list) and len(items) > 0:
         print(f"  {key}: {len(items)}")
+if private_docs_restore:
+    print(f"  _privateDocs: {len(private_docs_restore)} worker private doc(s)")
 
 confirm = input(
     f"\nThis will REPLACE whatever is currently in Firebase with the contents of\n{backup_path}\n"
@@ -127,4 +134,19 @@ for key, name in MIRROR_COLLECTIONS:
     mirror_written += 1
 
 print(f"OK: restored {mirror_written} mirror snapshot documents under user_data/farm/*/latest.")
+
+# Restore each worker's private per-account doc (app_state/<authUid>) from the backup, if present
+# -- older backups (made before the per-worker Firestore isolation feature existed) won't have
+# "_privateDocs", so there's nothing extra to restore for those and this loop just does nothing.
+private_restored = 0
+for uid, private_state in private_docs_restore.items():
+    db.collection("app_state").document(uid).set({
+        "stateJson": json.dumps(private_state),
+        "updatedAt": now_millis,
+        "hardReset": now_millis,
+    }, merge=True)
+    private_restored += 1
+
+if private_restored:
+    print(f"OK: restored {private_restored} worker private doc(s) (app_state/<authUid>).")
 print("Done. Refresh the website / reopen the app to see the restored data.")

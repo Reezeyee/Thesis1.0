@@ -98,6 +98,28 @@ for key in EMPTY_KEYS:
 
 worker_count = before_counts.get("workers", 0)
 
+# Per-worker private docs (app_state/<authUid>) hold worker-submitted records -- attendance,
+# leave/timesheet correction requests, CNN cherry scans, and other field reports -- that live
+# outside app_state/farm since the per-worker Firestore isolation feature was added. Back these
+# up too (under "_privateDocs") so restore_farm_data_backup.py can bring them back along with the
+# shared data; a backup that only captured app_state/farm would silently lose them forever.
+private_doc_ids = {"_unassigned"}
+for w in current.get("workers", []):
+    uid = (w.get("authUid") or "").strip()
+    if uid:
+        private_doc_ids.add(uid)
+
+private_docs_backup = {}
+for uid in private_doc_ids:
+    private_snap = db.collection("app_state").document(uid).get()
+    if not private_snap.exists:
+        continue
+    private_json = (private_snap.to_dict() or {}).get("stateJson")
+    if private_json:
+        private_docs_backup[uid] = json.loads(private_json)
+
+current["_privateDocs"] = private_docs_backup
+
 # Always back up the full current state before changing anything, so this is recoverable
 # even though the wipe itself is irreversible in Firestore.
 backup_dir = _BACKEND_DIR / "farm_data_backups"
@@ -106,7 +128,7 @@ backup_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 backup_path = backup_dir / f"app_state_farm_backup_{backup_timestamp}.json"
 with open(backup_path, "w", encoding="utf-8") as f:
     json.dump(current, f, indent=2)
-print(f"\nBacked up current data to {backup_path}")
+print(f"\nBacked up current data (including {len(private_docs_backup)} worker private doc(s)) to {backup_path}")
 print("(keep this file if you might want the old data back later)")
 
 confirm = input(
@@ -156,5 +178,25 @@ for key, name in MIRROR_COLLECTIONS:
     mirror_written += 1
 
 print(f"OK: cleared {mirror_written} mirror snapshot documents under user_data/farm/*/latest.")
+
+# 3. Also wipe every worker's private per-account doc (app_state/<authUid>) -- already backed up
+#    above under "_privateDocs". Since the per-worker Firestore isolation feature was added,
+#    worker-submitted records -- attendance, leave/timesheet correction requests, CNN cherry
+#    scans, harvest/equipment/pest/irrigation/consumable reports -- live in each worker's own
+#    app_state/<authUid> doc, never in app_state/farm. Without this step, a worker signing back in
+#    after "wiping everything" would still see all their own old submissions untouched, because
+#    this script never touched the doc they're stored in.
+empty_private_state = {key: [] for key in EMPTY_KEYS}
+private_wiped = 0
+for uid in private_docs_backup:
+    db.collection("app_state").document(uid).set({
+        "stateJson": json.dumps(empty_private_state),
+        "updatedAt": now_millis,
+        "hardReset": now_millis,
+    }, merge=True)
+    private_wiped += 1
+
+print(f"OK: wiped {private_wiped} worker private doc(s) (app_state/<authUid>) -- attendance, "
+      f"leave requests, CNN scans, and other per-worker submissions.")
 print(f"\nKept {worker_count} worker account(s) untouched.")
 print("Done. Refresh the website / reopen the app to see the clean slate.")
