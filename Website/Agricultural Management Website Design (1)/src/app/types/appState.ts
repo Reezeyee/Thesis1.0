@@ -225,6 +225,10 @@ export interface EquipmentRecord {
   status: string;
   assignedTo: string | null;
   currentValue: number;
+  /** How many of this equipment (matched by name + category) are stacked into this one record,
+   * instead of creating a duplicate row each time the same item is added again. Defaults to 1
+   * for existing records that predate this field. */
+  quantity?: number;
 }
 
 export interface UsageLogRecord {
@@ -354,6 +358,24 @@ export interface PestControlRecord {
   reviewedBy?: string;
 }
 
+/**
+ * A finished-product listing Admin puts up for sale on the Buyer storefront -- e.g. "Ripe
+ * Arabica Cherries, 50kg available at ₱120/kg". Admin-managed only (see the Buyer role
+ * design decision): the Buyer catalog shows exactly these listings, never an automatic
+ * calculation from harvest records.
+ */
+export interface ProductListingRecord {
+  listingId: string;
+  name: string;
+  category: string;
+  unit: string;
+  pricePerUnit: number;
+  availableQty: number;
+  status: string;
+  imageUrl?: string;
+  createdAt?: string;
+}
+
 export interface ConsumableSupplyRecord {
   supplyId: string;
   name: string;
@@ -442,6 +464,7 @@ export interface AppState {
   consumableSupplies: ConsumableSupplyRecord[];
   consumableReports: ConsumableSupplyReportRecord[];
   smsMessages: SmsMessageRecord[];
+  productListings: ProductListingRecord[];
 }
 
 export const defaultConsumableSupplies = (): ConsumableSupplyRecord[] => [
@@ -481,7 +504,40 @@ export const emptyAppState = (): AppState => ({
   consumableSupplies: [],
   consumableReports: [],
   smsMessages: [],
+  productListings: [],
 });
+
+/**
+ * A single line item within a Buyer's order (a quantity of one ProductListingRecord at the
+ * price it had when the order was placed).
+ */
+export interface BuyerOrderItem {
+  listingId: string;
+  name: string;
+  unit: string;
+  pricePerUnit: number;
+  quantity: number;
+  subtotal: number;
+}
+
+/**
+ * A Buyer-placed order, stored in its own top-level `buyer_orders` Firestore collection (see
+ * COLLECTIONS.BUYER_ORDERS) rather than inside the app_state/farm blob, because a Buyer is only
+ * ever allowed to create/read their own order docs -- never write shared farm state.
+ * Inventory (ProductListingRecord.availableQty) only decrements when Admin marks an order
+ * fulfilled, not when the Buyer places it, to avoid stock mismatches from cancelled orders.
+ */
+export interface BuyerOrderRecord {
+  orderId: string;
+  buyerUid: string;
+  buyerName: string;
+  buyerEmail: string;
+  items: BuyerOrderItem[];
+  totalAmount: number;
+  status: 'pending' | 'fulfilled' | 'cancelled';
+  createdAt?: string;
+  fulfilledAt?: string | null;
+}
 
 export function normalizeAppState(raw: Partial<AppState> | null | undefined): AppState {
   const base = emptyAppState();

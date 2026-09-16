@@ -20,6 +20,8 @@ export type WorkerUi = {
   phone: string;
   role: string;
   status: 'active' | 'inactive';
+  /** Regular staff vs. contract/arawan (daily-wage) workers -- panel-flagged staffing gap. */
+  employmentType: 'Regular' | 'Contract';
   image: string;
   workerId: string;
   emergencyContactName: string;
@@ -34,6 +36,7 @@ export type WorkerMeta = {
   birthday?: string;
   sex?: string;
   status?: 'active' | 'inactive';
+  employmentType?: 'Regular' | 'Contract';
   imageUrl?: string;
   firstName?: string;
   middleInitial?: string;
@@ -324,6 +327,7 @@ export function workerRecordToUi(w: WorkerRecord, index: number): WorkerUi {
     phone: w.phoneNumber || '—',
     role: w.roleRate || 'Sorter',
     status: meta.status === 'inactive' ? 'inactive' : 'active',
+    employmentType: meta.employmentType === 'Contract' ? 'Contract' : 'Regular',
     image: meta.imageUrl?.trim() || defaultAvatarUrl(w.name),
     workerId: w.workerId || `EMP-${String(index + 1).padStart(4, '0')}`,
     emergencyContactName: emergency.fullName?.trim() || '—',
@@ -350,6 +354,7 @@ export type WorkerFormDraft = {
   province: string;
   imageUrl: string;
   status: 'active' | 'inactive';
+  employmentType: 'Regular' | 'Contract';
   emergencyName: string;
   emergencyRelationship: string;
   emergencyPhone: string;
@@ -372,6 +377,7 @@ export function emptyWorkerDraft(): WorkerFormDraft {
     province: BATAAN_PROVINCE,
     imageUrl: '',
     status: 'active',
+    employmentType: 'Regular',
     emergencyName: '',
     emergencyRelationship: 'Parent',
     emergencyPhone: '',
@@ -402,6 +408,7 @@ export function workerRecordToDraft(w: WorkerRecord): WorkerFormDraft {
     province: meta.province || parsedAddress.province || BATAAN_PROVINCE,
     imageUrl: isDefaultAvatar ? '' : imageUrl,
     status: meta.status === 'inactive' ? 'inactive' : 'active',
+    employmentType: meta.employmentType === 'Contract' ? 'Contract' : 'Regular',
     emergencyName: emergency.fullName?.trim() || '',
     emergencyRelationship: emergency.relationship?.trim() || 'Parent',
     emergencyPhone: emergency.contactNumber?.trim() || '',
@@ -439,6 +446,7 @@ export function draftToWorkerRecord(
       birthday: draft.birthday,
       sex: draft.sex,
       status: draft.status,
+      employmentType: draft.employmentType,
       imageUrl: image,
       firstName: draft.firstName.trim(),
       middleInitial: draft.middleInitial.trim(),

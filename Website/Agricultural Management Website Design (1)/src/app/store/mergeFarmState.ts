@@ -184,6 +184,10 @@ function equipmentKey(e: { name: string }): string {
   return e.name.trim().toLowerCase();
 }
 
+function productListingKey(p: { listingId: string }): string {
+  return p.listingId.trim();
+}
+
 function saleKey(s: { saleId?: string; buyer: string; date: string; type: string; total: number; details: string }): string {
   return (s.saleId ?? '').trim() || [s.buyer, s.date, s.type, String(s.total), s.details].join('');
 }
@@ -239,6 +243,7 @@ export function mergeRemoteStatePreservingLocalGrades(
     cherryHarvests: mergeByKey(local.cherryHarvests, remote.cherryHarvests, cherryHarvestKey),
     batches: mergeByKey(local.batches, remote.batches, batchKey),
     equipment: mergeByKey(local.equipment, remote.equipment, equipmentKey),
+    productListings: mergeByKey(local.productListings, remote.productListings, productListingKey),
     usageLogs: preferLongerList(local.usageLogs, remote.usageLogs),
     maintenanceLogs: preferLongerList(local.maintenanceLogs, remote.maintenanceLogs),
     equipmentReports: mergeEquipmentReports(local.equipmentReports, remote.equipmentReports),
@@ -289,6 +294,7 @@ export function mergeStateForCloudUpload(local: AppState, remote: AppState, base
     cherryHarvests: mergeByKeyRespectingDeletion(baseline.cherryHarvests, local.cherryHarvests, remote.cherryHarvests, cherryHarvestKey),
     batches: mergeByKeyRespectingDeletion(baseline.batches, local.batches, remote.batches, batchKey),
     equipment: mergeByKeyRespectingDeletion(baseline.equipment, local.equipment, remote.equipment, equipmentKey),
+    productListings: mergeByKeyRespectingDeletion(baseline.productListings, local.productListings, remote.productListings, productListingKey),
     usageLogs: mergeByKeyRespectingDeletion(baseline.usageLogs, local.usageLogs, remote.usageLogs, (u) => JSON.stringify(u)),
     maintenanceLogs: mergeByKeyRespectingDeletion(baseline.maintenanceLogs, local.maintenanceLogs, remote.maintenanceLogs, (m) => JSON.stringify(m)),
     equipmentReports: mergeEquipmentReports(local.equipmentReports, remote.equipmentReports),

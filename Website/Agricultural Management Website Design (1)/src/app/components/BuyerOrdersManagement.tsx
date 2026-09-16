@@ -1,0 +1,304 @@
+import { useEffect, useMemo, useState } from 'react';
+import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
+import { Package, ShoppingBag, Plus, Trash2, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { db } from '../firebase/config';
+import { COLLECTIONS } from '../firebase/collections';
+import { useFarmData } from '../store/FarmDataProvider';
+import type { BuyerOrderRecord, ExpenseRecord, ProductListingRecord, SaleRecord } from '../types/appState';
+import { computeSupplyStatus } from '../types/appState';
+import { formatCurrency } from '../lib/currencyFormat';
+import { runSave, showSaveError } from '../lib/saveFeedback';
+import { SelectWithOther } from './ui/SelectWithOther';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+
+const LISTING_CATEGORIES = ['Green Beans', 'Roasted Beans', 'Ripe Cherries', 'Dried Cherries', 'Other'] as const;
+const LISTING_UNITS = ['kg', 'sacks', 'bags', 'lbs'] as const;
+
+function emptyListingForm() {
+  return { name: '', category: 'Green Beans', unit: 'kg', pricePerUnit: '', availableQty: '' };
+}
+
+/**
+ * Admin side of the Buyer storefront: manage what's listed for sale, and review/fulfill orders
+ * Buyers place. Fulfilling an order is the only moment inventory (availableQty) moves and a
+ * SaleRecord is created -- placing an order never touches inventory, matching the Phase 3 design
+ * decision (admin-fulfillment triggers the decrement, not order placement).
+ */
+export function BuyerOrdersManagement() {
+  const { state, updateState, saving } = useFarmData();
+  const listings = state.productListings ?? [];
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState(emptyListingForm());
+  const [orders, setOrders] = useState<BuyerOrderRecord[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const loadOrders = async () => {
+    setOrdersLoading(true);
+    try {
+      const snap = await getDocs(collection(db, COLLECTIONS.BUYER_ORDERS));
+      const all = snap.docs.map((d) => ({ orderId: d.id, ...(d.data() as Omit<BuyerOrderRecord, 'orderId'>) }));
+      all.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+      setOrders(all);
+    } catch {
+      setActionError('Could not load buyer orders. Confirm firestore.rules has been published.');
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadOrders();
+  }, []);
+
+  const pendingOrders = useMemo(() => orders.filter((o) => o.status === 'pending'), [orders]);
+  const pastOrders = useMemo(() => orders.filter((o) => o.status !== 'pending'), [orders]);
+
+  const saveListing = async () => {
+    const name = form.name.trim();
+    const price = Number(form.pricePerUnit);
+    const qty = Number(form.availableQty);
+    if (!name || !Number.isFinite(price) || price <= 0 || !Number.isFinite(qty) || qty < 0) {
+      showSaveError('Enter a name, a price greater than 0, and a valid quantity.');
+      return;
+    }
+    const record: ProductListingRecord = {
+      listingId: `L-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+      name,
+      category: form.category,
+      unit: form.unit,
+      pricePerUnit: price,
+      availableQty: Math.round(qty),
+      status: qty > 0 ? 'Available' : 'Out of Stock',
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    const ok = await runSave('Product listing', () =>
+      updateState((prev) => ({ ...prev, productListings: [...(prev.productListings ?? []), record] })),
+    );
+    if (!ok) return;
+    setForm(emptyListingForm());
+    setFormOpen(false);
+  };
+
+  const deleteListing = async (listingId: string) => {
+    if (!window.confirm('Remove this listing from the storefront?')) return;
+    const ok = await runSave('Product listing', () =>
+      updateState((prev) => ({
+        ...prev,
+        productListings: (prev.productListings ?? []).filter((l) => l.listingId !== listingId),
+      })),
+    );
+    if (!ok) showSaveError('Could not remove listing.');
+  };
+
+  const fulfillOrder = async (order: BuyerOrderRecord) => {
+    setActionError(null);
+    // 1. Decrement inventory for each line item (skip listings that no longer exist).
+    const ok = await runSave('Buyer order', () =>
+      updateState((prev) => {
+        const productListings = (prev.productListings ?? []).map((l) => {
+          const line = order.items.find((it) => it.listingId === l.listingId);
+          if (!line) return l;
+          const newQty = Math.max(0, l.availableQty - line.quantity);
+          return { ...l, availableQty: newQty, status: computeSupplyStatus(newQty, l.availableQty || newQty || 1) };
+        });
+        const sale: SaleRecord = {
+          buyer: order.buyerName,
+          details: `Buyer storefront order: ${order.items.map((it) => `${it.name} x${it.quantity}${it.unit}`).join(', ')}`,
+          date: new Date().toISOString().slice(0, 10),
+          total: order.totalAmount,
+          type: 'Buyer Storefront Order',
+          saleId: `S-${order.orderId.slice(0, 8).toUpperCase()}`,
+        };
+        return { ...prev, productListings, sales: [...prev.sales, sale] };
+      }),
+    );
+    if (!ok) {
+      showSaveError('Could not update inventory for this order.');
+      return;
+    }
+    // 2. Mark the order doc fulfilled (outside the AppState blob -- its own collection).
+    try {
+      await updateDoc(doc(db, COLLECTIONS.BUYER_ORDERS, order.orderId), {
+        status: 'fulfilled',
+        fulfilledAt: new Date().toISOString(),
+      });
+      void loadOrders();
+    } catch {
+      setActionError('Inventory and sale were recorded, but the order status could not be updated. Refresh to check.');
+    }
+  };
+
+  const cancelOrder = async (order: BuyerOrderRecord) => {
+    if (!window.confirm('Cancel this order? Inventory will not be affected.')) return;
+    try {
+      await updateDoc(doc(db, COLLECTIONS.BUYER_ORDERS, order.orderId), {
+        status: 'cancelled',
+        fulfilledAt: null,
+      });
+      void loadOrders();
+    } catch {
+      setActionError('Could not cancel this order.');
+    }
+  };
+
+  const statusBadge = (status: BuyerOrderRecord['status']) => {
+    if (status === 'fulfilled') {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 uppercase">
+          <CheckCircle2 className="w-3 h-3" /> Fulfilled
+        </span>
+      );
+    }
+    if (status === 'cancelled') {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 uppercase">
+          <XCircle className="w-3 h-3" /> Cancelled
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 uppercase">
+        <Clock className="w-3 h-3" /> Pending
+      </span>
+    );
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold font-heading mb-1">Buyer Storefront</h1>
+        <p className="text-xs text-muted-foreground">Manage what's for sale and fulfill orders Buyers place.</p>
+      </div>
+
+      {actionError ? (
+        <p className="text-xs font-medium text-rose-500 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">{actionError}</p>
+      ) : null}
+
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold flex items-center gap-2"><Package className="w-4 h-4" /> Product Listings</h2>
+          <Button onClick={() => setFormOpen((o) => !o)} className="h-9 rounded-xl text-xs font-semibold cursor-pointer">
+            <Plus className="w-4 h-4 mr-1" /> Add Listing
+          </Button>
+        </div>
+
+        {formOpen ? (
+          <Card className="mb-4">
+            <CardContent className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-semibold">Name</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Ripe Arabica Cherries" className="h-9 rounded-lg text-xs" />
+              </div>
+              <SelectWithOther
+                label="Category"
+                value={form.category}
+                onChange={(v) => setForm({ ...form, category: v })}
+                options={LISTING_CATEGORIES}
+                selectClassName="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm"
+              />
+              <SelectWithOther
+                label="Unit"
+                value={form.unit}
+                onChange={(v) => setForm({ ...form, unit: v })}
+                options={LISTING_UNITS}
+                selectClassName="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm"
+              />
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Price per unit (₱)</Label>
+                <Input type="number" min={0} value={form.pricePerUnit} onChange={(e) => setForm({ ...form, pricePerUnit: e.target.value })} placeholder="e.g. 120" className="h-9 rounded-lg text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Available quantity</Label>
+                <Input type="number" min={0} value={form.availableQty} onChange={(e) => setForm({ ...form, availableQty: e.target.value })} placeholder="e.g. 50" className="h-9 rounded-lg text-xs" />
+              </div>
+              <div className="sm:col-span-2 flex justify-end gap-2 pt-1">
+                <Button variant="outline" onClick={() => setFormOpen(false)} className="h-9 rounded-lg text-xs cursor-pointer">Cancel</Button>
+                <Button onClick={() => void saveListing()} disabled={saving} className="h-9 rounded-lg text-xs font-semibold cursor-pointer">Save Listing</Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {listings.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No listings yet — buyers won't see a storefront until you add one.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {listings.map((l) => (
+              <Card key={l.listingId}>
+                <CardContent className="pt-4 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-sm">{l.name}</p>
+                    <p className="text-xs text-muted-foreground">{l.category} · {formatCurrency(l.pricePerUnit)}/{l.unit}</p>
+                    <p className="text-xs text-muted-foreground">{l.availableQty} {l.unit} available</p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${l.name}`}
+                    onClick={() => void deleteListing(l.listingId)}
+                    className="w-8 h-8 rounded-lg bg-background/80 border border-border/70 hover:bg-rose-500 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-bold mb-3 flex items-center gap-2">
+          <ShoppingBag className="w-4 h-4" /> Pending Orders {pendingOrders.length > 0 ? `(${pendingOrders.length})` : ''}
+        </h2>
+        {ordersLoading ? (
+          <p className="text-xs text-muted-foreground">Loading orders…</p>
+        ) : pendingOrders.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No pending orders right now.</p>
+        ) : (
+          <div className="space-y-3">
+            {pendingOrders.map((o) => (
+              <Card key={o.orderId}>
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold">{o.buyerName}</p>
+                      <p className="text-xs text-muted-foreground">{o.buyerEmail}</p>
+                    </div>
+                    {statusBadge(o.status)}
+                  </div>
+                  {o.items.map((it, i) => (
+                    <p key={i} className="text-xs text-muted-foreground">{it.name} × {it.quantity} {it.unit} — {formatCurrency(it.subtotal)}</p>
+                  ))}
+                  <p className="text-sm font-bold">{formatCurrency(o.totalAmount)}</p>
+                  <div className="flex gap-2 pt-1">
+                    <Button onClick={() => void fulfillOrder(o)} className="h-9 rounded-lg text-xs font-semibold cursor-pointer">Mark Fulfilled</Button>
+                    <Button variant="outline" onClick={() => void cancelOrder(o)} className="h-9 rounded-lg text-xs cursor-pointer">Cancel</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {pastOrders.length > 0 ? (
+        <section>
+          <h2 className="text-sm font-bold mb-3">Order History</h2>
+          <div className="space-y-2">
+            {pastOrders.map((o) => (
+              <div key={o.orderId} className="flex items-center justify-between text-xs bg-muted/30 rounded-lg px-3 py-2">
+                <span>{o.buyerName} — {formatCurrency(o.totalAmount)}</span>
+                {statusBadge(o.status)}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}

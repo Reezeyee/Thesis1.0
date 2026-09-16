@@ -17,8 +17,12 @@ import { LoginScreen } from './auth/LoginScreen';
 import { FarmDataProvider, useFarmData } from './store/FarmDataProvider';
 import { GlobalNotificationBanner, NotificationDrawer, PasswordResetMessageSync, usePendingReports } from './components/NotificationCenter';
 import { ModuleErrorBoundary } from './components/ModuleErrorBoundary';
+import { OwnerDashboard } from './components/OwnerDashboard';
+import { BuyerOrdersManagement } from './components/BuyerOrdersManagement';
+import { BuyerStorefront } from './components/BuyerStorefront';
+import { BuyerVerifyEmailGate } from './components/BuyerVerifyEmailGate';
 
-export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings';
+export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings' | 'buyerOrders';
 
 
 const moduleLabels: Record<AppModuleId, string> = {
@@ -31,6 +35,7 @@ const moduleLabels: Record<AppModuleId, string> = {
   maintenance: 'Maintenance & Maps',
   sms: 'SMS Center',
   settings: 'Website Settings',
+  buyerOrders: 'Buyer Storefront',
 };
 
 function SaveStatusBanner() {
@@ -113,6 +118,8 @@ function AdminAppShell() {
         return <MaintenanceManagement />;
       case 'sms':
         return <SmsManagement />;
+      case 'buyerOrders':
+        return <BuyerOrdersManagement />;
       case 'settings':
         return <WebsiteSettingsPanel darkMode={darkMode} onToggleDarkMode={handleToggleDarkMode} />;
       default:
@@ -219,7 +226,29 @@ function AuthenticatedApp() {
     return <LoginScreen />;
   }
 
-  // 2. If a field worker account logs in on the website, restrict access
+  // 2. Owner account: read-only profit/revenue view, no operational controls.
+  if (session.role === 'OWNER') {
+    return (
+      <FarmDataProvider>
+        <OwnerDashboard session={session} onSignOut={signOut} />
+      </FarmDataProvider>
+    );
+  }
+
+  // 3. Buyer account: storefront only -- browse listings, place orders, view own order history.
+  // Buyers are the only self-registered role, so their email must be confirmed first.
+  if (session.role === 'BUYER') {
+    if (!session.emailVerified) {
+      return <BuyerVerifyEmailGate session={session} onSignOut={signOut} />;
+    }
+    return (
+      <FarmDataProvider>
+        <BuyerStorefront session={session} onSignOut={signOut} />
+      </FarmDataProvider>
+    );
+  }
+
+  // 4. If a field worker account logs in on the website, restrict access
   if (session.role === 'FARM_STAFF') {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
@@ -244,7 +273,7 @@ function AuthenticatedApp() {
     );
   }
 
-  // 3. Administrators receive the Admin App Shell
+  // 5. Administrators receive the Admin App Shell
   return (
     <FarmDataProvider>
       <AdminAppShell />

@@ -1,25 +1,70 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // App snapshot: `app_state/farm` holds shared farm structure (readable/writable by any
-    // authenticated user). `app_state/{authUid}` holds that worker's own private,
-    // worker-submitted records (attendance, leave requests, field reports, ...) -- a worker may
-    // only read/write their own doc. The admin account may read/write every doc so the website
-    // can merge every worker's private records for review and write back approve/reject/resolve
-    // decisions to the correct worker's doc.
+    // Owner account: read-only. Sees profit/revenue on the website but must never be able to
+    // write farm data -- checked against the `role` field on their own /users/{uid} profile doc.
+    function isOwnerRole() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'OWNER';
+    }
+
+    // Buyer account: self-registered, storefront-only. Reads the shared farm state (to browse
+    // product listings) but must never write it -- orders go through the separate buyer_orders
+    // collection below instead.
+    function isBuyerRole() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'BUYER';
+    }
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'farmacojido@gmail.com';
+    }
+
+    // App snapshot: `app_state/farm` holds shared farm structure (readable by any authenticated
+    // user, writable by any authenticated user EXCEPT the read-only Owner role).
+    // `app_state/{authUid}` holds that worker's own private, worker-submitted records
+    // (attendance, leave requests, field reports, ...) -- a worker may only read/write their own
+    // doc. The admin account may read/write every doc so the website can merge every worker's
+    // private records for review and write back approve/reject/resolve decisions to the correct
+    // worker's doc.
     match /app_state/{docId} {
-      allow read, write: if request.auth != null && (
+      allow read: if request.auth != null && (
         request.auth.uid == docId ||
         docId == 'farm' ||
         request.auth.token.email == 'farmacojido@gmail.com'
       );
+      allow write: if request.auth != null && (
+        request.auth.uid == docId ||
+        docId == 'farm' ||
+        request.auth.token.email == 'farmacojido@gmail.com'
+      ) && !isOwnerRole() && !isBuyerRole();
     }
 
-    // Mirrored list JSON: legacy per-uid OR shared `farm` subtree.
+    // Mirrored list JSON: legacy per-uid OR shared `farm` subtree. Same Owner/Buyer read-only carve-out.
     match /user_data/{ownerId}/{subCollection}/{docId} {
-      allow read, write: if request.auth != null && (
+      allow read: if request.auth != null && (
         request.auth.uid == ownerId || ownerId == 'farm'
       );
+      allow write: if request.auth != null && (
+        request.auth.uid == ownerId || ownerId == 'farm'
+      ) && !isOwnerRole() && !isBuyerRole();
+    }
+
+    // Buyer orders: a Buyer may only create an order under their own uid (status must start
+    // 'pending', never self-marked fulfilled/cancelled) and read their own orders; only Admin
+    // may list every order, or update/cancel/fulfill one.
+    match /buyer_orders/{orderId} {
+      allow create: if request.auth != null &&
+        request.resource.data.buyerUid == request.auth.uid &&
+        request.resource.data.status == 'pending';
+
+      allow read: if request.auth != null && (
+        resource.data.buyerUid == request.auth.uid || isAdmin()
+      );
+
+      allow update, delete: if isAdmin();
     }
 
     // Profile and metadata.

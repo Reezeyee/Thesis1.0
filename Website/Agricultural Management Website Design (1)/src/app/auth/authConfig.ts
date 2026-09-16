@@ -1,12 +1,14 @@
 /** Mirrors Android [AuthManager] email / role rules. */
 
-export type UserRole = 'ADMINISTRATOR' | 'FARM_STAFF';
+export type UserRole = 'ADMINISTRATOR' | 'FARM_STAFF' | 'OWNER' | 'BUYER';
 
 export const KNOWN_ACCOUNTS = {
   ADMIN_EMAIL: 'farmacojido@gmail.com',
   WORKER_EMAIL: 'workerstaffacojido@gmail.com',
   LEGACY_STAFF_EMAIL: 'acojidostaff@coffeefarm.local',
   DEMO_WORKER_NAME: 'Juan Dela Cruz',
+  /** Read-only Owner account: sees profit/revenue only, no operational controls. */
+  OWNER_EMAIL: 'acojidofarmowner@gmail.com',
 };
 
 export function usernameToEmail(username: string): string | null {
@@ -20,6 +22,9 @@ export function usernameToEmail(username: string): string | null {
   }
   if (key === 'worker' || key === 'workerstaff' || key === 'juan' || key === 'staff') {
     return KNOWN_ACCOUNTS.WORKER_EMAIL;
+  }
+  if (key === 'owner' || key === 'acojidoowner') {
+    return KNOWN_ACCOUNTS.OWNER_EMAIL;
   }
   return null;
 }

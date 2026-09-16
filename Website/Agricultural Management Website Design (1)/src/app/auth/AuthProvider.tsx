@@ -8,12 +8,16 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
+  updateProfile,
   type User,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import {
@@ -26,6 +30,12 @@ export type AuthSession = {
   email: string;
   displayName: string;
   role: UserRole;
+  /**
+   * Only meaningful for BUYER (the only self-registered role -- Admin/Owner/Farm Staff
+   * accounts are provisioned directly in Firebase Console and are trusted regardless of
+   * this flag). Gates access to the Buyer Storefront -- see BuyerVerifyEmailGate.
+   */
+  emailVerified: boolean;
 };
 
 type AuthContextValue = {
@@ -34,7 +44,20 @@ type AuthContextValue = {
   loading: boolean;
   error: string | null;
   signIn: (username: string, password: string) => Promise<void>;
+  /** Buyer self-registration -- the only role in this app that creates its own account. */
+  signUpAsBuyer: (email: string, password: string, displayName: string) => Promise<void>;
+  /**
+   * Standard self-service "forgot password" flow (panel feedback: the web app had no password
+   * recovery at all). Accepts a raw email OR an Admin username shortcut (e.g. "admin"), resolved
+   * the same way signIn resolves one, so the same field works on both the Admin and Buyer forms.
+   * Firebase silently no-ops for an email with no account, so this never reveals which emails exist.
+   */
+  resetPassword: (usernameOrEmail: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Re-sends the verification link to the signed-in buyer's own email address. */
+  resendVerificationEmail: () => Promise<void>;
+  /** Firebase doesn't push emailVerified changes live -- re-fetches the user record and updates the session. */
+  refreshEmailVerified: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -43,7 +66,7 @@ async function loadRole(uid: string, email: string): Promise<UserRole> {
   try {
     const snap = await getDoc(doc(db, COLLECTIONS.USERS, uid));
     const raw = snap.data()?.role as string | undefined;
-    if (raw === 'ADMINISTRATOR' || raw === 'FARM_STAFF') {
+    if (raw === 'ADMINISTRATOR' || raw === 'FARM_STAFF' || raw === 'OWNER' || raw === 'BUYER') {
       return raw as UserRole;
     }
   } catch (err) {
@@ -72,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: firebaseUser.email,
         displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0] || 'Admin',
         role,
+        emailVerified: firebaseUser.emailVerified,
       });
       setLoading(false);
     });
@@ -88,14 +112,95 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithEmailAndPassword(auth, email, password);
   }, []);
 
+  const resetPassword = useCallback(async (usernameOrEmail: string) => {
+    setError(null);
+    const trimmed = usernameOrEmail.trim();
+    // Reuse the Admin-username shortcut resolver (e.g. "admin" -> farmacojido@gmail.com) when it
+    // matches one; otherwise treat the input as a raw email address (the Buyer form always is).
+    const email = usernameToEmail(trimmed) ?? (trimmed.includes('@') ? trimmed.toLowerCase() : null);
+    if (!email) {
+      setError('Enter your email address.');
+      throw new Error('invalid email for password reset');
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send the reset email.');
+      throw err;
+    }
+  }, []);
+
+  const signUpAsBuyer = useCallback(async (email: string, password: string, displayName: string) => {
+    setError(null);
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedName = displayName.trim();
+    if (!trimmedEmail || !password || !trimmedName) {
+      setError('Enter your name, email, and a password.');
+      throw new Error('missing buyer sign-up fields');
+    }
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+      await updateProfile(credential.user, { displayName: trimmedName });
+      await setDoc(doc(db, COLLECTIONS.USERS, credential.user.uid), {
+        email: trimmedEmail,
+        displayName: trimmedName,
+        role: 'BUYER',
+        createdAt: serverTimestamp(),
+      });
+      // Buyers are the only self-registered role, so their email is unverified by anyone
+      // but them -- send the confirmation link now; BuyerVerifyEmailGate blocks the
+      // storefront until they click it.
+      await sendEmailVerification(credential.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create your account.');
+      throw err;
+    }
+  }, []);
+
+  const resendVerificationEmail = useCallback(async () => {
+    if (!auth.currentUser) {
+      throw new Error('You must be signed in to resend a verification email.');
+    }
+    await sendEmailVerification(auth.currentUser);
+  }, []);
+
+  const refreshEmailVerified = useCallback(async () => {
+    if (!auth.currentUser) return;
+    await auth.currentUser.reload();
+    const refreshed = auth.currentUser;
+    setSession((prev) => (prev ? { ...prev, emailVerified: refreshed.emailVerified } : prev));
+  }, []);
+
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
     setSession(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, session, loading, error, signIn, signOut }),
-    [user, session, loading, error, signIn, signOut],
+    () => ({
+      user,
+      session,
+      loading,
+      error,
+      signIn,
+      signUpAsBuyer,
+      signOut,
+      resendVerificationEmail,
+      refreshEmailVerified,
+      resetPassword,
+    }),
+    [
+      user,
+      session,
+      loading,
+      error,
+      signIn,
+      signUpAsBuyer,
+      signOut,
+      resendVerificationEmail,
+      refreshEmailVerified,
+      resetPassword,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

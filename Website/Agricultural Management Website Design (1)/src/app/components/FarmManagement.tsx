@@ -106,6 +106,12 @@ import type {
 const SELECT_CLASS =
   'flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
+// Panel feedback (pre-defense): free-typed farm-section names produced inconsistent data
+// ("Section A" vs "Sec A" vs "sectionA"). Presenting Section A-Z as fixed choices -- with
+// "Other" still available via SelectWithOther for a plot that genuinely needs a custom name --
+// keeps naming consistent everywhere else in the app that groups records by section name.
+const FIELD_SECTION_OPTIONS = Array.from({ length: 26 }, (_, i) => `Section ${String.fromCharCode(65 + i)}`);
+
 function isHarvestReady(field: CoffeeFieldRecord): boolean {
   const status = field.status.toLowerCase();
   if (status.includes('ready') || status.includes('harvest')) return true;
@@ -1419,11 +1425,13 @@ export function FarmManagement() {
               />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-2 sm:col-span-2">
-                  <Label>Field Plot Name *</Label>
-                  <Input
+                  <SelectWithOther
+                    label="Field Plot Name / Section *"
                     value={coffeeForm.name}
-                    onChange={(e) => setCoffeeForm({ ...coffeeForm, name: e.target.value })}
-                    placeholder="e.g. Block A - Mt. Samat High Plot"
+                    onChange={(val) => setCoffeeForm({ ...coffeeForm, name: val })}
+                    options={FIELD_SECTION_OPTIONS}
+                    selectClassName={SELECT_CLASS}
+                    otherPlaceholder="e.g. Block A - Mt. Samat High Plot"
                   />
                 </div>
                 <div className="space-y-2">
@@ -3154,6 +3162,13 @@ export function FarmManagement() {
                 ))}
               </div>
             </div>
+
+            {/* Panel feedback (pre-defense): be explicit that this flags possible issues for a
+                human to confirm, rather than implying an automated diagnosis. */}
+            <p className="text-[11px] text-muted-foreground bg-muted/40 border border-border/60 rounded-xl px-3 py-2">
+              These reports flag possible pest or disease presence for Admin/Owner to manually verify and
+              decide on treatment -- they're a detection-and-alert aid, not an automated diagnosis.
+            </p>
 
             {/* Filter Search */}
             <div className="relative">

@@ -129,6 +129,7 @@ function emptyEquipmentRecord(): EquipmentRecord {
     status: 'available',
     assignedTo: null,
     currentValue: 0,
+    quantity: 1,
   };
 }
 
@@ -325,26 +326,57 @@ export function EquipmentManagement() {
       ...partialRecord,
       status: computeSupplyStatus(partialRecord),
     };
-    // Buying the initial stock cost real money -- log it as an expense too so it hits the
-    // Profit & Sales expense breakdown and net profit, not just the inventory's own valuation.
+    // A supply with the same name AND unit already in inventory stacks onto it (quantity
+    // merges into the existing record) instead of creating a duplicate row -- e.g. adding
+    // "Organic Nitrogen - 40kg bag" a second time becomes one record at the combined stock,
+    // never two separate rows. A different unit (25kg vs 40kg) stays a separate item.
+    const existingMatch = state.consumableSupplies.find(
+      (c) =>
+        c.name.trim().toLowerCase() === name.toLowerCase() &&
+        c.unit.trim().toLowerCase() === record.unit.toLowerCase(),
+    );
+    // Buying stock cost real money -- log it as an expense too so it hits the Profit & Sales
+    // expense breakdown and net profit, not just the inventory's own valuation.
     // Category string must match EXPENSE_CATEGORY_OPTIONS in ProfitManagement.tsx.
     const purchaseExpense: ExpenseRecord | null =
       parsedCost !== null && stock > 0
         ? {
             expenseId: crypto.randomUUID(),
             category: 'Supplies & farm inputs',
-            description: `Initial stock: ${name} (${stock} ${record.unit})`,
+            description: `${existingMatch ? 'Restock' : 'Initial stock'}: ${name} (${stock} ${record.unit})`,
             amount: Math.round(parsedCost * stock),
             date: record.lastRestocked,
           }
         : null;
 
     const ok = await runSave('Consumable supply', () =>
-      updateState((prev) => ({
-        ...prev,
-        consumableSupplies: [...prev.consumableSupplies, record],
-        expenses: purchaseExpense ? [...prev.expenses, purchaseExpense] : prev.expenses,
-      })),
+      updateState((prev) => {
+        const matchIndex = prev.consumableSupplies.findIndex(
+          (c) =>
+            c.name.trim().toLowerCase() === name.toLowerCase() &&
+            c.unit.trim().toLowerCase() === record.unit.toLowerCase(),
+        );
+        let consumableSupplies: ConsumableSupplyRecord[];
+        if (matchIndex >= 0) {
+          consumableSupplies = prev.consumableSupplies.map((c, i) => {
+            if (i !== matchIndex) return c;
+            const merged: ConsumableSupplyRecord = {
+              ...c,
+              stock: c.stock + stock,
+              lastRestocked: record.lastRestocked,
+              ...(parsedCost !== null ? { costPerUnit: parsedCost } : {}),
+            };
+            return { ...merged, status: computeSupplyStatus(merged) };
+          });
+        } else {
+          consumableSupplies = [...prev.consumableSupplies, record];
+        }
+        return {
+          ...prev,
+          consumableSupplies,
+          expenses: purchaseExpense ? [...prev.expenses, purchaseExpense] : prev.expenses,
+        };
+      }),
     );
     if (!ok) return;
     setSupplyForm(emptySupplyForm());
@@ -393,6 +425,7 @@ export function EquipmentManagement() {
         id,
         name: e.name,
         type: e.category,
+        quantity: e.quantity ?? 1,
         inventoryStatus: e.status,
         status: effectiveEquipmentStatus(e.name, e.status, state),
         lastMaintenance: latestMaintenanceLabel(state.maintenanceLogs, e.name),
@@ -625,28 +658,54 @@ export function EquipmentManagement() {
     }
     const isNew = editingIndex === -1;
     const existing = !isNew && editingIndex !== null ? state.equipment[editingIndex] : null;
+    const enteredQuantity = isNew ? Math.max(1, Math.round(editForm.quantity ?? 1)) : 1;
     const record: EquipmentRecord = {
       name: editForm.name.trim(),
       category: editForm.category.trim() || 'Other',
       status: isNew ? 'available' : existing?.status?.trim() || editForm.status.trim() || 'available',
       assignedTo: null,
       currentValue: editForm.currentValue ?? 0,
+      quantity: isNew ? enteredQuantity : existing?.quantity ?? 1,
     };
+    // Buying this batch counts as farm spending regardless of whether it stacks onto an
+    // existing item or becomes a new row -- editing an existing item's recorded value later is
+    // a book-value correction, not a new expense.
+    const purchaseAmount = record.currentValue;
     const ok = await runSave('Equipment', () =>
       updateState((prev) => {
-        const equipment = isNew
-          ? [...prev.equipment, record]
-          : prev.equipment.map((e, i) => (i === editingIndex ? record : e));
-        // Only a brand-new purchase counts as farm spending -- editing an existing item's
-        // recorded value later is a book-value correction, not a new expense.
+        let equipment: EquipmentRecord[];
+        if (isNew) {
+          // Stack onto an existing item with the same name + category instead of creating a
+          // duplicate row -- e.g. adding "Coffee Grinder" a second time becomes x2 on the
+          // existing entry rather than two separate "Coffee Grinder" rows.
+          const matchIndex = prev.equipment.findIndex(
+            (e) =>
+              e.name.trim().toLowerCase() === record.name.toLowerCase() &&
+              e.category.trim().toLowerCase() === record.category.toLowerCase(),
+          );
+          if (matchIndex >= 0) {
+            equipment = prev.equipment.map((e, i) => {
+              if (i !== matchIndex) return e;
+              return {
+                ...e,
+                quantity: (e.quantity ?? 1) + enteredQuantity,
+                currentValue: (e.currentValue ?? 0) + record.currentValue,
+              };
+            });
+          } else {
+            equipment = [...prev.equipment, record];
+          }
+        } else {
+          equipment = prev.equipment.map((e, i) => (i === editingIndex ? record : e));
+        }
         const expenses =
-          isNew && record.currentValue > 0
+          isNew && purchaseAmount > 0
             ? [
                 ...prev.expenses,
                 {
                   category: 'Equipment & maintenance',
-                  description: `Purchased: ${record.name}`,
-                  amount: Math.round(record.currentValue),
+                  description: `Purchased: ${record.name}${enteredQuantity > 1 ? ` (x${enteredQuantity})` : ''}`,
+                  amount: Math.round(purchaseAmount),
                   date: new Date().toISOString().slice(0, 10),
                   linkedEquipmentName: record.name,
                 },
@@ -790,6 +849,27 @@ export function EquipmentManagement() {
                   placeholder="e.g. 5000"
                 />
               </div>
+              {editingIndex === -1 ? (
+                <div className="space-y-2">
+                  <Label>Quantity</Label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={editForm.quantity ?? 1}
+                    onChange={(e) => {
+                      const digitsOnly = e.target.value.replace(/[^0-9]/g, '');
+                      const parsed = digitsOnly ? Number(digitsOnly) : 1;
+                      setEditForm({ ...editForm, quantity: Math.max(1, parsed) });
+                    }}
+                    placeholder="1"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Adding an item with the same name and category as one already in the fleet stacks
+                    onto its quantity instead of creating a duplicate entry.
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-between gap-2">
@@ -1200,7 +1280,14 @@ export function EquipmentManagement() {
                           <Wrench className="w-6 h-6 text-foreground" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="mb-1 font-bold text-foreground">{equipment.name}</h4>
+                          <h4 className="mb-1 font-bold text-foreground">
+                            {equipment.name}
+                            {equipment.quantity > 1 ? (
+                              <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#4a2c2a]/10 text-[#4a2c2a] align-middle">
+                                x{equipment.quantity}
+                              </span>
+                            ) : null}
+                          </h4>
                           <p className="text-xs text-muted-foreground">{equipment.type}</p>
                         </div>
                       </div>

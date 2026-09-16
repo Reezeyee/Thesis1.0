@@ -17,6 +17,9 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig({
+  // Relative asset URLs so the built site works from any folder on a plain static host
+  // (e.g. InfinityFree htdocs or a subfolder), not only from the domain root.
+  base: './',
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if

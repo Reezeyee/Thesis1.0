@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   X,
   Sparkles,
+  ShoppingBag,
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import { Badge } from './ui/badge';
@@ -101,6 +102,13 @@ export function Sidebar({
           label: 'Maintenance',
           badge: null,
           hint: 'Field logs & map',
+        },
+        {
+          id: 'buyerOrders',
+          icon: ShoppingBag,
+          label: 'Buyer Storefront',
+          badge: null,
+          hint: 'Listings & orders',
         },
       ],
     },

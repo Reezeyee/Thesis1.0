@@ -35,6 +35,10 @@ export const COLLECTIONS = {
   CONSUMABLE_SUPPLIES: 'consumable_supplies',
   CONSUMABLE_REPORTS: 'consumable_reports',
   SMS_MESSAGES: 'sms_messages',
+  /** Buyer orders live in their own top-level collection, NOT inside the app_state/farm blob --
+   * a Buyer only has permission to create/read their own order docs (see firestore.rules), never
+   * to write the shared farm state the blob holds. */
+  BUYER_ORDERS: 'buyer_orders',
 } as const;
 
 export const MIRROR_COLLECTIONS: { key: string; name: string }[] = [

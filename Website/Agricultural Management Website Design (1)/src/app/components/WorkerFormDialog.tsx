@@ -368,6 +368,24 @@ export function WorkerFormDialog({
                   otherPlaceholder="Sample: Machine Technician"
                 />
               </div>
+
+              {/* Employment type: Regular staff vs. contract/arawan (daily-wage) workers. */}
+              <div className="sm:col-span-2 space-y-1.5">
+                <Label htmlFor="worker-employment-type" className="text-xs font-semibold">
+                  Employment Type
+                </Label>
+                <select
+                  id="worker-employment-type"
+                  value={form.employmentType}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, employmentType: e.target.value as 'Regular' | 'Contract' }))
+                  }
+                  className={ADDRESS_SELECT_CLASS}
+                >
+                  <option value="Regular">Regular</option>
+                  <option value="Contract">Contract (Arawan)</option>
+                </select>
+              </div>
             </div>
           </div>
 

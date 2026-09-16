@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Coffee, ShieldCheck, Lock, ArrowRight } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { BuyerAuthDialog } from './BuyerAuthDialog';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -101,11 +102,17 @@ function FloatingBeans() {
 }
 
 export function LoginScreen() {
-  const { signIn, error } = useAuth();
+  const { signIn, resetPassword, error } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [buyerDialogOpen, setBuyerDialogOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -117,6 +124,20 @@ export function LoginScreen() {
       setLocalError(error ?? 'Sign-in failed. Check administrator username and password.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSendReset = async () => {
+    setResetSubmitting(true);
+    setResetError(null);
+    setResetMessage(null);
+    try {
+      await resetPassword(resetEmail);
+      setResetMessage("If that account exists, we've sent a password reset link to it. Check your inbox (and spam folder).");
+    } catch {
+      setResetError(error ?? 'Could not send the reset email. Double-check the address and try again.');
+    } finally {
+      setResetSubmitting(false);
     }
   };
 
@@ -186,9 +207,23 @@ export function LoginScreen() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="admin-password" className="text-xs font-semibold text-foreground">
-              Password
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="admin-password" className="text-xs font-semibold text-foreground">
+                Password
+              </Label>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetOpen((o) => !o);
+                  setResetMessage(null);
+                  setResetError(null);
+                  setResetEmail(username.includes('@') ? username : '');
+                }}
+                className="text-[11px] text-muted-foreground hover:text-primary underline cursor-pointer"
+              >
+                Forgot password?
+              </button>
+            </div>
             <Input
               id="admin-password"
               type="password"
@@ -199,6 +234,38 @@ export function LoginScreen() {
               className="bg-background border-border/80 h-11 rounded-xl text-xs"
             />
           </div>
+
+          {resetOpen ? (
+            <div className="p-3.5 rounded-2xl bg-muted/40 border border-border/60 space-y-2.5">
+              <p className="text-[11px] text-muted-foreground">
+                Enter your account email and we'll send a link to reset your password.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  placeholder="you@email.com"
+                  autoComplete="email"
+                  className="bg-background border-border/80 h-9 rounded-xl text-xs flex-1"
+                />
+                <Button
+                  type="button"
+                  onClick={() => void handleSendReset()}
+                  disabled={resetSubmitting || !resetEmail}
+                  className="h-9 rounded-xl text-xs font-semibold cursor-pointer shrink-0"
+                >
+                  {resetSubmitting ? 'Sending…' : 'Send link'}
+                </Button>
+              </div>
+              {resetMessage ? (
+                <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">{resetMessage}</p>
+              ) : null}
+              {resetError ? (
+                <p className="text-[11px] font-medium text-rose-500">{resetError}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           {(localError || error) && (
             <p className="text-xs font-medium text-rose-500 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">
@@ -228,7 +295,19 @@ export function LoginScreen() {
             Admin Portal
           </span>
         </div>
+
+        {/* Buyer entry point -- the only self-service account in this app. */}
+        <div className="pt-1 text-center">
+          <button
+            type="button"
+            onClick={() => setBuyerDialogOpen(true)}
+            className="text-xs text-muted-foreground hover:text-primary underline cursor-pointer"
+          >
+            Shopping for coffee? Sign in or create a buyer account
+          </button>
+        </div>
       </motion.div>
+      <BuyerAuthDialog open={buyerDialogOpen} onOpenChange={setBuyerDialogOpen} />
     </div>
   );
 }
