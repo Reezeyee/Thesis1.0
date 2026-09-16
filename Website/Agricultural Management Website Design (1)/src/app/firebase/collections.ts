@@ -39,6 +39,10 @@ export const COLLECTIONS = {
    * a Buyer only has permission to create/read their own order docs (see firestore.rules), never
    * to write the shared farm state the blob holds. */
   BUYER_ORDERS: 'buyer_orders',
+  /** Direct Admin <-> Owner message thread. Its own collection for the same reason as
+   * BUYER_ORDERS: the read-only Owner role cannot write the app_state/farm blob, so a message
+   * Owner sends needs a collection where both Admin and Owner may create documents. */
+  OWNER_ADMIN_MESSAGES: 'owner_admin_messages',
 } as const;
 
 export const MIRROR_COLLECTIONS: { key: string; name: string }[] = [

@@ -17,6 +17,7 @@ import {
   X,
   Sparkles,
   ShoppingBag,
+  MessageCircle,
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import { Badge } from './ui/badge';
@@ -121,6 +122,13 @@ export function Sidebar({
           label: 'SMS Center',
           badge: null,
           hint: 'Worker broadcasts',
+        },
+        {
+          id: 'ownerMessages',
+          icon: MessageCircle,
+          label: 'Owner Messages',
+          badge: null,
+          hint: 'Direct thread with Owner',
         },
       ],
     },

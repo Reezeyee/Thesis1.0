@@ -7,6 +7,7 @@ import { netProfitAccrualAware, revenueChartFromState } from '../lib/profitUi';
 import { formatCurrency } from '../lib/currencyFormat';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
+import { OwnerAdminMessaging } from './OwnerAdminMessaging';
 import type { AuthSession } from '../auth/AuthProvider';
 
 /**
@@ -126,6 +127,8 @@ export function OwnerDashboard({
             </div>
           </CardContent>
         </Card>
+
+        <OwnerAdminMessaging session={session} />
       </main>
     </div>
   );

@@ -21,8 +21,9 @@ import { OwnerDashboard } from './components/OwnerDashboard';
 import { BuyerOrdersManagement } from './components/BuyerOrdersManagement';
 import { BuyerStorefront } from './components/BuyerStorefront';
 import { BuyerVerifyEmailGate } from './components/BuyerVerifyEmailGate';
+import { OwnerAdminMessaging } from './components/OwnerAdminMessaging';
 
-export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings' | 'buyerOrders';
+export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings' | 'buyerOrders' | 'ownerMessages';
 
 
 const moduleLabels: Record<AppModuleId, string> = {
@@ -36,6 +37,7 @@ const moduleLabels: Record<AppModuleId, string> = {
   sms: 'SMS Center',
   settings: 'Website Settings',
   buyerOrders: 'Buyer Storefront',
+  ownerMessages: 'Owner Messages',
 };
 
 function SaveStatusBanner() {
@@ -120,6 +122,8 @@ function AdminAppShell() {
         return <SmsManagement />;
       case 'buyerOrders':
         return <BuyerOrdersManagement />;
+      case 'ownerMessages':
+        return session ? <OwnerAdminMessaging session={session} /> : null;
       case 'settings':
         return <WebsiteSettingsPanel darkMode={darkMode} onToggleDarkMode={handleToggleDarkMode} />;
       default:

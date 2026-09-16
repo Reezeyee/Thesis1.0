@@ -539,6 +539,24 @@ export interface BuyerOrderRecord {
   fulfilledAt?: string | null;
 }
 
+/**
+ * A single message in the direct Admin <-> Owner thread, stored in its own top-level
+ * `owner_admin_messages` Firestore collection (see COLLECTIONS.OWNER_ADMIN_MESSAGES) rather
+ * than inside the app_state/farm blob, for the same reason BuyerOrderRecord is: firestore.rules
+ * blocks the read-only Owner role from writing app_state at all, so a message Owner sends to
+ * Admin (or vice versa) needs a collection where both roles are allowed to create documents.
+ * There is exactly one Admin and one Owner account in this system, so this is a single shared
+ * thread -- no conversation/thread id needed.
+ */
+export interface OwnerAdminMessageRecord {
+  messageId: string;
+  senderUid: string;
+  senderRole: 'ADMINISTRATOR' | 'OWNER';
+  senderName: string;
+  body: string;
+  createdAt: string;
+}
+
 export function normalizeAppState(raw: Partial<AppState> | null | undefined): AppState {
   const base = emptyAppState();
   if (!raw) return base;

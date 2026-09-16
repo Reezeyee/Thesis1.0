@@ -67,6 +67,22 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Direct Admin <-> Owner message thread: exactly one Admin and one Owner account exist, so
+    // this is a single shared thread, not per-conversation documents. Both roles may read every
+    // message and create new ones; only Admin may edit/delete (e.g. to remove a mistaken send).
+    match /owner_admin_messages/{messageId} {
+      allow read: if isAdmin() || isOwnerRole();
+
+      allow create: if (isAdmin() || isOwnerRole()) &&
+        request.resource.data.senderUid == request.auth.uid &&
+        request.resource.data.senderRole in ['ADMINISTRATOR', 'OWNER'] &&
+        request.resource.data.body is string &&
+        request.resource.data.body.size() > 0 &&
+        request.resource.data.body.size() <= 2000;
+
+      allow update, delete: if isAdmin();
+    }
+
     // Profile and metadata.
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
