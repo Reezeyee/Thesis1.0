@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Users,
   Wrench,
+  Clock,
   Coffee,
   DollarSign,
   Bell,
@@ -75,6 +76,13 @@ export function Sidebar({
           label: 'Farm HR',
           badge: null,
           hint: 'Workers & HR',
+        },
+        {
+          id: 'attendance',
+          icon: Clock,
+          label: 'Attendance',
+          badge: null,
+          hint: 'Time, leave & payroll',
         },
         {
           id: 'equipment',

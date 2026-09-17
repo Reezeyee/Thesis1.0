@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useFarmData } from '../store/FarmDataProvider';
 import {
-  Clock,
   MapPin,
   Calendar,
   Plus,
@@ -25,21 +24,14 @@ import { LUZON_PROVINCES } from '../data/luzonAddressCatalog';
 import { BATAAN_MAP_HUBS } from '../data/bataanProvinceMap';
 import { BataanCoffeeLeafletMap } from './BataanCoffeeLeafletMap';
 import { runSave, showSaveError } from '../lib/saveFeedback';
-import { parseWorkerDetails } from '../lib/workerUi';
 import {
   buyersFromSales,
   encodeBuyerSaleDetails,
   saleRecordFromBuyerForm,
   currentPayPeriodLabel,
 } from '../lib/profitUi';
-import { saleLineTotal, hourlyRateForWorkerRole, payrollLineAmount } from '../lib/farmFinance';
+import { saleLineTotal } from '../lib/farmFinance';
 import { formatCurrency } from '../lib/currencyFormat';
-import type {
-  AppState,
-  AttendanceRecord,
-  PayrollRecord,
-  WorkerRecord,
-} from '../types/appState';
 
 type BuyerCategory = 'channel' | 'cafe' | 'custom';
 
@@ -115,148 +107,9 @@ function parseOptionalCoord(raw: string, label: string): { value?: number; error
   return { value };
 }
 
-function attendanceSortValue(attendance: AttendanceRecord): number {
-  if (attendance.timestampMillis && attendance.timestampMillis > 0) {
-    return attendance.timestampMillis;
-  }
-  const dateStr = attendance.date?.trim() || '';
-  const clockInStr = attendance.clockIn?.trim() || '';
-  let direct = Date.parse(`${dateStr} ${clockInStr}`);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-  direct = Date.parse(dateStr);
-  if (Number.isFinite(direct) && direct > 0) {
-    const timeMatch = clockInStr.match(/(\d{1,2}):(\d{2})(?:\s*([AP]M))?/i);
-    if (timeMatch) {
-      let h = parseInt(timeMatch[1], 10);
-      const m = parseInt(timeMatch[2], 10);
-      const isPm = timeMatch[3]?.toUpperCase() === 'PM';
-      const isAm = timeMatch[3]?.toUpperCase() === 'AM';
-      if (isPm && h < 12) h += 12;
-      if (isAm && h === 12) h = 0;
-      return direct + (h * 3600 + m * 60) * 1000;
-    }
-    return direct;
-  }
-  return 0;
-}
-
-function formatClock24h(raw?: string): string {
-  const value = raw?.trim();
-  if (!value) return '--:--';
-  const match = value.match(/^(\d{1,2}):(\d{1,2})/);
-  if (!match) return value;
-  const lowered = value.toLowerCase();
-  const isPm = lowered.toLowerCase().includes('pm');
-  const isAm = lowered.toLowerCase().includes('am');
-  let hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (isPm && hour >= 1 && hour <= 11) hour += 12;
-  if (isAm && hour === 12) hour = 0;
-  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    return value;
-  }
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-}
-
-function workerForAttendance(workers: WorkerRecord[], attendance: AttendanceRecord): WorkerRecord | undefined {
-  const name = attendance.workerName.trim().toLowerCase();
-  return workers.find((worker) => worker.name.trim().toLowerCase() === name);
-}
-
-function attendancePeriodLabel(attendance: AttendanceRecord): string {
-  if (!attendance.date) return 'Attendance';
-  const parsed = Date.parse(attendance.date);
-  if (!Number.isFinite(parsed)) return attendance.date;
-  return new Date(parsed).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-}
-
-function payrollFromAttendance(attendance: AttendanceRecord, worker?: WorkerRecord): PayrollRecord {
-  const hourlyRate = hourlyRateForWorkerRole(worker?.roleRate ?? '');
-  const hoursWorked = attendance.hoursWorked ?? 0;
-  const record: PayrollRecord = {
-    workerName: attendance.workerName,
-    period: attendancePeriodLabel(attendance),
-    amount: hourlyRate > 0 && hoursWorked > 0 ? Math.round(hourlyRate * hoursWorked) : 0,
-    paid: false,
-    date: attendance.date ?? new Date().toISOString().slice(0, 10),
-    workerId: worker?.workerId ?? '',
-    hourlyRate,
-    hoursWorked,
-    daysWorked: 0,
-    dailyRate: 0,
-    linkedAttendanceId: attendance.attendanceId ?? '',
-    paymentMethod: null,
-  };
-  return { ...record, amount: payrollLineAmount(record) };
-}
-
-function getWorkerActivitiesForDate(state: AppState, workerName: string, date: string): string[] {
-  const activities: string[] = [];
-  const nameLower = workerName.trim().toLowerCase();
-
-  // 1. Cherry harvests (pickerWorkerName matches workerName, and date matches)
-  const harvests = state.cherryHarvests.filter((h) => {
-    const hName = (h.pickerWorkerName || '').trim().toLowerCase();
-    const hDate = h.date || '';
-    return hName === nameLower && hDate.includes(date);
-  });
-  if (harvests.length > 0) {
-    harvests.forEach((h) => {
-      activities.push(`Harvested cherry batch ${h.batchId} (${h.weightText || 'unknown weight'})`);
-    });
-  }
-
-  // 2. Cherry grades scanned (scannedByWorkerName matches workerName, date from savedAtMillis matches)
-  const grades = state.cherryGrades.filter((g) => {
-    const gName = (g.scannedByWorkerName || '').trim().toLowerCase();
-    if (gName !== nameLower || !g.savedAtMillis) return false;
-    const gDate = new Date(g.savedAtMillis).toISOString().slice(0, 10);
-    return gDate === date;
-  });
-  if (grades.length > 0) {
-    activities.push(`Scanned and graded ${grades.length} cherry batch${grades.length > 1 ? 'es' : ''}`);
-  }
-
-  // 3. Equipment reports reported by matches workerName, and date matches
-  const eqReports = state.equipmentReports.filter((r) => {
-    const rName = (r.reportedBy || '').trim().toLowerCase();
-    const rDate = r.reportedAt || '';
-    return rName === nameLower && rDate === date;
-  });
-  if (eqReports.length > 0) {
-    eqReports.forEach((r) => {
-      const condition = r.isFixedReport ? 'fixed' : (r.isWrecked ? 'wrecked' : 'OK');
-      activities.push(`Reported equipment ${r.equipmentName} condition as ${condition} (${r.notes || 'no notes'})`);
-    });
-  }
-
-  return activities;
-}
-
 export function MaintenanceManagement() {
   const { state, loading, updateState, saving } = useFarmData();
   const currentPeriod = currentPayPeriodLabel();
-
-  // 1. Attendance variables
-  const linkedAttendanceIds = useMemo(
-    () =>
-      new Set(
-        state.payroll
-          .map((payroll) => payroll.linkedAttendanceId?.trim())
-          .filter((id): id is string => Boolean(id)),
-      ),
-    [state.payroll],
-  );
-  const recentAttendance = useMemo(
-    () => [...state.attendance].sort((a, b) => attendanceSortValue(b) - attendanceSortValue(a)).slice(0, 8),
-    [state.attendance],
-  );
-  const pendingAttendance = state.attendance.filter(
-    (attendance) =>
-      attendance.awaitingPayrollLine &&
-      Boolean(attendance.attendanceId?.trim()) &&
-      !linkedAttendanceIds.has(attendance.attendanceId!.trim()),
-  );
 
   // 2. Buyers & Map variables
   const buyers = useMemo(() => buyersFromSales(state.sales) as Buyer[], [state.sales]);
@@ -521,61 +374,6 @@ export function MaintenanceManagement() {
       lng: '',
     });
     setAddBuyerOpen(false);
-  };
-
-  // 4. Attendance Actions
-  const createPayrollFromAttendance = async (attendance: AttendanceRecord) => {
-    const attendanceId = attendance.attendanceId?.trim();
-    if (!attendanceId || linkedAttendanceIds.has(attendanceId)) return;
-    const worker = workerForAttendance(state.workers, attendance);
-    if (!worker) {
-      showSaveError('No worker on the roster matches this attendance record\'s name — fix the worker name first.');
-      return;
-    }
-    const payroll = payrollFromAttendance(attendance, worker);
-    if (payroll.amount <= 0) {
-      showSaveError('Could not work out a pay amount for this worker\'s role — payroll line was not created.');
-      return;
-    }
-    const ok = await runSave('Attendance payroll', () =>
-      updateState((prev) => {
-        // Re-check inside the updater: guards against a double-click race creating two payroll
-        // lines for the same attendance record before the button has a chance to disable.
-        if (prev.payroll.some((p) => p.linkedAttendanceId?.trim() === attendanceId)) return prev;
-        return {
-          ...prev,
-          attendance: prev.attendance.map((row) =>
-            row.attendanceId?.trim() === attendanceId
-              ? { ...row, awaitingPayrollLine: false }
-              : row
-          ),
-          payroll: [...prev.payroll, payroll],
-        };
-      })
-    );
-    if (!ok) showSaveError('Attendance payroll');
-  };
-
-  const clearAttendanceHistory = async () => {
-    if (state.attendance.length === 0) return;
-    if (pendingAttendance.length > 0) {
-      showSaveError(
-        `${pendingAttendance.length} attendance record${pendingAttendance.length === 1 ? '' : 's'} still ` +
-          'awaiting a payroll line. Add payroll for those first — clearing history now would erase them ' +
-          'without ever paying that time.',
-      );
-      return;
-    }
-    const confirmed = window.confirm(
-      `This permanently deletes all ${state.attendance.length} attendance record(s). This cannot be undone. Continue?`,
-    );
-    if (!confirmed) return;
-    await runSave('Attendance history', () =>
-      updateState((prev) => ({
-        ...prev,
-        attendance: [],
-      }))
-    );
   };
 
   if (loading) {
@@ -879,160 +677,6 @@ export function MaintenanceManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* 1. Worker Attendance Logs Block */}
-      <div className="flex h-[620px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#2d5016]/15 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-[#2d5016]" />
-            </div>
-            <div>
-              <h3>Worker attendance logs</h3>
-              <p className="text-sm text-muted-foreground">
-                Clock-in records from the mobile app. Create payroll lines from pending attendance.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-muted/40 px-3 py-1 text-xs font-medium text-foreground whitespace-nowrap">
-              {pendingAttendance.length} pending payroll
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={saving || state.attendance.length === 0}
-              onClick={() => void clearAttendanceHistory()}
-            >
-              Clear history
-            </Button>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-[#8b6f47]/35 scrollbar-track-transparent">
-          {recentAttendance.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No worker attendance has synced yet.</p>
-          ) : (
-            <div className="space-y-3">
-            {recentAttendance.map((attendance, index) => {
-              const worker = workerForAttendance(state.workers, attendance);
-              const isInactive = worker ? parseWorkerDetails(worker.details).status === 'inactive' : false;
-              const attendanceId = attendance.attendanceId?.trim();
-              const hasPayroll = Boolean(attendanceId && linkedAttendanceIds.has(attendanceId));
-              const previewPayroll = payrollFromAttendance(attendance, worker);
-              const canCreatePayroll = Boolean(
-                attendance.awaitingPayrollLine &&
-                  attendanceId &&
-                  !hasPayroll &&
-                  (attendance.hoursWorked ?? 0) > 0 &&
-                  previewPayroll.amount > 0,
-              );
-              const noMatchingWorker =
-                attendance.awaitingPayrollLine && attendanceId && !hasPayroll && previewPayroll.amount <= 0;
-              return (
-                <div
-                  key={attendanceId || `${attendance.workerName}-${attendance.date}-${attendance.clockIn}-${index}`}
-                  className="rounded-lg bg-muted/40 p-4 border border-border/60"
-                >
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-foreground">{attendance.workerName || 'Unnamed worker'}</p>
-                        <span className="max-w-full truncate rounded-full bg-background/80 px-2.5 py-1 text-xs text-[#6b5d56] whitespace-nowrap">
-                          {worker?.roleRate || 'No role rate'}
-                        </span>
-                        {isInactive ? (
-                          <span className="rounded-full bg-[#b0bec5] px-2.5 py-1 text-xs font-medium text-[#263238] whitespace-nowrap">
-                            Inactive
-                          </span>
-                        ) : null}
-                        {hasPayroll ? (
-                          <span className="rounded-full bg-[#2d5016] px-2.5 py-1 text-xs font-medium text-white whitespace-nowrap">
-                            Payroll line added
-                          </span>
-                        ) : attendance.awaitingPayrollLine ? (
-                          <span className="rounded-full bg-[#d4a574]/30 px-2.5 py-1 text-xs font-medium text-foreground whitespace-nowrap">
-                            Awaiting payroll
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-background/80 px-2.5 py-1 text-xs text-[#6b5d56] whitespace-nowrap">
-                            Recorded
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-                        {noMatchingWorker ? (
-                          <span className="text-sm font-medium text-red-600">
-                            No matching worker/role rate — can't add payroll
-                          </span>
-                        ) : (
-                          <span className="text-sm font-medium text-[#2d5016]">
-                            Payroll: {formatCurrency(previewPayroll.amount)}
-                          </span>
-                        )}
-                        <Button
-                          size="sm"
-                          className="bg-[#2d5016] text-white"
-                          disabled={saving || !canCreatePayroll}
-                          onClick={() => void createPayrollFromAttendance(attendance)}
-                        >
-                          Add payroll line
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                      <div className="rounded-lg bg-background/80 p-3 border border-border/60">
-                        <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Date</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{attendance.date || 'No date'}</p>
-                      </div>
-                      <div className="rounded-lg bg-background/80 p-3 border border-border/60">
-                        <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Time in</p>
-                        <p className="mt-1 text-lg font-semibold text-[#2d5016]">{formatClock24h(attendance.clockIn)}</p>
-                      </div>
-                      <div className="rounded-lg bg-background/80 p-3 border border-border/60">
-                        <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Time out</p>
-                        <p className="mt-1 text-lg font-semibold text-foreground">{formatClock24h(attendance.clockOut)}</p>
-                      </div>
-                      <div className="rounded-lg bg-background/80 p-3 border border-border/60">
-                        <p className="text-xs font-medium uppercase tracking-wide text-[#6b5d56]">Hours</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">
-                          {(attendance.hoursWorked ?? 0).toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
-                    {(() => {
-                      const dateStr = attendance.date || '';
-                      const activities = getWorkerActivitiesForDate(state, attendance.workerName, dateStr);
-                      return (
-                        <div className="space-y-1.5 mt-1 border-t border-border/60 pt-2.5">
-                          {attendance.details ? (
-                            <p className="text-sm font-medium text-foreground">
-                              Notes: <span className="font-normal text-[#6b5d56]">{attendance.details}</span>
-                            </p>
-                          ) : null}
-                          {activities.length > 0 ? (
-                            <div className="text-xs space-y-1">
-                              <p className="font-semibold text-muted-foreground">Activities / Tasks logged on this day:</p>
-                              <ul className="list-disc list-inside text-[#6b5d56] space-y-0.5">
-                                {activities.map((act, i) => (
-                                  <li key={i}>{act}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : (
-                            <p className="text-xs italic text-[#8b6f47]">No specific scans or equipment reports recorded for this day.</p>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              );
-            })}
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* 2. Bataan Operations Map & Channels Block */}
       <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
