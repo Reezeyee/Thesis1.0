@@ -19,6 +19,12 @@ import java.util.Locale
  */
 object FarmFinance {
 
+    /** Standard paid shift: 8:00 AM-5:00 PM minus a 1-hour unpaid lunch = 8 paid regular hours/day. */
+    const val STANDARD_SHIFT_HOURS = 8.0
+
+    /** Overtime pay bonus: hours worked beyond [STANDARD_SHIFT_HOURS] are paid at hourlyRate x this. */
+    const val OVERTIME_MULTIPLIER = 1.25
+
     fun saleLineTotal(s: SaleRecord): Int {
         if (s.quantityKg > 0.0 && s.pricePerKg > 0.0) {
             return (s.quantityKg * s.pricePerKg).roundToInt()
@@ -47,8 +53,21 @@ object FarmFinance {
         return (numeric.toDoubleOrNull() ?: 0.0).roundToInt()
     }
 
-    /** Line total for display; for expenses only [payrollAmountIfPaid] is used. */
+    /**
+     * Line total for display; for expenses only [payrollAmountIfPaid] is used.
+     * When [PayrollRecord.regularHours] / [PayrollRecord.overtimeHours] are present, overtime
+     * hours are paid at hourlyRate x [OVERTIME_MULTIPLIER]; older rows without a split fall back
+     * to the flat hourlyRate x hoursWorked (or dailyRate x daysWorked) behavior unchanged.
+     */
     fun payrollLineAmount(p: PayrollRecord): Int {
+        val regular = p.regularHours
+        val overtime = p.overtimeHours
+        val hasSplit = (regular != null && regular > 0.0) || (overtime != null && overtime > 0.0)
+        if (p.hourlyRate > 0.0 && hasSplit) {
+            val reg = regular ?: 0.0
+            val ot = overtime ?: 0.0
+            return (p.hourlyRate * reg + p.hourlyRate * OVERTIME_MULTIPLIER * ot).roundToInt()
+        }
         if (p.hourlyRate > 0.0 && p.hoursWorked > 0.0) {
             return (p.hourlyRate * p.hoursWorked).roundToInt()
         }
@@ -83,6 +102,42 @@ object FarmFinance {
         if (mins < 0) mins += 24 * 60
         if (mins <= 0) return null
         return mins / 60.0
+    }
+
+    /**
+     * Splits [totalHours] into (regularHours, overtimeHours) against [STANDARD_SHIFT_HOURS].
+     * Returns null when there is nothing to split yet (null or non-positive hours), so callers can
+     * tell "not clocked out yet" apart from "worked zero hours."
+     */
+    fun splitRegularAndOvertimeHours(totalHours: Double?): Pair<Double, Double>? {
+        val hours = totalHours ?: return null
+        if (hours <= 0.0) return null
+        val regular = minOf(hours, STANDARD_SHIFT_HOURS)
+        val overtime = maxOf(0.0, hours - STANDARD_SHIFT_HOURS)
+        return regular to overtime
+    }
+
+    /** Splits the hours between a clock-in/clock-out pair into (regularHours, overtimeHours). */
+    fun splitRegularAndOvertimeFromClock(clockIn: String, clockOut: String): Pair<Double, Double>? {
+        val hours = computeHoursFromClock(clockIn, clockOut) ?: return null
+        return splitRegularAndOvertimeHours(hours)
+    }
+
+    /** e.g. "8.00 h regular + 1.50 h overtime (×1.25 rate)", or just "8.00 h regular" with no overtime. */
+    fun formatHoursBreakdown(regularHours: Double?, overtimeHours: Double?): String? {
+        val reg = regularHours ?: return null
+        val ot = overtimeHours ?: 0.0
+        val base = String.format(Locale.getDefault(), "%.2f h regular", reg)
+        if (ot <= 0.0) return base
+        val otStr = String.format(Locale.getDefault(), "%.2f", ot)
+        val multiplierStr = String.format(Locale.getDefault(), "%.2f", OVERTIME_MULTIPLIER)
+        return "$base + $otStr h overtime (×$multiplierStr rate)"
+    }
+
+    /** Convenience overload: splits [totalHours] first, then formats the breakdown. */
+    fun formatHoursBreakdown(totalHours: Double?): String? {
+        val split = splitRegularAndOvertimeHours(totalHours) ?: return null
+        return formatHoursBreakdown(split.first, split.second)
     }
 
     /** Hour and minute for Android [android.app.TimePickerDialog] (24-hour); defaults if [raw] is invalid. */

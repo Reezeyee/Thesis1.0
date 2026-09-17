@@ -29,7 +29,13 @@ import { useAuth } from '../auth/AuthProvider';
 import { formatCurrency } from '../lib/currencyFormat';
 import { runSave, showSaveError } from '../lib/saveFeedback';
 import { logStateApiActivity, logUiAction } from '../lib/apiRouteLogger';
-import { hourlyRateForWorkerRole, payrollLineAmount } from '../lib/farmFinance';
+import {
+  hourlyRateForWorkerRole,
+  payrollLineAmount,
+  splitRegularAndOvertimeHours,
+  formatHoursBreakdown,
+  formatHoursBreakdownFromTotal,
+} from '../lib/farmFinance';
 import { parseWorkerDetails } from '../lib/workerUi';
 import type {
   AppState,
@@ -124,6 +130,12 @@ function attendancePeriodLabel(attendance: AttendanceRecord): string {
 function payrollFromAttendance(attendance: AttendanceRecord, worker?: WorkerRecord): PayrollRecord {
   const hourlyRate = hourlyRateForWorkerRole(worker?.roleRate ?? '');
   const hoursWorked = attendance.hoursWorked ?? 0;
+  // Carry the attendance record's own regular/overtime split when it has one; older attendance
+  // rows saved before this field existed derive it from their total hours instead.
+  const split =
+    attendance.regularHours != null || attendance.overtimeHours != null
+      ? { regularHours: attendance.regularHours ?? 0, overtimeHours: attendance.overtimeHours ?? 0 }
+      : splitRegularAndOvertimeHours(hoursWorked);
   const record: PayrollRecord = {
     workerName: attendance.workerName,
     period: attendancePeriodLabel(attendance),
@@ -137,6 +149,8 @@ function payrollFromAttendance(attendance: AttendanceRecord, worker?: WorkerReco
     dailyRate: 0,
     linkedAttendanceId: attendance.attendanceId ?? '',
     paymentMethod: null,
+    regularHours: split?.regularHours,
+    overtimeHours: split?.overtimeHours,
   };
   return { ...record, amount: payrollLineAmount(record) };
 }
@@ -1006,6 +1020,17 @@ export function AttendanceManagement() {
                     </div>
                   </div>
 
+                  {(() => {
+                    const breakdown =
+                      formatHoursBreakdown(attendance.regularHours, attendance.overtimeHours) ??
+                      formatHoursBreakdownFromTotal(attendance.hoursWorked);
+                    return breakdown ? (
+                      <p className="mt-2 text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                        {breakdown}
+                      </p>
+                    ) : null;
+                  })()}
+
                   {attendance.timeInLatitude != null && attendance.timeInLongitude != null ? (
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#6b5d56]">
                       <span className="font-semibold text-foreground">Time In Location:</span>
@@ -1174,6 +1199,12 @@ export function AttendanceManagement() {
                         </p>
                       </div>
                     </div>
+                    {(() => {
+                      const breakdown = formatHoursBreakdown(previewPayroll.regularHours, previewPayroll.overtimeHours);
+                      return breakdown ? (
+                        <p className="text-xs font-mono font-semibold text-[#2d5016]">{breakdown}</p>
+                      ) : null;
+                    })()}
                     {(() => {
                       const dateStr = attendance.date || '';
                       const activities = getWorkerActivitiesForDate(state, attendance.workerName, dateStr);

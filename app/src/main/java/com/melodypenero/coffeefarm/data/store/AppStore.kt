@@ -181,7 +181,14 @@ data class AttendanceRecord(
     val faceSnapshotBase64: String = "",
     val isGeofenceVerified: Boolean? = null,
     /** Set by the website when it creates an attendance row (e.g. from an approved timesheet correction) for sort-order fallback; pass-through only -- see [SmsMessageRecord] for why this app must still declare fields it never reads. */
-    val timestampMillis: Long? = null
+    val timestampMillis: Long? = null,
+    /**
+     * [hoursWorked] split against [FarmFinance.STANDARD_SHIFT_HOURS], computed when this record is
+     * created/updated from an actual clock punch. Null on older records that predate this field --
+     * payroll built from those falls back to the flat hourlyRate x hoursWorked calculation.
+     */
+    val regularHours: Double? = null,
+    val overtimeHours: Double? = null
 )
 data class TaskRecord(val title: String, val details: String, val status: String)
 data class SectionRecord(val name: String, val details: String)
@@ -356,7 +363,15 @@ data class PayrollRecord(
     val linkedAttendanceId: String = "",
     /** Set by the website's payroll payout flow; pass-through only -- see [SmsMessageRecord] for why this app must still declare fields it never reads. */
     val paymentMethod: String? = null,
-    val receiptNumber: String? = null
+    val receiptNumber: String? = null,
+    /**
+     * Carried over from the source [AttendanceRecord] when this line was generated from
+     * attendance. When present, [FarmFinance.payrollLineAmount] pays overtimeHours at
+     * hourlyRate x [FarmFinance.OVERTIME_MULTIPLIER] instead of the flat rate. Null on older rows
+     * (or rows entered manually without a split), which keep the flat hourlyRate x hoursWorked amount.
+     */
+    val regularHours: Double? = null,
+    val overtimeHours: Double? = null
 )
 
 data class CoffeeFieldRecord(
@@ -762,7 +777,9 @@ class AppStore(context: Context) {
             timeInLongitude = a.timeInLongitude,
             timeInLocationName = (a.timeInLocationName ?: "").trim(),
             faceSnapshotBase64 = (a.faceSnapshotBase64 ?: "").trim(),
-            isGeofenceVerified = a.isGeofenceVerified
+            isGeofenceVerified = a.isGeofenceVerified,
+            regularHours = a.regularHours,
+            overtimeHours = a.overtimeHours
         )
     }
 
@@ -1016,6 +1033,7 @@ class AppStore(context: Context) {
         val localAddedClockOut = cloud.clockOut.isBlank() && local.clockOut.isNotBlank()
         val clockIn = cloud.clockIn.ifBlank { local.clockIn }
         val clockOut = cloud.clockOut.ifBlank { local.clockOut }
+        val recomputedSplit = FarmFinance.splitRegularAndOvertimeFromClock(clockIn, clockOut)
         return AttendanceRecord(
             workerName = cloud.workerName.ifBlank { local.workerName },
             details = cloud.details.ifBlank { local.details },
@@ -1031,6 +1049,8 @@ class AppStore(context: Context) {
             timeInLocationName = cloud.timeInLocationName.ifBlank { local.timeInLocationName },
             faceSnapshotBase64 = cloud.faceSnapshotBase64.ifBlank { local.faceSnapshotBase64 },
             isGeofenceVerified = cloud.isGeofenceVerified ?: local.isGeofenceVerified,
+            regularHours = recomputedSplit?.first ?: cloud.regularHours ?: local.regularHours,
+            overtimeHours = recomputedSplit?.second ?: cloud.overtimeHours ?: local.overtimeHours,
             timestampMillis = cloudRecord.timestampMillis ?: localRecord.timestampMillis
         )
     }
@@ -1381,6 +1401,7 @@ class AppStore(context: Context) {
     ) {
         val computed = FarmFinance.computeHoursFromClock(clockIn, clockOut)
         val hours = hoursWorked ?: computed
+        val split = FarmFinance.splitRegularAndOvertimeHours(hours)
         val aid = "ATT-${UUID.randomUUID().toString().take(8)}"
         val awaiting = staffSubmission && hours != null && hours > 0
         persist(
@@ -1399,7 +1420,9 @@ class AppStore(context: Context) {
                     timeInLongitude = timeInLongitude,
                     timeInLocationName = timeInLocationName.trim(),
                     faceSnapshotBase64 = faceSnapshotBase64.trim(),
-                    isGeofenceVerified = isGeofenceVerified
+                    isGeofenceVerified = isGeofenceVerified,
+                    regularHours = split?.first,
+                    overtimeHours = split?.second
                 )
             )
         )
@@ -1501,6 +1524,13 @@ class AppStore(context: Context) {
         if (hourly <= 0) return
         val workerId = worker?.workerId?.trim().orEmpty()
         val periodLabel = "${(att.date ?: "").ifBlank { "Date TBD" }} · ${(att.workerName ?: "").trim()}"
+        // Carry the attendance record's own regular/overtime split when it has one; older
+        // attendance rows saved before this field existed derive it from their total hours instead.
+        val split = if (att.regularHours != null || att.overtimeHours != null) {
+            (att.regularHours ?: 0.0) to (att.overtimeHours ?: 0.0)
+        } else {
+            FarmFinance.splitRegularAndOvertimeHours(hours)
+        }
         val row = payrollRecordWithComputedAmount(
             workerName = (att.workerName ?: "").trim(),
             period = periodLabel,
@@ -1511,7 +1541,9 @@ class AppStore(context: Context) {
             daysWorked = 0,
             hourlyRate = hourly,
             hoursWorked = hours,
-            linkedAttendanceId = att.attendanceId ?: ""
+            linkedAttendanceId = att.attendanceId ?: "",
+            regularHours = split?.first,
+            overtimeHours = split?.second
         )
         persist(
             state.copy(
@@ -1535,7 +1567,9 @@ class AppStore(context: Context) {
         daysWorked: Int,
         hourlyRate: Double,
         hoursWorked: Double,
-        linkedAttendanceId: String
+        linkedAttendanceId: String,
+        regularHours: Double? = null,
+        overtimeHours: Double? = null
     ): PayrollRecord {
         val template = PayrollRecord(
             workerName = workerName,
@@ -1548,7 +1582,9 @@ class AppStore(context: Context) {
             daysWorked = daysWorked,
             hourlyRate = hourlyRate,
             hoursWorked = hoursWorked,
-            linkedAttendanceId = (linkedAttendanceId ?: "").trim()
+            linkedAttendanceId = (linkedAttendanceId ?: "").trim(),
+            regularHours = regularHours,
+            overtimeHours = overtimeHours
         )
         return template.copy(amount = FarmFinance.payrollLineAmount(template))
     }
@@ -2230,6 +2266,7 @@ class AppStore(context: Context) {
         val prev = state.attendance.getOrNull(index) ?: return
         val computed = FarmFinance.computeHoursFromClock(clockIn, clockOut)
         val hours = hoursWorked ?: computed ?: prev.hoursWorked
+        val split = FarmFinance.splitRegularAndOvertimeHours(hours)
         val aid = (prev.attendanceId ?: "").ifBlank { "ATT-${UUID.randomUUID().toString().take(8)}" }
         persist(
             state.copy(
@@ -2250,7 +2287,9 @@ class AppStore(context: Context) {
                         timeInLongitude = timeInLongitude ?: prev.timeInLongitude,
                         timeInLocationName = timeInLocationName.trim().ifBlank { (prev.timeInLocationName ?: "") },
                         faceSnapshotBase64 = faceSnapshotBase64.trim().ifBlank { (prev.faceSnapshotBase64 ?: "") },
-                        isGeofenceVerified = isGeofenceVerified ?: prev.isGeofenceVerified
+                        isGeofenceVerified = isGeofenceVerified ?: prev.isGeofenceVerified,
+                        regularHours = split?.first,
+                        overtimeHours = split?.second
                     )
                 )
             )

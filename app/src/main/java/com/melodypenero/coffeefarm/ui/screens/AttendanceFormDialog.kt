@@ -278,14 +278,17 @@ fun AttendanceFormDialog(
                         text = when {
                             hp == null -> "Hours: enter valid times"
                             hp <= 0 -> "Hours: invalid"
-                            else -> "Hours worked: ${"%.2f".format(hp)} h"
+                            else -> "Hours worked: ${FarmFinance.formatHoursBreakdown(hp) ?: "%.2f".format(hp) + " h"}"
                         },
                         color = Color(0xFFB8A99E),
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 } else {
+                    val breakdown = FarmFinance.formatHoursBreakdown(initial?.regularHours, initial?.overtimeHours)
+                        ?: initial?.hoursWorked?.let { FarmFinance.formatHoursBreakdown(it) }
                     Text(
-                        text = "Hours are recorded when workers log attendance from their account.",
+                        text = breakdown?.let { "Hours worked: $it" }
+                            ?: "Hours are recorded when workers log attendance from their account.",
                         color = Color(0xFFB8A99E),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 8.dp)

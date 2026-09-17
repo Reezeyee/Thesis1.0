@@ -437,6 +437,17 @@ fun StaffAttendanceScreen(session: AuthSession) {
                     color = palette.textSecondary,
                     style = MaterialTheme.typography.bodySmall
                 )
+                if (hasTimedOutToday) {
+                    val breakdown = FarmFinance.formatHoursBreakdown(todayAttendance?.regularHours, todayAttendance?.overtimeHours)
+                        ?: todayAttendance?.hoursWorked?.let { FarmFinance.formatHoursBreakdown(it) }
+                    if (breakdown != null) {
+                        Text(
+                            text = "Hours worked: $breakdown",
+                            color = palette.textSecondary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
                 FarmPrimaryButton(
                     text = if (hasTimedInToday) "Time in recorded" else "Time in",
                     onClick = { timeIn() },
@@ -614,9 +625,10 @@ fun StaffAttendanceScreen(session: AuthSession) {
                         color = palette.textSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )
-                    val h = a.hoursWorked
+                    val breakdown = FarmFinance.formatHoursBreakdown(a.regularHours, a.overtimeHours)
+                        ?: a.hoursWorked?.let { FarmFinance.formatHoursBreakdown(it) }
                     Text(
-                        if (h != null) "${"%.2f".format(h)} hours" else "Hours —",
+                        breakdown ?: "Hours —",
                         color = palette.textSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )
