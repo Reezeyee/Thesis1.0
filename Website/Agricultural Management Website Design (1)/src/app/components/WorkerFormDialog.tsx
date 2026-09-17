@@ -26,6 +26,8 @@ import {
   ACCEPTED_NAME_CHARS_DESCRIPTION,
   type WorkerFormDraft,
 } from '../lib/workerUi';
+import { hourlyRateForWorkerRole } from '../lib/farmFinance';
+import { formatCurrency } from '../lib/currencyFormat';
 
 const ADDRESS_SELECT_CLASS =
   'flex h-9 w-full rounded-md border border-border/80 bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent';
@@ -367,6 +369,18 @@ export function WorkerFormDialog({
                   selectClassName={ADDRESS_SELECT_CLASS}
                   otherPlaceholder="Sample: Machine Technician"
                 />
+                {(() => {
+                  const rate = hourlyRateForWorkerRole(form.role);
+                  return rate > 0 ? (
+                    <p className="mt-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      Pay rate for this role: {formatCurrency(rate)} / hour
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      No fixed hourly rate for this role yet — payroll lines will need a matching rate before they can be created.
+                    </p>
+                  );
+                })()}
               </div>
 
               {/* Employment type: Regular staff vs. contract/arawan (daily-wage) workers. */}

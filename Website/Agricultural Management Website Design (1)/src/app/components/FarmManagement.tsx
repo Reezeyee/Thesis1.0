@@ -2558,7 +2558,12 @@ export function FarmManagement() {
                       />
                       <div className="flex-1 min-w-0">
                         <h4 className="mb-1 truncate font-bold text-foreground">{worker.name}</h4>
-                        <p className="text-sm text-[#2d5016] font-semibold mb-2">{worker.role}</p>
+                        <p className="text-sm text-[#2d5016] font-semibold mb-0.5">{worker.role}</p>
+                        <p className="text-xs font-mono font-semibold text-muted-foreground mb-2">
+                          {hourlyRateForWorkerRole(worker.role) > 0
+                            ? `${formatCurrency(hourlyRateForWorkerRole(worker.role))}/hr`
+                            : 'No fixed rate'}
+                        </p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <MapPin className="w-3 h-3 shrink-0" />
                           <span className="truncate">{[worker.address, worker.barangay].filter(Boolean).join(', ')}</span>
@@ -2639,6 +2644,15 @@ export function FarmManagement() {
                 <p className="text-xs font-mono font-bold text-emerald-500">{selectedWorker.role}</p>
               </div>
               <div className="space-y-2.5">
+                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
+                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Role & pay rate</p>
+                  <p className="text-xs font-bold text-foreground">{selectedWorker.role}</p>
+                  <p className="text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    {hourlyRateForWorkerRole(selectedWorker.role) > 0
+                      ? `${formatCurrency(hourlyRateForWorkerRole(selectedWorker.role))} / hour`
+                      : 'No fixed hourly rate for this role'}
+                  </p>
+                </div>
                 <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
                   <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Worker ID</p>
                   <p className="text-xs font-bold font-mono text-foreground">{selectedWorker.workerId}</p>
