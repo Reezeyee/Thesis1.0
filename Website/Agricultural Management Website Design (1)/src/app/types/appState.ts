@@ -46,6 +46,14 @@ export interface AttendanceRecord {
   faceSnapshotBase64?: string;
   isGeofenceVerified?: boolean | null;
   timestampMillis?: number;
+  /**
+   * hoursWorked split against the standard shift (see STANDARD_SHIFT_HOURS in farmFinance.ts),
+   * computed by the Android app when this record is created/updated from an actual clock punch.
+   * Undefined on records saved before this field existed -- payroll built from those falls back
+   * to the flat hourlyRate x hoursWorked calculation.
+   */
+  regularHours?: number | null;
+  overtimeHours?: number | null;
 }
 
 export type ApprovalStatus = 'Pending' | 'Approved' | 'Rejected';
@@ -300,6 +308,14 @@ export interface PayrollRecord {
   hoursWorked?: number;
   linkedAttendanceId?: string;
   paymentMethod?: PayrollPaymentMethod | null;
+  /**
+   * Carried over from the source AttendanceRecord when this line was generated from attendance.
+   * When present, payrollLineAmount() pays overtimeHours at hourlyRate x OVERTIME_MULTIPLIER
+   * instead of the flat rate. Undefined on older rows (or rows entered manually without a split),
+   * which keep the flat hourlyRate x hoursWorked amount.
+   */
+  regularHours?: number | null;
+  overtimeHours?: number | null;
 }
 
 export interface CoffeeFieldRecord {

@@ -41,7 +41,58 @@ export function totalMaintenanceExpenses(logs: MaintenanceRecord[]): number {
   return logs.reduce((sum, l) => sum + parseMoneyAmount(l.costText), 0);
 }
 
+/** Standard paid shift: 8:00 AM-5:00 PM minus a 1-hour unpaid lunch = 8 paid regular hours/day. */
+export const STANDARD_SHIFT_HOURS = 8.0;
+
+/** Overtime pay bonus: hours worked beyond STANDARD_SHIFT_HOURS are paid at hourlyRate x this. */
+export const OVERTIME_MULTIPLIER = 1.25;
+
+/**
+ * Splits totalHours into { regularHours, overtimeHours } against STANDARD_SHIFT_HOURS. Returns
+ * null when there is nothing to split yet (null/undefined or non-positive hours), so callers can
+ * tell "not clocked out yet" apart from "worked zero hours."
+ */
+export function splitRegularAndOvertimeHours(
+  totalHours: number | null | undefined,
+): { regularHours: number; overtimeHours: number } | null {
+  const hours = totalHours ?? 0;
+  if (!Number.isFinite(hours) || hours <= 0) return null;
+  const regularHours = Math.min(hours, STANDARD_SHIFT_HOURS);
+  const overtimeHours = Math.max(0, hours - STANDARD_SHIFT_HOURS);
+  return { regularHours, overtimeHours };
+}
+
+/** e.g. "8.00 h regular + 1.50 h overtime (×1.25 rate)", or just "8.00 h regular" with no overtime. */
+export function formatHoursBreakdown(
+  regularHours: number | null | undefined,
+  overtimeHours?: number | null,
+): string | null {
+  if (regularHours == null) return null;
+  const ot = overtimeHours ?? 0;
+  const base = `${regularHours.toFixed(2)} h regular`;
+  if (ot <= 0) return base;
+  return `${base} + ${ot.toFixed(2)} h overtime (×${OVERTIME_MULTIPLIER.toFixed(2)} rate)`;
+}
+
+/** Convenience overload: splits totalHours first, then formats the breakdown. */
+export function formatHoursBreakdownFromTotal(totalHours: number | null | undefined): string | null {
+  const split = splitRegularAndOvertimeHours(totalHours);
+  if (!split) return null;
+  return formatHoursBreakdown(split.regularHours, split.overtimeHours);
+}
+
+/**
+ * When PayrollRecord.regularHours / overtimeHours are present, overtime hours are paid at
+ * hourlyRate x OVERTIME_MULTIPLIER; older rows without a split fall back to the flat
+ * hourlyRate x hoursWorked (or dailyRate x daysWorked) behavior unchanged.
+ */
 export function payrollLineAmount(p: PayrollRecord): number {
+  const regular = p.regularHours;
+  const overtime = p.overtimeHours;
+  const hasSplit = (regular ?? 0) > 0 || (overtime ?? 0) > 0;
+  if ((p.hourlyRate ?? 0) > 0 && hasSplit) {
+    return Math.round((p.hourlyRate ?? 0) * (regular ?? 0) + (p.hourlyRate ?? 0) * OVERTIME_MULTIPLIER * (overtime ?? 0));
+  }
   if ((p.hourlyRate ?? 0) > 0 && (p.hoursWorked ?? 0) > 0) {
     return Math.round((p.hourlyRate ?? 0) * (p.hoursWorked ?? 0));
   }

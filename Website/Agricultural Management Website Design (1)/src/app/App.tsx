@@ -5,6 +5,7 @@ import { Topbar } from './components/ui/Topbar';
 import { FarmMonitoringDashboard } from './components/FarmMonitoringDashboard';
 import { PremiumDashboard } from './components/PremiumDashboard';
 import { FarmManagement } from './components/FarmManagement';
+import { AttendanceManagement } from './components/AttendanceManagement';
 import { EquipmentManagement } from './components/EquipmentManagement';
 import { CherryManagement } from './components/CherryManagement';
 import { ProfitManagement } from './components/ProfitManagement';
@@ -23,13 +24,14 @@ import { BuyerStorefront } from './components/BuyerStorefront';
 import { BuyerVerifyEmailGate } from './components/BuyerVerifyEmailGate';
 import { OwnerAdminMessaging } from './components/OwnerAdminMessaging';
 
-export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings' | 'buyerOrders' | 'ownerMessages';
+export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'attendance' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings' | 'buyerOrders' | 'ownerMessages';
 
 
 const moduleLabels: Record<AppModuleId, string> = {
   monitoring: 'Telemetry & Sensor Monitor',
   dashboard: 'Dashboard Overview',
   farm: 'Farm HR & Workers',
+  attendance: 'Attendance',
   equipment: 'Equipment Management',
   cherry: 'Coffee Cherry Batches',
   profit: 'Profit & Sales Ledger',
@@ -110,6 +112,8 @@ function AdminAppShell() {
         return <PremiumDashboard onNavigateModule={handleNavigateModule} />;
       case 'farm':
         return <FarmManagement />;
+      case 'attendance':
+        return <AttendanceManagement />;
       case 'equipment':
         return <EquipmentManagement />;
       case 'cherry':
