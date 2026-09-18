@@ -83,9 +83,12 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Profile and metadata.
+    // Profile and metadata. Admin may also read (get and list/query) every profile so the
+    // website can plot self-registered buyers' mandatory location on the buyer locations map
+    // in Maintenance -- writes stay restricted to the profile's own owner.
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
     match /users/{userId}/login_history/{entryId} {
