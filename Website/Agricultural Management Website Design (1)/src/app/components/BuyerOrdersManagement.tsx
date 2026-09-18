@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
-import { Package, ShoppingBag, Plus, Trash2, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Package, ShoppingBag, Plus, Trash2, CheckCircle2, XCircle, Clock, Sprout } from 'lucide-react';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
@@ -18,7 +18,11 @@ const LISTING_CATEGORIES = ['Green Beans', 'Roasted Beans', 'Ripe Cherries', 'Dr
 const LISTING_UNITS = ['kg', 'sacks', 'bags', 'lbs'] as const;
 
 function emptyListingForm() {
-  return { name: '', category: 'Green Beans', unit: 'kg', pricePerUnit: '', availableQty: '' };
+  return { name: '', category: 'Green Beans', unit: 'kg', pricePerUnit: '', availableQty: '', sourceHarvestId: '' };
+}
+
+function harvestKey(h: { harvestId?: string; batchId: string }) {
+  return h.harvestId ?? h.batchId;
 }
 
 /**
@@ -30,6 +34,7 @@ function emptyListingForm() {
 export function BuyerOrdersManagement() {
   const { state, updateState, saving } = useFarmData();
   const listings = state.productListings ?? [];
+  const harvests = state.cherryHarvests ?? [];
 
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(emptyListingForm());
@@ -66,6 +71,7 @@ export function BuyerOrdersManagement() {
       showSaveError('Enter a name, a price greater than 0, and a valid quantity.');
       return;
     }
+    const sourceHarvest = form.sourceHarvestId ? harvests.find((h) => harvestKey(h) === form.sourceHarvestId) : undefined;
     const record: ProductListingRecord = {
       listingId: `L-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
       name,
@@ -75,6 +81,14 @@ export function BuyerOrdersManagement() {
       availableQty: Math.round(qty),
       status: qty > 0 ? 'Available' : 'Out of Stock',
       createdAt: new Date().toISOString().slice(0, 10),
+      ...(sourceHarvest
+        ? {
+            sourceHarvestId: harvestKey(sourceHarvest),
+            sourceHarvestWorkerName: sourceHarvest.pickerWorkerName ?? undefined,
+            sourceHarvestWeightText: sourceHarvest.weightText,
+            sourceHarvestDate: sourceHarvest.date ?? undefined,
+          }
+        : {}),
     };
     const ok = await runSave('Product listing', () =>
       updateState((prev) => ({ ...prev, productListings: [...(prev.productListings ?? []), record] })),
@@ -216,6 +230,24 @@ export function BuyerOrdersManagement() {
                 <Label className="text-xs font-semibold">Available quantity</Label>
                 <Input type="number" min={0} value={form.availableQty} onChange={(e) => setForm({ ...form, availableQty: e.target.value })} placeholder="e.g. 50" className="h-9 rounded-lg text-xs" />
               </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-semibold">Sourced from harvest (optional)</Label>
+                <select
+                  value={form.sourceHarvestId}
+                  onChange={(e) => setForm({ ...form, sourceHarvestId: e.target.value })}
+                  className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm"
+                >
+                  <option value="">Not linked to a harvest</option>
+                  {harvests.map((h) => (
+                    <option key={harvestKey(h)} value={harvestKey(h)}>
+                      {h.pickerWorkerName ?? 'Unknown picker'} · {h.weightText}{h.date ? ` · ${h.date}` : ''} ({harvestKey(h)})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-muted-foreground">
+                  Links this listing to the worker's harvest it came from, for traceability -- it does not affect available quantity.
+                </p>
+              </div>
               <div className="sm:col-span-2 flex justify-end gap-2 pt-1">
                 <Button variant="outline" onClick={() => setFormOpen(false)} className="h-9 rounded-lg text-xs cursor-pointer">Cancel</Button>
                 <Button onClick={() => void saveListing()} disabled={saving} className="h-9 rounded-lg text-xs font-semibold cursor-pointer">Save Listing</Button>
@@ -235,6 +267,13 @@ export function BuyerOrdersManagement() {
                     <p className="font-bold text-sm">{l.name}</p>
                     <p className="text-xs text-muted-foreground">{l.category} · {formatCurrency(l.pricePerUnit)}/{l.unit}</p>
                     <p className="text-xs text-muted-foreground">{l.availableQty} {l.unit} available</p>
+                    {l.sourceHarvestId ? (
+                      <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                        <Sprout className="w-3 h-3" />
+                        Harvested by {l.sourceHarvestWorkerName ?? 'unknown worker'} · {l.sourceHarvestWeightText}
+                        {l.sourceHarvestDate ? ` · ${l.sourceHarvestDate}` : ''}
+                      </p>
+                    ) : null}
                   </div>
                   <button
                     type="button"

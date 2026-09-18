@@ -378,7 +378,9 @@ export interface PestControlRecord {
  * A finished-product listing Admin puts up for sale on the Buyer storefront -- e.g. "Ripe
  * Arabica Cherries, 50kg available at ₱120/kg". Admin-managed only (see the Buyer role
  * design decision): the Buyer catalog shows exactly these listings, never an automatic
- * calculation from harvest records.
+ * calculation from harvest records. Admin can optionally trace a listing back to the
+ * `CherryHarvestRecord` (and the worker who picked it) it was made from -- for provenance
+ * only, it never drives `availableQty`.
  */
 export interface ProductListingRecord {
   listingId: string;
@@ -390,6 +392,12 @@ export interface ProductListingRecord {
   status: string;
   imageUrl?: string;
   createdAt?: string;
+  /** `CherryHarvestRecord.harvestId` (falls back to its `batchId`) this listing was sourced from. */
+  sourceHarvestId?: string;
+  /** Denormalized from the harvest record at link time so the storefront card doesn't need a join. */
+  sourceHarvestWorkerName?: string;
+  sourceHarvestWeightText?: string;
+  sourceHarvestDate?: string;
 }
 
 export interface ConsumableSupplyRecord {
