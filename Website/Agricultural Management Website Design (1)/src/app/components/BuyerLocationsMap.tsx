@@ -3,11 +3,13 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, RefreshCw } from 'lucide-react';
+import { MapPin, RefreshCw, Package } from 'lucide-react';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { Button } from './ui/button';
 import { BATAAN_BBOX } from '../data/bataanProvinceMap';
+import { formatCurrency } from '../lib/currencyFormat';
+import type { BuyerOrderRecord } from '../types/appState';
 
 type BuyerProfile = {
   uid: string;
@@ -17,6 +19,31 @@ type BuyerProfile = {
   locationLng?: number;
   locationAddress?: string;
 };
+
+type BuyerStats = {
+  fulfilledCount: number;
+  fulfilledTotal: number;
+  pendingCount: number;
+};
+
+const EMPTY_STATS: BuyerStats = { fulfilledCount: 0, fulfilledTotal: 0, pendingCount: 0 };
+
+function statsFromOrders(orders: BuyerOrderRecord[]): Map<string, BuyerStats> {
+  const byBuyer = new Map<string, BuyerStats>();
+  for (const order of orders) {
+    const uid = order.buyerUid;
+    if (!uid) continue;
+    const current = byBuyer.get(uid) ?? { fulfilledCount: 0, fulfilledTotal: 0, pendingCount: 0 };
+    if (order.status === 'fulfilled') {
+      current.fulfilledCount += 1;
+      current.fulfilledTotal += order.totalAmount ?? 0;
+    } else if (order.status === 'pending') {
+      current.pendingCount += 1;
+    }
+    byBuyer.set(uid, current);
+  }
+  return byBuyer;
+}
 
 const PIN_ICON = L.divIcon({
   className: '',
@@ -50,11 +77,14 @@ function FitToMarkers({ points }: { points: [number, number][] }) {
 /**
  * Admin-only: plots every self-registered buyer's mandatory location (see BuyerAuthDialog /
  * AuthProvider.signUpAsBuyer) on a live Leaflet/OpenStreetMap map (no API key needed), replacing
- * the old static/hardcoded hub coordinates. Reads the `users` collection filtered to
- * role == 'BUYER' -- allowed for the admin account by firestore.rules.
+ * the old static/hardcoded hub coordinates and the manual "Add buyer / channel" flow. Reads the
+ * `users` collection filtered to role == 'BUYER' (allowed for the admin account by
+ * firestore.rules) and cross-references `buyer_orders` for each buyer's order count and total
+ * fulfilled purchase amount.
  */
 export function BuyerLocationsMap() {
   const [buyers, setBuyers] = useState<BuyerProfile[]>([]);
+  const [statsByBuyer, setStatsByBuyer] = useState<Map<string, BuyerStats>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
 
@@ -62,8 +92,11 @@ export function BuyerLocationsMap() {
     setLoading(true);
     setLoadErrorMessage(null);
     try {
-      const snap = await getDocs(query(collection(db, COLLECTIONS.USERS), where('role', '==', 'BUYER')));
-      const rows = snap.docs.map((d) => {
+      const [buyersSnap, ordersSnap] = await Promise.all([
+        getDocs(query(collection(db, COLLECTIONS.USERS), where('role', '==', 'BUYER'))),
+        getDocs(collection(db, COLLECTIONS.BUYER_ORDERS)),
+      ]);
+      const rows = buyersSnap.docs.map((d) => {
         const data = d.data() as Record<string, unknown>;
         return {
           uid: d.id,
@@ -74,7 +107,11 @@ export function BuyerLocationsMap() {
           locationAddress: (data.locationAddress as string) ?? '',
         };
       });
+      const orders = ordersSnap.docs.map(
+        (d) => ({ orderId: d.id, ...(d.data() as Omit<BuyerOrderRecord, 'orderId'>) }),
+      );
       setBuyers(rows);
+      setStatsByBuyer(statsFromOrders(orders));
     } catch {
       setLoadErrorMessage('Could not load buyer accounts. Confirm firestore.rules has been published.');
     } finally {
@@ -121,22 +158,30 @@ export function BuyerLocationsMap() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <FitToMarkers points={points} />
-          {buyersWithLocation.map((buyer) => (
-            <Marker key={buyer.uid} position={[buyer.locationLat!, buyer.locationLng!]} icon={PIN_ICON}>
-              <Popup>
-                <div className="min-w-[190px] max-w-[260px] space-y-1">
-                  <p className="text-sm font-semibold text-[#3e2723]">{buyer.displayName}</p>
-                  <p className="text-xs text-muted-foreground break-all">{buyer.email}</p>
-                  {buyer.locationAddress ? (
-                    <p className="text-xs text-[#5d4037] leading-snug flex items-start gap-1">
-                      <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
-                      {buyer.locationAddress}
+          {buyersWithLocation.map((buyer) => {
+            const stats = statsByBuyer.get(buyer.uid) ?? EMPTY_STATS;
+            return (
+              <Marker key={buyer.uid} position={[buyer.locationLat!, buyer.locationLng!]} icon={PIN_ICON}>
+                <Popup>
+                  <div className="min-w-[190px] max-w-[260px] space-y-1">
+                    <p className="text-sm font-semibold text-[#3e2723]">{buyer.displayName}</p>
+                    <p className="text-xs text-muted-foreground break-all">{buyer.email}</p>
+                    {buyer.locationAddress ? (
+                      <p className="text-xs text-[#5d4037] leading-snug flex items-start gap-1">
+                        <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
+                        {buyer.locationAddress}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-[#2d5016] flex items-start gap-1 pt-1 border-t border-black/10 mt-1">
+                      <Package className="w-3 h-3 mt-0.5 shrink-0" />
+                      {stats.fulfilledCount} order{stats.fulfilledCount === 1 ? '' : 's'} · {formatCurrency(stats.fulfilledTotal)}
+                      {stats.pendingCount > 0 ? ` (${stats.pendingCount} pending)` : ''}
                     </p>
-                  ) : null}
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
         </MapContainer>
       </div>
 
@@ -144,24 +189,32 @@ export function BuyerLocationsMap() {
         {buyers.length === 0 && !loading ? (
           <p className="text-xs text-muted-foreground">No buyer accounts have registered yet.</p>
         ) : (
-          buyers.map((buyer) => (
-            <div
-              key={buyer.uid}
-              className="rounded-lg bg-muted/40 p-3 border border-border/60 flex items-center justify-between gap-3"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{buyer.displayName}</p>
-                <p className="text-xs text-muted-foreground truncate">{buyer.email}</p>
+          buyers.map((buyer) => {
+            const stats = statsByBuyer.get(buyer.uid) ?? EMPTY_STATS;
+            return (
+              <div
+                key={buyer.uid}
+                className="rounded-lg bg-muted/40 p-3 border border-border/60 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">{buyer.displayName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{buyer.email}</p>
+                  {buyer.locationAddress ? (
+                    <p className="text-xs text-[#2d5016] max-w-[280px] truncate">{buyer.locationAddress}</p>
+                  ) : (
+                    <p className="text-xs text-amber-600">No location set</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-semibold text-[#2d5016] tabular-nums">{formatCurrency(stats.fulfilledTotal)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {stats.fulfilledCount} order{stats.fulfilledCount === 1 ? '' : 's'}
+                    {stats.pendingCount > 0 ? ` · ${stats.pendingCount} pending` : ''}
+                  </p>
+                </div>
               </div>
-              <div className="text-right shrink-0">
-                {buyer.locationAddress ? (
-                  <p className="text-xs text-[#2d5016] max-w-[220px] truncate">{buyer.locationAddress}</p>
-                ) : (
-                  <p className="text-xs text-amber-600">No location set</p>
-                )}
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
