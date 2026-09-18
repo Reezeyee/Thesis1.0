@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from '@react-google-maps/api';
+import L from 'leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { MapPin, RefreshCw } from 'lucide-react';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { Button } from './ui/button';
-import { GOOGLE_MAPS_API_KEY, GOOGLE_MAPS_LIBRARIES, DEFAULT_MAP_CENTER, hasGoogleMapsApiKey } from '../lib/googleMaps';
+import { BATAAN_BBOX } from '../data/bataanProvinceMap';
 
 type BuyerProfile = {
   uid: string;
@@ -16,25 +18,45 @@ type BuyerProfile = {
   locationAddress?: string;
 };
 
-const MAP_CONTAINER_STYLE = { width: '100%', height: 'min(480px, 70vh)', minHeight: '340px', borderRadius: '0.75rem' };
+const PIN_ICON = L.divIcon({
+  className: '',
+  html: `<div aria-hidden="true" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:#2d5016;border:2px solid #fefdfb;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>`,
+  iconSize: [26, 26],
+  iconAnchor: [13, 26],
+});
+
+const DEFAULT_CENTER: [number, number] = [
+  (BATAAN_BBOX.minLat + BATAAN_BBOX.maxLat) / 2,
+  (BATAAN_BBOX.minLng + BATAAN_BBOX.maxLng) / 2,
+];
+
+function FitToMarkers({ points }: { points: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (points.length === 0) return;
+    const id = window.setTimeout(() => {
+      map.invalidateSize();
+      if (points.length === 1) {
+        map.setView(points[0], 14);
+      } else {
+        map.fitBounds(L.latLngBounds(points), { padding: [32, 32], maxZoom: 13 });
+      }
+    }, 0);
+    return () => clearTimeout(id);
+  }, [map, points]);
+  return null;
+}
 
 /**
  * Admin-only: plots every self-registered buyer's mandatory location (see BuyerAuthDialog /
- * AuthProvider.signUpAsBuyer) on a live Google Map, replacing the old static/hardcoded hub
- * coordinates. Reads the `users` collection filtered to role == 'BUYER' -- allowed for the
- * admin account by firestore.rules.
+ * AuthProvider.signUpAsBuyer) on a live Leaflet/OpenStreetMap map (no API key needed), replacing
+ * the old static/hardcoded hub coordinates. Reads the `users` collection filtered to
+ * role == 'BUYER' -- allowed for the admin account by firestore.rules.
  */
 export function BuyerLocationsMap() {
   const [buyers, setBuyers] = useState<BuyerProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
-  const [selected, setSelected] = useState<BuyerProfile | null>(null);
-
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'acojido-google-maps-script',
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: GOOGLE_MAPS_LIBRARIES,
-  });
 
   const loadBuyers = async () => {
     setLoading(true);
@@ -69,9 +91,10 @@ export function BuyerLocationsMap() {
     [buyers],
   );
 
-  const center = buyersWithLocation[0]
-    ? { lat: buyersWithLocation[0].locationLat!, lng: buyersWithLocation[0].locationLng! }
-    : DEFAULT_MAP_CENTER;
+  const points = useMemo<[number, number][]>(
+    () => buyersWithLocation.map((b) => [b.locationLat!, b.locationLng!]),
+    [buyersWithLocation],
+  );
 
   return (
     <div className="space-y-3">
@@ -91,52 +114,31 @@ export function BuyerLocationsMap() {
         </p>
       ) : null}
 
-      {!hasGoogleMapsApiKey() ? (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-700 dark:text-amber-400">
-          Google Maps API key not configured (set <code className="font-mono">VITE_GOOGLE_MAPS_API_KEY</code>). Showing the buyer
-          list below without a map.
-        </div>
-      ) : loadError ? (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs text-rose-600 dark:text-rose-400">
-          Google Maps failed to load. Check that the API key is valid and the Maps JavaScript + Places APIs are enabled.
-        </div>
-      ) : !isLoaded ? (
-        <div className="h-[340px] w-full rounded-xl border border-border/60 bg-muted/30 flex items-center justify-center text-xs text-muted-foreground">
-          Loading map…
-        </div>
-      ) : (
-        <GoogleMap
-          mapContainerStyle={MAP_CONTAINER_STYLE}
-          center={center}
-          zoom={buyersWithLocation.length > 0 ? 9 : 8}
-          options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
-        >
+      <div className="relative h-[min(420px,65vh)] min-h-[300px] w-full overflow-hidden rounded-xl border border-border/60 [&_.leaflet-container]:h-full [&_.leaflet-container]:w-full">
+        <MapContainer center={DEFAULT_CENTER} zoom={9} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <FitToMarkers points={points} />
           {buyersWithLocation.map((buyer) => (
-            <Marker
-              key={buyer.uid}
-              position={{ lat: buyer.locationLat!, lng: buyer.locationLng! }}
-              onClick={() => setSelected(buyer)}
-            />
+            <Marker key={buyer.uid} position={[buyer.locationLat!, buyer.locationLng!]} icon={PIN_ICON}>
+              <Popup>
+                <div className="min-w-[190px] max-w-[260px] space-y-1">
+                  <p className="text-sm font-semibold text-[#3e2723]">{buyer.displayName}</p>
+                  <p className="text-xs text-muted-foreground break-all">{buyer.email}</p>
+                  {buyer.locationAddress ? (
+                    <p className="text-xs text-[#5d4037] leading-snug flex items-start gap-1">
+                      <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
+                      {buyer.locationAddress}
+                    </p>
+                  ) : null}
+                </div>
+              </Popup>
+            </Marker>
           ))}
-          {selected && selected.locationLat != null && selected.locationLng != null ? (
-            <InfoWindow
-              position={{ lat: selected.locationLat, lng: selected.locationLng }}
-              onCloseClick={() => setSelected(null)}
-            >
-              <div className="min-w-[190px] max-w-[260px] space-y-1">
-                <p className="text-sm font-semibold text-[#3e2723]">{selected.displayName}</p>
-                <p className="text-xs text-muted-foreground break-all">{selected.email}</p>
-                {selected.locationAddress ? (
-                  <p className="text-xs text-[#5d4037] leading-snug flex items-start gap-1">
-                    <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
-                    {selected.locationAddress}
-                  </p>
-                ) : null}
-              </div>
-            </InfoWindow>
-          ) : null}
-        </GoogleMap>
-      )}
+        </MapContainer>
+      </div>
 
       <div className="space-y-2">
         {buyers.length === 0 && !loading ? (

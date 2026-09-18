@@ -1,18 +1,52 @@
-import { useCallback, useRef, useState } from 'react';
-import { GoogleMap, Marker, Autocomplete, useJsApiLoader } from '@react-google-maps/api';
+import { useCallback, useState } from 'react';
+import L from 'leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { GOOGLE_MAPS_API_KEY, GOOGLE_MAPS_LIBRARIES, DEFAULT_MAP_CENTER, hasGoogleMapsApiKey } from '../lib/googleMaps';
+import { BATAAN_BBOX } from '../data/bataanProvinceMap';
 
 export type PickedLocation = { lat: number; lng: number; address: string };
 
-const MAP_CONTAINER_STYLE = { width: '100%', height: '260px', borderRadius: '0.75rem' };
+const PIN_ICON = L.divIcon({
+  className: '',
+  html: `<div aria-hidden="true" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:#c45c26;border:2px solid #fefdfb;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>`,
+  iconSize: [28, 28],
+  iconAnchor: [14, 28],
+});
+
+const DEFAULT_CENTER: [number, number] = [
+  (BATAAN_BBOX.minLat + BATAAN_BBOX.maxLat) / 2,
+  (BATAAN_BBOX.minLng + BATAAN_BBOX.maxLng) / 2,
+];
+
+/** Free OpenStreetMap Nominatim reverse geocode -- no API key required. */
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+    );
+    if (!res.ok) throw new Error('reverse geocode failed');
+    const data = (await res.json()) as { display_name?: string };
+    return data.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  } catch {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+}
+
+function ClickToPin({ onPick }: { onPick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onPick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
 
 /**
- * Mandatory location picker used at buyer sign-up. Backed by the Google Maps JS API (Places
- * Autocomplete + a draggable marker + click-to-drop-pin, with reverse geocoding for the address
- * text). Falls back to plain address/lat/lng text inputs when no VITE_GOOGLE_MAPS_API_KEY is
- * configured, so the mandatory-location requirement still works without the key.
+ * Mandatory location picker used at buyer sign-up. A free Leaflet/OpenStreetMap map (no API key)
+ * -- tap/click to drop a pin or drag the marker, with the address auto-filled via OSM Nominatim
+ * reverse geocoding (editable by hand afterward).
  */
 export function LocationPicker({
   value,
@@ -23,21 +57,20 @@ export function LocationPicker({
   onChange: (loc: PickedLocation) => void;
   id?: string;
 }) {
-  if (!hasGoogleMapsApiKey()) {
-    return <ManualLocationFallback value={value} onChange={onChange} id={id} />;
-  }
-  return <GoogleLocationPicker value={value} onChange={onChange} id={id} />;
-}
+  const [resolving, setResolving] = useState(false);
 
-function ManualLocationFallback({
-  value,
-  onChange,
-  id,
-}: {
-  value: PickedLocation | null;
-  onChange: (loc: PickedLocation) => void;
-  id: string;
-}) {
+  const setPin = useCallback(
+    async (lat: number, lng: number) => {
+      setResolving(true);
+      const address = await reverseGeocode(lat, lng);
+      onChange({ lat, lng, address });
+      setResolving(false);
+    },
+    [onChange],
+  );
+
+  const center: [number, number] = value ? [value.lat, value.lng] : DEFAULT_CENTER;
+
   return (
     <div className="space-y-1.5">
       <Label htmlFor={`${id}-address`} className="text-xs font-semibold">
@@ -46,149 +79,34 @@ function ManualLocationFallback({
       <Input
         id={`${id}-address`}
         value={value?.address ?? ''}
-        onChange={(e) => onChange({ lat: value?.lat ?? 0, lng: value?.lng ?? 0, address: e.target.value })}
-        placeholder="Sample: Balanga City, Bataan"
+        onChange={(e) => onChange({ lat: value?.lat ?? DEFAULT_CENTER[0], lng: value?.lng ?? DEFAULT_CENTER[1], address: e.target.value })}
+        placeholder="Tap the map below, then adjust the address if needed"
         className="h-10 rounded-xl text-xs"
       />
-      <div className="grid grid-cols-2 gap-2">
-        <Input
-          id={`${id}-lat`}
-          type="number"
-          step="any"
-          value={value?.lat ?? ''}
-          onChange={(e) => onChange({ lat: Number(e.target.value) || 0, lng: value?.lng ?? 0, address: value?.address ?? '' })}
-          placeholder="Latitude"
-          className="h-9 rounded-xl text-xs"
-        />
-        <Input
-          id={`${id}-lng`}
-          type="number"
-          step="any"
-          value={value?.lng ?? ''}
-          onChange={(e) => onChange({ lat: value?.lat ?? 0, lng: Number(e.target.value) || 0, address: value?.address ?? '' })}
-          placeholder="Longitude"
-          className="h-9 rounded-xl text-xs"
-        />
-      </div>
-      <p className="text-[11px] text-muted-foreground">
-        Map picker unavailable (no Google Maps API key configured) -- enter your location manually.
-      </p>
-    </div>
-  );
-}
-
-function GoogleLocationPicker({
-  value,
-  onChange,
-  id,
-}: {
-  value: PickedLocation | null;
-  onChange: (loc: PickedLocation) => void;
-  id: string;
-}) {
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'acojido-google-maps-script',
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: GOOGLE_MAPS_LIBRARIES,
-  });
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
-  const [addressInput, setAddressInput] = useState(value?.address ?? '');
-
-  const reverseGeocode = useCallback(
-    (lat: number, lng: number) => {
-      if (!geocoderRef.current) geocoderRef.current = new google.maps.Geocoder();
-      geocoderRef.current.geocode({ location: { lat, lng } }, (results, status) => {
-        const address = status === 'OK' && results?.[0] ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        setAddressInput(address);
-        onChange({ lat, lng, address });
-      });
-    },
-    [onChange],
-  );
-
-  const handleMapClick = useCallback(
-    (e: google.maps.MapMouseEvent) => {
-      const lat = e.latLng?.lat();
-      const lng = e.latLng?.lng();
-      if (lat == null || lng == null) return;
-      reverseGeocode(lat, lng);
-    },
-    [reverseGeocode],
-  );
-
-  const handleMarkerDragEnd = useCallback(
-    (e: google.maps.MapMouseEvent) => {
-      const lat = e.latLng?.lat();
-      const lng = e.latLng?.lng();
-      if (lat == null || lng == null) return;
-      reverseGeocode(lat, lng);
-    },
-    [reverseGeocode],
-  );
-
-  const handlePlaceChanged = useCallback(() => {
-    const place = autocompleteRef.current?.getPlace();
-    const loc = place?.geometry?.location;
-    if (!loc) return;
-    const address = place?.formatted_address ?? place?.name ?? `${loc.lat().toFixed(5)}, ${loc.lng().toFixed(5)}`;
-    setAddressInput(address);
-    onChange({ lat: loc.lat(), lng: loc.lng(), address });
-  }, [onChange]);
-
-  if (loadError) {
-    return <ManualLocationFallback value={value} onChange={onChange} id={id} />;
-  }
-
-  if (!isLoaded) {
-    return (
-      <div className="space-y-1.5">
-        <Label className="text-xs font-semibold">
-          Business / pickup location <span className="text-destructive">*</span>
-        </Label>
-        <div className="h-[260px] w-full rounded-xl border border-border/60 bg-muted/30 flex items-center justify-center text-xs text-muted-foreground">
-          Loading map…
-        </div>
-      </div>
-    );
-  }
-
-  const center = value ? { lat: value.lat, lng: value.lng } : DEFAULT_MAP_CENTER;
-
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={`${id}-search`} className="text-xs font-semibold">
-        Business / pickup location <span className="text-destructive">*</span>
-      </Label>
-      <Autocomplete
-        onLoad={(ac) => { autocompleteRef.current = ac; }}
-        onPlaceChanged={handlePlaceChanged}
-      >
-        <Input
-          id={`${id}-search`}
-          value={addressInput}
-          onChange={(e) => setAddressInput(e.target.value)}
-          placeholder="Search your address…"
-          className="h-10 rounded-xl text-xs"
-        />
-      </Autocomplete>
-      <GoogleMap
-        mapContainerStyle={MAP_CONTAINER_STYLE}
-        center={center}
-        zoom={value ? 15 : 10}
-        onClick={handleMapClick}
-        options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
-      >
-        {value ? (
-          <Marker
-            position={{ lat: value.lat, lng: value.lng }}
-            draggable
-            onDragEnd={handleMarkerDragEnd}
+      <div className="relative h-[240px] w-full overflow-hidden rounded-xl border border-border/60 [&_.leaflet-container]:h-full [&_.leaflet-container]:w-full [&_.leaflet-container]:cursor-crosshair">
+        <MapContainer center={center} zoom={value ? 15 : 10} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-        ) : null}
-      </GoogleMap>
+          <ClickToPin onPick={(lat, lng) => void setPin(lat, lng)} />
+          {value ? (
+            <Marker
+              position={[value.lat, value.lng]}
+              icon={PIN_ICON}
+              draggable
+              eventHandlers={{
+                dragend: (e) => {
+                  const pos = e.target.getLatLng();
+                  void setPin(pos.lat, pos.lng);
+                },
+              }}
+            />
+          ) : null}
+        </MapContainer>
+      </div>
       <p className="text-[11px] text-muted-foreground">
-        Search your address, or tap/drag the pin on the map to set your exact location.
+        {resolving ? 'Looking up address…' : 'Tap the map to drop a pin, or drag it to adjust. Edit the address text above if needed.'}
       </p>
     </div>
   );
