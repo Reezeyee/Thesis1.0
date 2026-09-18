@@ -44,8 +44,17 @@ type AuthContextValue = {
   loading: boolean;
   error: string | null;
   signIn: (username: string, password: string) => Promise<void>;
-  /** Buyer self-registration -- the only role in this app that creates its own account. */
-  signUpAsBuyer: (email: string, password: string, displayName: string) => Promise<void>;
+  /**
+   * Buyer self-registration -- the only role in this app that creates its own account.
+   * `location` is mandatory (enforced by BuyerAuthDialog before calling this) so the admin
+   * website can always plot the buyer on the buyer locations map in Maintenance.
+   */
+  signUpAsBuyer: (
+    email: string,
+    password: string,
+    displayName: string,
+    location: { lat: number; lng: number; address: string },
+  ) => Promise<void>;
   /**
    * Standard self-service "forgot password" flow (panel feedback: the web app had no password
    * recovery at all). Accepts a raw email OR an Admin username shortcut (e.g. "admin"), resolved
@@ -130,32 +139,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const signUpAsBuyer = useCallback(async (email: string, password: string, displayName: string) => {
-    setError(null);
-    const trimmedEmail = email.trim().toLowerCase();
-    const trimmedName = displayName.trim();
-    if (!trimmedEmail || !password || !trimmedName) {
-      setError('Enter your name, email, and a password.');
-      throw new Error('missing buyer sign-up fields');
-    }
-    try {
-      const credential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
-      await updateProfile(credential.user, { displayName: trimmedName });
-      await setDoc(doc(db, COLLECTIONS.USERS, credential.user.uid), {
-        email: trimmedEmail,
-        displayName: trimmedName,
-        role: 'BUYER',
-        createdAt: serverTimestamp(),
-      });
-      // Buyers are the only self-registered role, so their email is unverified by anyone
-      // but them -- send the confirmation link now; BuyerVerifyEmailGate blocks the
-      // storefront until they click it.
-      await sendEmailVerification(credential.user);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create your account.');
-      throw err;
-    }
-  }, []);
+  const signUpAsBuyer = useCallback(
+    async (
+      email: string,
+      password: string,
+      displayName: string,
+      location: { lat: number; lng: number; address: string },
+    ) => {
+      setError(null);
+      const trimmedEmail = email.trim().toLowerCase();
+      const trimmedName = displayName.trim();
+      const trimmedAddress = location.address.trim();
+      if (!trimmedEmail || !password || !trimmedName) {
+        setError('Enter your name, email, and a password.');
+        throw new Error('missing buyer sign-up fields');
+      }
+      if (!trimmedAddress || (location.lat === 0 && location.lng === 0)) {
+        setError('Set your business / pickup location on the map -- it is required.');
+        throw new Error('missing buyer location');
+      }
+      try {
+        const credential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+        await updateProfile(credential.user, { displayName: trimmedName });
+        await setDoc(doc(db, COLLECTIONS.USERS, credential.user.uid), {
+          email: trimmedEmail,
+          displayName: trimmedName,
+          role: 'BUYER',
+          createdAt: serverTimestamp(),
+          locationLat: location.lat,
+          locationLng: location.lng,
+          locationAddress: trimmedAddress,
+        });
+        // Buyers are the only self-registered role, so their email is unverified by anyone
+        // but them -- send the confirmation link now; BuyerVerifyEmailGate blocks the
+        // storefront until they click it.
+        await sendEmailVerification(credential.user);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not create your account.');
+        throw err;
+      }
+    },
+    [],
+  );
 
   const resendVerificationEmail = useCallback(async () => {
     if (!auth.currentUser) {

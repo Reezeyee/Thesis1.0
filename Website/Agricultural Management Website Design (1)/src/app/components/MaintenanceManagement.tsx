@@ -22,7 +22,7 @@ import { Label } from './ui/label';
 import { SelectWithOther } from './ui/SelectWithOther';
 import { LUZON_PROVINCES } from '../data/luzonAddressCatalog';
 import { BATAAN_MAP_HUBS } from '../data/bataanProvinceMap';
-import { BataanCoffeeLeafletMap } from './BataanCoffeeLeafletMap';
+import { BuyerLocationsMap } from './BuyerLocationsMap';
 import { runSave, showSaveError } from '../lib/saveFeedback';
 import {
   buyersFromSales,
@@ -121,71 +121,6 @@ export function MaintenanceManagement() {
       return a.name.localeCompare(b.name);
     });
   }, [buyers]);
-
-  const hubVolumesForMap = useMemo(
-    () =>
-      BATAAN_MAP_HUBS.map((hub, idx) => {
-        const row = buyers.find((b) => b.category === 'channel' && b.hubIndex === idx);
-        if (row) return row.totalPurchases;
-        const byName = buyers.find((b) => b.name === hub.name || b.name.includes(hub.municipality) || hub.name.includes(b.name));
-        return byName?.totalPurchases ?? 0;
-      }),
-    [buyers],
-  );
-
-  const hubStatusesForMap = useMemo(
-    () =>
-      BATAAN_MAP_HUBS.map((_, idx) => {
-        const row = buyers.find((b) => b.category === 'channel' && b.hubIndex === idx);
-        return { status: row?.status ?? 'active' };
-      }),
-    [buyers]
-  );
-
-  const hubDisplayNamesForMap = useMemo(
-    () =>
-      BATAAN_MAP_HUBS.map((h, idx) => {
-        const row = buyers.find((b) => b.category === 'channel' && b.hubIndex === idx);
-        return row?.name ?? h.name;
-      }),
-    [buyers]
-  );
-
-  const cafeMarkersForMap = useMemo(
-    () =>
-      buyers
-        .filter((b): b is Buyer & { osmNodeId: number; lat: number; lng: number } =>
-          b.category === 'cafe' && b.osmNodeId != null && b.lat != null && b.lng != null
-        )
-        .map((b) => ({
-          osmNodeId: b.osmNodeId,
-          lat: b.lat,
-          lng: b.lng,
-          name: b.name,
-          municipality: b.municipalityLabel ?? 'Bataan',
-          addressLine: b.addressLine,
-          salesVolumePeso: b.totalPurchases,
-          status: b.status,
-        })),
-    [buyers]
-  );
-
-  const customMarkersForMap = useMemo(
-    () =>
-      buyers
-        .filter((b): b is Buyer & { lat: number; lng: number } =>
-          b.category === 'custom' && b.lat != null && b.lng != null
-        )
-        .map((b) => ({
-          id: b.id,
-          lat: b.lat,
-          lng: b.lng,
-          name: b.name,
-          salesVolumePeso: b.totalPurchases,
-          status: b.status,
-        })),
-    [buyers]
-  );
 
   // 3. Buyer Forms & Dialog states
   const [addBuyerOpen, setAddBuyerOpen] = useState(false);
@@ -678,27 +613,23 @@ export function MaintenanceManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* 2. Bataan Operations Map & Channels Block */}
+      {/* 2. Buyer Locations Map & Channels Block */}
       <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-lg bg-[#4a2c2a]/15 flex items-center justify-center">
             <MapIcon className="w-5 h-5 text-foreground" />
           </div>
           <div>
-            <h3>Bataan operations map</h3>
-            <p className="text-sm text-muted-foreground">Luzon bounds with interactive markers centered on Bataan hubs</p>
+            <h3>Buyer locations map</h3>
+            <p className="text-sm text-muted-foreground">
+              Live Google Map plotting the mandatory location every buyer sets when they register their own account
+            </p>
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-3">
-            <h4 className="text-sm font-medium text-foreground">Bataan — coffee on the map (zoom and pins)</h4>
-            <BataanCoffeeLeafletMap
-              hubStatuses={hubStatusesForMap}
-              hubDisplayNames={hubDisplayNamesForMap}
-              hubVolumes={hubVolumesForMap}
-              cafeMarkers={cafeMarkersForMap}
-              customBuyerMarkers={customMarkersForMap}
-            />
+            <h4 className="text-sm font-medium text-foreground">Registered buyer pins (click a pin for details)</h4>
+            <BuyerLocationsMap />
           </div>
 
           <div className="space-y-3">

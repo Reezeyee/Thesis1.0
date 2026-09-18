@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { LocationPicker, type PickedLocation } from '../components/LocationPicker';
 import { useAuth } from './AuthProvider';
 
 /**
@@ -17,6 +18,7 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [location, setLocation] = useState<PickedLocation | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [resetSubmitting, setResetSubmitting] = useState(false);
@@ -26,9 +28,13 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
     setName('');
     setEmail('');
     setPassword('');
+    setLocation(null);
     setLocalError(null);
     setResetMessage(null);
   };
+
+  const locationIsValid = (loc: PickedLocation | null): loc is PickedLocation =>
+    !!loc && loc.address.trim().length > 0 && (loc.lat !== 0 || loc.lng !== 0);
 
   const handleForgotPassword = async () => {
     if (!email) {
@@ -50,11 +56,15 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (mode === 'signup' && !locationIsValid(location)) {
+      setLocalError('Set your business / pickup location on the map first -- it is required to create a buyer account.');
+      return;
+    }
     setSubmitting(true);
     setLocalError(null);
     try {
-      if (mode === 'signup') {
-        await signUpAsBuyer(email, password, name);
+      if (mode === 'signup' && locationIsValid(location)) {
+        await signUpAsBuyer(email, password, name, location);
       } else {
         await signIn(email, password);
       }
@@ -90,6 +100,9 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
                 className="h-10 rounded-xl text-xs"
               />
             </div>
+          ) : null}
+          {mode === 'signup' ? (
+            <LocationPicker value={location} onChange={setLocation} id="buyer-signup-location" />
           ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="buyer-email" className="text-xs font-semibold">Email</Label>
@@ -138,7 +151,11 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
             </p>
           ) : null}
           <DialogFooter className="flex-col gap-2 sm:flex-col">
-            <Button type="submit" disabled={submitting} className="w-full h-10 rounded-xl text-xs font-bold cursor-pointer">
+            <Button
+              type="submit"
+              disabled={submitting || (mode === 'signup' && !locationIsValid(location))}
+              className="w-full h-10 rounded-xl text-xs font-bold cursor-pointer"
+            >
               {submitting
                 ? mode === 'signup' ? 'Creating account…' : 'Signing in…'
                 : mode === 'signup' ? 'Create account' : 'Sign in'}
