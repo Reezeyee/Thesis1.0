@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
@@ -52,6 +52,13 @@ const PIN_ICON = L.divIcon({
   iconAnchor: [13, 26],
 });
 
+const PIN_ICON_SELECTED = L.divIcon({
+  className: '',
+  html: `<div aria-hidden="true" style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:#d4a017;border:3px solid #fefdfb;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 0 0 6px rgba(212,160,23,0.35),0 2px 6px rgba(0,0,0,.4)"></div>`,
+  iconSize: [34, 34],
+  iconAnchor: [17, 34],
+});
+
 const DEFAULT_CENTER: [number, number] = [
   (BATAAN_BBOX.minLat + BATAAN_BBOX.maxLat) / 2,
   (BATAAN_BBOX.minLng + BATAAN_BBOX.maxLng) / 2,
@@ -74,6 +81,15 @@ function FitToMarkers({ points }: { points: [number, number][] }) {
   return null;
 }
 
+function PanToSelected({ point }: { point: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!point) return;
+    map.flyTo(point, Math.max(map.getZoom(), 14), { duration: 0.6 });
+  }, [map, point]);
+  return null;
+}
+
 /**
  * Admin-only: plots every self-registered buyer's mandatory location (see BuyerAuthDialog /
  * AuthProvider.signUpAsBuyer) on a live Leaflet/OpenStreetMap map (no API key needed), replacing
@@ -87,6 +103,8 @@ export function BuyerLocationsMap() {
   const [statsByBuyer, setStatsByBuyer] = useState<Map<string, BuyerStats>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
+  const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  const markerRefs = useRef<Map<string, L.Marker>>(new Map());
 
   const loadBuyers = async () => {
     setLoading(true);
@@ -133,6 +151,18 @@ export function BuyerLocationsMap() {
     [buyersWithLocation],
   );
 
+  const selectedPoint = useMemo<[number, number] | null>(() => {
+    const buyer = buyersWithLocation.find((b) => b.uid === selectedUid);
+    return buyer ? [buyer.locationLat!, buyer.locationLng!] : null;
+  }, [buyersWithLocation, selectedUid]);
+
+  const selectBuyer = (uid: string) => {
+    setSelectedUid(uid);
+    // Defer to the same tick after PanToSelected starts the flyTo, so the popup opens once the
+    // marker is actually on screen.
+    window.setTimeout(() => markerRefs.current.get(uid)?.openPopup(), 50);
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -158,10 +188,22 @@ export function BuyerLocationsMap() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <FitToMarkers points={points} />
+          <PanToSelected point={selectedPoint} />
           {buyersWithLocation.map((buyer) => {
             const stats = statsByBuyer.get(buyer.uid) ?? EMPTY_STATS;
+            const isSelected = buyer.uid === selectedUid;
             return (
-              <Marker key={buyer.uid} position={[buyer.locationLat!, buyer.locationLng!]} icon={PIN_ICON}>
+              <Marker
+                key={buyer.uid}
+                position={[buyer.locationLat!, buyer.locationLng!]}
+                icon={isSelected ? PIN_ICON_SELECTED : PIN_ICON}
+                zIndexOffset={isSelected ? 1000 : 0}
+                ref={(instance) => {
+                  if (instance) markerRefs.current.set(buyer.uid, instance);
+                  else markerRefs.current.delete(buyer.uid);
+                }}
+                eventHandlers={{ click: () => setSelectedUid(buyer.uid) }}
+              >
                 <Popup>
                   <div className="min-w-[190px] max-w-[260px] space-y-1">
                     <p className="text-sm font-semibold text-[#3e2723]">{buyer.displayName}</p>
@@ -191,10 +233,18 @@ export function BuyerLocationsMap() {
         ) : (
           buyers.map((buyer) => {
             const stats = statsByBuyer.get(buyer.uid) ?? EMPTY_STATS;
+            const hasLocation = typeof buyer.locationLat === 'number' && typeof buyer.locationLng === 'number';
+            const isSelected = buyer.uid === selectedUid;
             return (
-              <div
+              <button
                 key={buyer.uid}
-                className="rounded-lg bg-muted/40 p-3 border border-border/60 flex items-center justify-between gap-3"
+                type="button"
+                onClick={() => (hasLocation ? selectBuyer(buyer.uid) : setSelectedUid(buyer.uid))}
+                className={`w-full text-left rounded-lg p-3 border flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                  isSelected
+                    ? 'bg-amber-500/10 border-amber-500/50 ring-1 ring-amber-500/40'
+                    : 'bg-muted/40 border-border/60 hover:border-border hover:bg-muted/60'
+                }`}
               >
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{buyer.displayName}</p>
@@ -212,7 +262,7 @@ export function BuyerLocationsMap() {
                     {stats.pendingCount > 0 ? ` · ${stats.pendingCount} pending` : ''}
                   </p>
                 </div>
-              </div>
+              </button>
             );
           })
         )}
