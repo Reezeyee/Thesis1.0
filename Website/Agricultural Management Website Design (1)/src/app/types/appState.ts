@@ -285,6 +285,10 @@ export interface SaleRecord {
    * buyer's totals on the admin Buyer Locations Map alongside their storefront orders. */
   buyerUid?: string;
   buyerEmail?: string;
+  /** Unit `quantityKg`/`pricePerKg` are actually denominated in for this sale -- the field names
+   * predate non-kg packaging (bag/sack), so kg-specific stats (totalKgSold, price/margin per kg)
+   * must only include sales where this is 'kg' or unset (legacy rows, all originally kg-based). */
+  unit?: 'kg' | 'bag' | 'sack' | string;
 }
 
 export interface ExpenseRecord {
