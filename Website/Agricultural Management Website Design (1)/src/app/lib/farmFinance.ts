@@ -23,9 +23,16 @@ export function totalIncome(sales: SaleRecord[]): number {
   return sales.reduce((sum, s) => sum + saleLineTotal(s), 0);
 }
 
-/** Total kilograms sold across sale records that have a tracked quantity (quantityKg > 0). */
+/**
+ * Total kilograms sold across sale records that have a tracked quantity (quantityKg > 0) and are
+ * actually kg-denominated -- excludes bag/sack sales, whose quantityKg field holds a bag/sack
+ * count, not a kg weight.
+ */
 export function totalKgSold(sales: SaleRecord[]): number {
-  return sales.reduce((sum, s) => sum + (s.quantityKg && s.quantityKg > 0 ? s.quantityKg : 0), 0);
+  return sales.reduce(
+    (sum, s) => sum + ((!s.unit || s.unit === 'kg') && s.quantityKg && s.quantityKg > 0 ? s.quantityKg : 0),
+    0,
+  );
 }
 
 export function totalOperatingExpenses(expenses: ExpenseRecord[]): number {

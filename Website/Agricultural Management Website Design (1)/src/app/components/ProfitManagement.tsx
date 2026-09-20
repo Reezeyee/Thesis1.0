@@ -92,6 +92,17 @@ export const EXPENSE_CATEGORY_OPTIONS = [
   'General Housekeeping',
 ] as const;
 
+/**
+ * Packaging the farm actually sells roasted coffee and coffee beans in, with the owner's fixed
+ * price per unit -- used to prefill "Add sale"'s price field (still editable, e.g. for a
+ * discounted or bulk deal). "Kilogram" covers anything sold loose/by weight instead.
+ */
+export const SALE_UNIT_OPTIONS = [
+  { value: 'bag', label: 'Bag', presetPrice: 80 },
+  { value: 'sack', label: 'Sack', presetPrice: 2500 },
+  { value: 'kg', label: 'Kilogram (loose)', presetPrice: null },
+] as const;
+
 export type BuyerCategory = 'channel' | 'cafe' | 'custom';
 
 export interface Buyer {
@@ -207,8 +218,9 @@ export function ProfitManagement() {
     buyer: '',
     buyerUid: '',
     product: '',
+    unit: 'bag' as (typeof SALE_UNIT_OPTIONS)[number]['value'],
     quantityKg: '',
-    pricePerKg: '',
+    pricePerKg: '80',
     date: dateLabel(),
   });
   const [buyerAccounts, setBuyerAccounts] = useState<{ uid: string; displayName: string; email: string }[]>([]);
@@ -487,13 +499,14 @@ export function ProfitManagement() {
             saleId: crypto.randomUUID(),
             quantityKg: saleQuantityKg,
             pricePerKg: salePricePerKg,
+            unit: saleForm.unit,
             ...(linkedAccount ? { buyerUid: linkedAccount.uid, buyerEmail: linkedAccount.email } : {}),
           },
         ],
       })),
     );
     if (!ok) return;
-    setSaleForm((f) => ({ ...f, buyer: '', buyerUid: '', product: '', quantityKg: '', pricePerKg: '' }));
+    setSaleForm((f) => ({ ...f, buyer: '', buyerUid: '', product: '', quantityKg: '', pricePerKg: '80', unit: 'bag' }));
     setAddSaleOpen(false);
   };
 
@@ -591,13 +604,35 @@ export function ProfitManagement() {
                 id="sale-product"
                 value={saleForm.product}
                 onChange={(e) => setSaleForm((f) => ({ ...f, product: e.target.value }))}
-                placeholder="e.g., Roasted Arabica Beans"
+                placeholder="e.g., Roasted Coffee or Coffee Beans"
                 className="bg-background/80 border-border/80"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="sale-unit">Packaging</Label>
+              <select
+                id="sale-unit"
+                value={saleForm.unit}
+                onChange={(e) => {
+                  const unit = e.target.value as (typeof SALE_UNIT_OPTIONS)[number]['value'];
+                  const preset = SALE_UNIT_OPTIONS.find((u) => u.value === unit)?.presetPrice;
+                  setSaleForm((f) => ({ ...f, unit, pricePerKg: preset !== null && preset !== undefined ? String(preset) : f.pricePerKg }));
+                }}
+                className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm"
+              >
+                {SALE_UNIT_OPTIONS.map((u) => (
+                  <option key={u.value} value={u.value}>
+                    {u.label}
+                    {u.presetPrice !== null ? ` (₱${u.presetPrice.toLocaleString()} each)` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="sale-qty">Quantity (kg)</Label>
+                <Label htmlFor="sale-qty">
+                  {saleForm.unit === 'kg' ? 'Quantity (kg)' : `Number of ${saleForm.unit === 'bag' ? 'bags' : 'sacks'}`}
+                </Label>
                 <Input
                   id="sale-qty"
                   type="text"
@@ -609,7 +644,9 @@ export function ProfitManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="sale-price">Price per kg (₱)</Label>
+                <Label htmlFor="sale-price">
+                  {saleForm.unit === 'kg' ? 'Price per kg (₱)' : `Price per ${saleForm.unit} (₱)`}
+                </Label>
                 <Input
                   id="sale-price"
                   type="text"
