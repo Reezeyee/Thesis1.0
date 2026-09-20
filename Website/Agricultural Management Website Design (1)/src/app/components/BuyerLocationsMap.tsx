@@ -6,10 +6,11 @@ import 'leaflet/dist/leaflet.css';
 import { MapPin, RefreshCw, Package } from 'lucide-react';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
+import { useFarmData } from '../store/FarmDataProvider';
 import { Button } from './ui/button';
 import { BATAAN_BBOX } from '../data/bataanProvinceMap';
 import { formatCurrency } from '../lib/currencyFormat';
-import type { BuyerOrderRecord } from '../types/appState';
+import type { BuyerOrderRecord, SaleRecord } from '../types/appState';
 
 type BuyerProfile = {
   uid: string;
@@ -28,18 +29,32 @@ type BuyerStats = {
 
 const EMPTY_STATS: BuyerStats = { fulfilledCount: 0, fulfilledTotal: 0, pendingCount: 0 };
 
-function statsFromOrders(orders: BuyerOrderRecord[]): Map<string, BuyerStats> {
+/**
+ * Combines Buyer storefront orders with manually-recorded sales (Profit & Finance -> Add sale)
+ * that were linked to a buyer account, so a buyer's total reflects every sale to them, not just
+ * ones placed through their own storefront account.
+ */
+function statsFromOrdersAndSales(orders: BuyerOrderRecord[], sales: SaleRecord[]): Map<string, BuyerStats> {
   const byBuyer = new Map<string, BuyerStats>();
+  const get = (uid: string) => byBuyer.get(uid) ?? { fulfilledCount: 0, fulfilledTotal: 0, pendingCount: 0 };
   for (const order of orders) {
     const uid = order.buyerUid;
     if (!uid) continue;
-    const current = byBuyer.get(uid) ?? { fulfilledCount: 0, fulfilledTotal: 0, pendingCount: 0 };
+    const current = get(uid);
     if (order.status === 'fulfilled') {
       current.fulfilledCount += 1;
       current.fulfilledTotal += order.totalAmount ?? 0;
     } else if (order.status === 'pending') {
       current.pendingCount += 1;
     }
+    byBuyer.set(uid, current);
+  }
+  for (const sale of sales) {
+    const uid = sale.buyerUid;
+    if (!uid) continue;
+    const current = get(uid);
+    current.fulfilledCount += 1;
+    current.fulfilledTotal += sale.total ?? 0;
     byBuyer.set(uid, current);
   }
   return byBuyer;
@@ -95,12 +110,14 @@ function PanToSelected({ point }: { point: [number, number] | null }) {
  * AuthProvider.signUpAsBuyer) on a live Leaflet/OpenStreetMap map (no API key needed), replacing
  * the old static/hardcoded hub coordinates and the manual "Add buyer / channel" flow. Reads the
  * `users` collection filtered to role == 'BUYER' (allowed for the admin account by
- * firestore.rules) and cross-references `buyer_orders` for each buyer's order count and total
- * fulfilled purchase amount.
+ * firestore.rules) and cross-references `buyer_orders` plus manually-recorded sales linked to a
+ * buyer account (Profit & Finance -> Add sale) for each buyer's order count and total purchase
+ * amount.
  */
 export function BuyerLocationsMap() {
+  const { state } = useFarmData();
   const [buyers, setBuyers] = useState<BuyerProfile[]>([]);
-  const [statsByBuyer, setStatsByBuyer] = useState<Map<string, BuyerStats>>(new Map());
+  const [orders, setOrders] = useState<BuyerOrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
@@ -125,11 +142,8 @@ export function BuyerLocationsMap() {
           locationAddress: (data.locationAddress as string) ?? '',
         };
       });
-      const orders = ordersSnap.docs.map(
-        (d) => ({ orderId: d.id, ...(d.data() as Omit<BuyerOrderRecord, 'orderId'>) }),
-      );
       setBuyers(rows);
-      setStatsByBuyer(statsFromOrders(orders));
+      setOrders(ordersSnap.docs.map((d) => ({ orderId: d.id, ...(d.data() as Omit<BuyerOrderRecord, 'orderId'>) })));
     } catch {
       setLoadErrorMessage('Could not load buyer accounts. Confirm firestore.rules has been published.');
     } finally {
@@ -140,6 +154,11 @@ export function BuyerLocationsMap() {
   useEffect(() => {
     void loadBuyers();
   }, []);
+
+  const statsByBuyer = useMemo(
+    () => statsFromOrdersAndSales(orders, state.sales ?? []),
+    [orders, state.sales],
+  );
 
   const buyersWithLocation = useMemo(
     () => buyers.filter((b) => typeof b.locationLat === 'number' && typeof b.locationLng === 'number'),

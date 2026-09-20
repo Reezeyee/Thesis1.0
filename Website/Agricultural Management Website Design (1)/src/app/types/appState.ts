@@ -281,6 +281,10 @@ export interface SaleRecord {
   quantityKg?: number;
   pricePerKg?: number;
   linkedBatchId?: string;
+  /** Set when this sale is linked to a registered Buyer account, so it counts toward that
+   * buyer's totals on the admin Buyer Locations Map alongside their storefront orders. */
+  buyerUid?: string;
+  buyerEmail?: string;
 }
 
 export interface ExpenseRecord {
