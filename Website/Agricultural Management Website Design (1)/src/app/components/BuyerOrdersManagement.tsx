@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
-import { Package, ShoppingBag, Plus, Trash2, CheckCircle2, XCircle, Clock, Sprout } from 'lucide-react';
+import { Package, ShoppingBag, Plus, Trash2, Edit2, CheckCircle2, XCircle, Clock, Sprout } from 'lucide-react';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
@@ -21,6 +21,17 @@ function emptyListingForm() {
   return { name: '', category: 'Green Beans', unit: 'kg', pricePerUnit: '', availableQty: '', sourceHarvestId: '' };
 }
 
+function listingToForm(l: ProductListingRecord) {
+  return {
+    name: l.name,
+    category: l.category,
+    unit: l.unit,
+    pricePerUnit: String(l.pricePerUnit),
+    availableQty: String(l.availableQty),
+    sourceHarvestId: l.sourceHarvestId ?? '',
+  };
+}
+
 function harvestKey(h: { harvestId?: string; batchId: string }) {
   return h.harvestId ?? h.batchId;
 }
@@ -37,6 +48,7 @@ export function BuyerOrdersManagement() {
   const harvests = state.cherryHarvests ?? [];
 
   const [formOpen, setFormOpen] = useState(false);
+  const [editingListingId, setEditingListingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyListingForm());
   const [orders, setOrders] = useState<BuyerOrderRecord[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
@@ -63,6 +75,24 @@ export function BuyerOrdersManagement() {
   const pendingOrders = useMemo(() => orders.filter((o) => o.status === 'pending'), [orders]);
   const pastOrders = useMemo(() => orders.filter((o) => o.status !== 'pending'), [orders]);
 
+  const openAddListing = () => {
+    setEditingListingId(null);
+    setForm(emptyListingForm());
+    setFormOpen(true);
+  };
+
+  const openEditListing = (l: ProductListingRecord) => {
+    setEditingListingId(l.listingId);
+    setForm(listingToForm(l));
+    setFormOpen(true);
+  };
+
+  const closeListingForm = () => {
+    setFormOpen(false);
+    setEditingListingId(null);
+    setForm(emptyListingForm());
+  };
+
   const saveListing = async () => {
     const name = form.name.trim();
     const price = Number(form.pricePerUnit);
@@ -72,30 +102,51 @@ export function BuyerOrdersManagement() {
       return;
     }
     const sourceHarvest = form.sourceHarvestId ? harvests.find((h) => harvestKey(h) === form.sourceHarvestId) : undefined;
-    const record: ProductListingRecord = {
-      listingId: `L-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
-      name,
-      category: form.category,
-      unit: form.unit,
-      pricePerUnit: price,
-      availableQty: Math.round(qty),
-      status: qty > 0 ? 'Available' : 'Out of Stock',
-      createdAt: new Date().toISOString().slice(0, 10),
-      ...(sourceHarvest
-        ? {
-            sourceHarvestId: harvestKey(sourceHarvest),
-            sourceHarvestWorkerName: sourceHarvest.pickerWorkerName ?? undefined,
-            sourceHarvestWeightText: sourceHarvest.weightText,
-            sourceHarvestDate: sourceHarvest.date ?? undefined,
-          }
-        : {}),
-    };
+    const sourceHarvestFields = sourceHarvest
+      ? {
+          sourceHarvestId: harvestKey(sourceHarvest),
+          sourceHarvestWorkerName: sourceHarvest.pickerWorkerName ?? undefined,
+          sourceHarvestWeightText: sourceHarvest.weightText,
+          sourceHarvestDate: sourceHarvest.date ?? undefined,
+        }
+      : {};
     const ok = await runSave('Product listing', () =>
-      updateState((prev) => ({ ...prev, productListings: [...(prev.productListings ?? []), record] })),
+      updateState((prev) => {
+        if (editingListingId) {
+          return {
+            ...prev,
+            productListings: (prev.productListings ?? []).map((l) =>
+              l.listingId === editingListingId
+                ? {
+                    ...l,
+                    name,
+                    category: form.category,
+                    unit: form.unit,
+                    pricePerUnit: price,
+                    availableQty: Math.round(qty),
+                    status: qty > 0 ? 'Available' : 'Out of Stock',
+                    ...sourceHarvestFields,
+                  }
+                : l,
+            ),
+          };
+        }
+        const record: ProductListingRecord = {
+          listingId: `L-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+          name,
+          category: form.category,
+          unit: form.unit,
+          pricePerUnit: price,
+          availableQty: Math.round(qty),
+          status: qty > 0 ? 'Available' : 'Out of Stock',
+          createdAt: new Date().toISOString().slice(0, 10),
+          ...sourceHarvestFields,
+        };
+        return { ...prev, productListings: [...(prev.productListings ?? []), record] };
+      }),
     );
     if (!ok) return;
-    setForm(emptyListingForm());
-    setFormOpen(false);
+    closeListingForm();
   };
 
   const deleteListing = async (listingId: string) => {
@@ -196,7 +247,7 @@ export function BuyerOrdersManagement() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold flex items-center gap-2"><Package className="w-4 h-4" /> Product Listings</h2>
-          <Button onClick={() => setFormOpen((o) => !o)} className="h-9 rounded-xl text-xs font-semibold cursor-pointer">
+          <Button onClick={() => (formOpen ? closeListingForm() : openAddListing())} className="h-9 rounded-xl text-xs font-semibold cursor-pointer">
             <Plus className="w-4 h-4 mr-1" /> Add Listing
           </Button>
         </div>
@@ -204,6 +255,7 @@ export function BuyerOrdersManagement() {
         {formOpen ? (
           <Card className="mb-4">
             <CardContent className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <p className="sm:col-span-2 text-sm font-bold">{editingListingId ? 'Edit Listing' : 'New Listing'}</p>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs font-semibold">Name</Label>
                 <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Ripe Arabica Cherries" className="h-9 rounded-lg text-xs" />
@@ -249,8 +301,10 @@ export function BuyerOrdersManagement() {
                 </p>
               </div>
               <div className="sm:col-span-2 flex justify-end gap-2 pt-1">
-                <Button variant="outline" onClick={() => setFormOpen(false)} className="h-9 rounded-lg text-xs cursor-pointer">Cancel</Button>
-                <Button onClick={() => void saveListing()} disabled={saving} className="h-9 rounded-lg text-xs font-semibold cursor-pointer">Save Listing</Button>
+                <Button variant="outline" onClick={closeListingForm} className="h-9 rounded-lg text-xs cursor-pointer">Cancel</Button>
+                <Button onClick={() => void saveListing()} disabled={saving} className="h-9 rounded-lg text-xs font-semibold cursor-pointer">
+                  {editingListingId ? 'Save Changes' : 'Save Listing'}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -275,14 +329,24 @@ export function BuyerOrdersManagement() {
                       </p>
                     ) : null}
                   </div>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${l.name}`}
-                    onClick={() => void deleteListing(l.listingId)}
-                    className="w-8 h-8 rounded-lg bg-background/80 border border-border/70 hover:bg-rose-500 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      aria-label={`Edit ${l.name}`}
+                      onClick={() => openEditListing(l)}
+                      className="w-8 h-8 rounded-lg bg-background/80 border border-border/70 hover:bg-[#4a2c2a] hover:text-white flex items-center justify-center cursor-pointer"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${l.name}`}
+                      onClick={() => void deleteListing(l.listingId)}
+                      className="w-8 h-8 rounded-lg bg-background/80 border border-border/70 hover:bg-rose-500 hover:text-white flex items-center justify-center cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
