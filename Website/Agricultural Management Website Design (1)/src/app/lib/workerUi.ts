@@ -325,7 +325,7 @@ export function workerRecordToUi(w: WorkerRecord, index: number): WorkerUi {
     municipality: meta.municipality || parsedAddress.municipality || '—',
     province: meta.province || parsedAddress.province || BATAAN_PROVINCE,
     phone: w.phoneNumber || '—',
-    role: w.roleRate || 'Sorter',
+    role: w.roleRate || 'Farm Assist',
     status: meta.status === 'inactive' ? 'inactive' : 'active',
     employmentType: meta.employmentType === 'Contract' ? 'Contract' : 'Regular',
     image: meta.imageUrl?.trim() || defaultAvatarUrl(w.name),
