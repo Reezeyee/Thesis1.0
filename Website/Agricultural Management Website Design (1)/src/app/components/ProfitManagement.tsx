@@ -1,4 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
 import { saleLineTotal, hourlyRateForWorkerRole, totalKgSold } from '../lib/farmFinance';
 import { formatCurrency } from '../lib/currencyFormat';
@@ -220,11 +223,40 @@ export function ProfitManagement() {
   const [addSaleOpen, setAddSaleOpen] = useState(false);
   const [saleForm, setSaleForm] = useState({
     buyer: '',
+    buyerUid: '',
     product: '',
     quantityKg: '',
     pricePerKg: '',
     date: dateLabel(),
   });
+  const [buyerAccounts, setBuyerAccounts] = useState<{ uid: string; displayName: string; email: string }[]>([]);
+
+  // Registered Buyer accounts (self-registered on the storefront), so a manually-recorded sale
+  // can be linked to one and count toward that buyer's totals on the admin Buyer Locations Map.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, COLLECTIONS.USERS), where('role', '==', 'BUYER')));
+        if (cancelled) return;
+        setBuyerAccounts(
+          snap.docs.map((d) => {
+            const data = d.data() as Record<string, unknown>;
+            return {
+              uid: d.id,
+              displayName: (data.displayName as string) ?? 'Unnamed buyer',
+              email: (data.email as string) ?? '',
+            };
+          }),
+        );
+      } catch {
+        // Non-fatal: admin can still record a sale with a typed buyer name, just not linked to an account.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [payFlowTarget, setPayFlowTarget] = useState<PayrollPayTarget | null>(null);
   const [payFlowOpen, setPayFlowOpen] = useState(false);
 
@@ -458,6 +490,7 @@ export function ProfitManagement() {
       showSaveError('Enter a buyer, product, and a quantity/price that add up to a total greater than zero.');
       return;
     }
+    const linkedAccount = saleForm.buyerUid ? buyerAccounts.find((b) => b.uid === saleForm.buyerUid) : undefined;
     const ok = await runSave('Sale', () =>
       updateState((prev) => ({
         ...prev,
@@ -472,12 +505,13 @@ export function ProfitManagement() {
             saleId: crypto.randomUUID(),
             quantityKg: saleQuantityKg,
             pricePerKg: salePricePerKg,
+            ...(linkedAccount ? { buyerUid: linkedAccount.uid, buyerEmail: linkedAccount.email } : {}),
           },
         ],
       })),
     );
     if (!ok) return;
-    setSaleForm((f) => ({ ...f, buyer: '', product: '', quantityKg: '', pricePerKg: '' }));
+    setSaleForm((f) => ({ ...f, buyer: '', buyerUid: '', product: '', quantityKg: '', pricePerKg: '' }));
     setAddSaleOpen(false);
   };
 
@@ -537,11 +571,34 @@ export function ProfitManagement() {
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="space-y-2">
+              <Label htmlFor="sale-buyer-account">Link to buyer account (optional)</Label>
+              <select
+                id="sale-buyer-account"
+                value={saleForm.buyerUid}
+                onChange={(e) => {
+                  const uid = e.target.value;
+                  const account = buyerAccounts.find((b) => b.uid === uid);
+                  setSaleForm((f) => ({ ...f, buyerUid: uid, buyer: account ? account.displayName : f.buyer }));
+                }}
+                className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm"
+              >
+                <option value="">Walk-in / no registered account</option>
+                {buyerAccounts.map((b) => (
+                  <option key={b.uid} value={b.uid}>
+                    {b.displayName} ({b.email})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                Linking counts this sale toward that buyer's totals on the admin Buyer Locations Map.
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="sale-buyer">Buyer / customer name</Label>
               <Input
                 id="sale-buyer"
                 value={saleForm.buyer}
-                onChange={(e) => setSaleForm((f) => ({ ...f, buyer: e.target.value }))}
+                onChange={(e) => setSaleForm((f) => ({ ...f, buyer: e.target.value, buyerUid: '' }))}
                 placeholder="e.g., Juan Dela Cruz Roastery"
                 className="bg-background/80 border-border/80"
               />
