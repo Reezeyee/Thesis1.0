@@ -134,34 +134,55 @@ export function distinctRoles(workers: AppState['workers']): number {
   return new Set(workers.map((w) => w.roleRate)).size;
 }
 
+/** Roles an admin can assign to a worker (fixed list, no free-text "Other"). Keep in sync with the Android app's role list. */
+export const WORKER_ROLES = ['Picker', 'Maintenance', 'Farm Manager', 'Farm Assist', 'Delivery Rider'] as const;
+
+/** True for the Maintenance role (repairs equipment and sprinklers). Maintenance workers get the repair-jobs screens in the app. */
+export function isMaintenanceRole(roleRate: string): boolean {
+  return roleRate.trim().toLowerCase().includes('maintenance');
+}
+
+/** True for the Delivery Rider role (also matches the older wording "driver"). Used for both the pay rate and the rider picker on buyer orders. */
+export function isDeliveryRole(roleRate: string): boolean {
+  const key = roleRate.trim().toLowerCase();
+  return key.includes('delivery') || key.includes('rider') || key.includes('driver');
+}
+
 export function hourlyRateForWorkerRole(roleRate: string): number {
   const key = roleRate.trim().toLowerCase();
   if (key === 'picker' || key.includes('harvester')) return 50;
   if (key.includes('farm assist')) return 150;
   if (key.includes('maintenance')) return 180;
   if (key.includes('farm manager')) return 250;
+  if (isDeliveryRole(roleRate)) return 120;
   return 0;
 }
 
 /** Job responsibilities shown to admin when assigning a role, and on a worker's profile. */
 export const ROLE_RESPONSIBILITIES: Record<string, string[]> = {
-  Picker: ['Harvesting ripe coffee/cacao cherries and other fruit from the trees'],
+  Picker: ['Harvesting ripe coffee cherries from the trees'],
   Maintenance: [
-    'Upkeep and repair of farm and resort equipment',
-    'Reporting and fixing broken equipment',
+    'Upkeep and repair of farm equipment and the irrigation sprinklers',
+    'Fixing the broken equipment and sprinkler jobs the admin assigns, and reporting when each one is done',
   ],
   'Farm Manager': [
-    'Oversees the upkeep of the resort and the farm',
-    'Recommends strategies to improve the farm produce',
-    'Plans for marketing activities to advertise the resort',
+    'Oversees the upkeep of the coffee farm',
+    'Recommends strategies to improve the coffee harvest',
+    'Plans marketing activities to sell the farm\'s coffee',
+  ],
+  'Delivery Rider': [
+    'Delivers buyers\' orders from the farm to the address on the order',
+    'Collects payment on cash-on-delivery orders and hands it over to the farm',
+    'Confirms with the buyer by phone and reports each delivery as done',
+    'Keeps the delivery vehicle in good condition',
   ],
   'Farm Assist': [
-    'Grasscutting and cleaning of the premises, both the farm and the resort grounds',
+    'Grasscutting and cleaning of the farm premises',
     'Dogkeeper (feed them, clean their cages, etc)',
-    'Pruning/weeding of Coffee and Cacao trees and all other fruitbearing trees of the land',
+    'Pruning/weeding of the coffee trees',
     'Composting (Vermi/Milli)',
     'Upkeep of the nursery',
-    'Planting of crops/trees as needed',
+    'Planting of coffee trees as needed',
     'Application of Fertilizer/insecticide as need be',
   ],
 };

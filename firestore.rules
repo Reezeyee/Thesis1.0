@@ -18,12 +18,23 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'BUYER';
     }
 
+    // Only accounts whose /users/{uid} profile carries a trusted staff role may write farm data.
+    // Being merely signed in is not enough: Firebase Auth sign-up is public, so a brand-new
+    // account has no profile at all. Trusted profiles (FARM_STAFF / ADMINISTRATOR) can only be
+    // written by the admin or the Admin SDK -- see the /users rule below -- so nobody can grant
+    // themselves this role.
+    function isStaffRole() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['FARM_STAFF', 'ADMINISTRATOR'];
+    }
+
     function isAdmin() {
       return request.auth != null && request.auth.token.email == 'farmacojido@gmail.com';
     }
 
     // App snapshot: `app_state/farm` holds shared farm structure (readable by any authenticated
-    // user, writable by any authenticated user EXCEPT the read-only Owner role).
+    // user, writable only by staff-role accounts and the admin -- see isStaffRole).
     // `app_state/{authUid}` holds that worker's own private, worker-submitted records
     // (attendance, leave requests, field reports, ...) -- a worker may only read/write their own
     // doc. The admin account may read/write every doc so the website can merge every worker's
@@ -35,36 +46,132 @@ service cloud.firestore {
         docId == 'farm' ||
         request.auth.token.email == 'farmacojido@gmail.com'
       );
-      allow write: if request.auth != null && (
-        request.auth.uid == docId ||
-        docId == 'farm' ||
-        request.auth.token.email == 'farmacojido@gmail.com'
-      ) && !isOwnerRole() && !isBuyerRole();
+      allow write: if isAdmin() || (
+        (request.auth.uid == docId || docId == 'farm') && isStaffRole()
+      );
     }
 
-    // Mirrored list JSON: legacy per-uid OR shared `farm` subtree. Same Owner/Buyer read-only carve-out.
+    // Mirrored list JSON: legacy per-uid OR shared `farm` subtree. Same staff-role-only write rule.
     match /user_data/{ownerId}/{subCollection}/{docId} {
       allow read: if request.auth != null && (
         request.auth.uid == ownerId || ownerId == 'farm'
       );
-      allow write: if request.auth != null && (
-        request.auth.uid == ownerId || ownerId == 'farm'
-      ) && !isOwnerRole() && !isBuyerRole();
+      allow write: if isAdmin() || (
+        (request.auth.uid == ownerId || ownerId == 'farm') && isStaffRole()
+      );
     }
 
     // Buyer orders: a Buyer may only create an order under their own uid (status must start
-    // 'pending', never self-marked fulfilled/cancelled) and read their own orders; only Admin
-    // may list every order, or update/cancel/fulfill one.
+    // 'pending', never self-marked fulfilled/cancelled) and read their own orders. Rider and
+    // delivery-progress fields are set by Admin only, so a Buyer cannot pre-assign an order to
+    // some rider's phone. Admin may list every order and update/cancel/fulfill one.
+    // The assigned Delivery Rider (matched by uid, set by Admin when assigning) may read only
+    // their own orders and update nothing except the delivery-progress fields.
+    function isAssignedRider() {
+      return request.auth != null &&
+        resource.data.get('riderUid', '') == request.auth.uid;
+    }
+
     match /buyer_orders/{orderId} {
       allow create: if request.auth != null &&
         request.resource.data.buyerUid == request.auth.uid &&
-        request.resource.data.status == 'pending';
+        request.resource.data.status == 'pending' &&
+        !request.resource.data.keys().hasAny([
+          'riderUid', 'riderWorkerId', 'riderName', 'riderPhone', 'riderAssignedAt',
+          'deliveryStatus', 'deliveryUpdatedAt', 'deliveredAt', 'hasDeliveryProof'
+        ]);
 
       allow read: if request.auth != null && (
-        resource.data.buyerUid == request.auth.uid || isAdmin()
+        resource.data.buyerUid == request.auth.uid || isAdmin() || isAssignedRider()
       );
 
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isAssignedRider() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['deliveryStatus', 'deliveryUpdatedAt', 'deliveredAt', 'hasDeliveryProof']) &&
+        request.resource.data.deliveryStatus in ['out_for_delivery', 'delivered'] &&
+        // The proof flag can only be true if the photo really exists (written in the same batch to
+        // delivery_proofs/{orderId}), and an order can only be marked delivered WITH that flag -- so
+        // "delivered" always comes with a photo.
+        (request.resource.data.get('hasDeliveryProof', false) == false ||
+          existsAfter(/databases/$(database)/documents/delivery_proofs/$(orderId))) &&
+        (request.resource.data.deliveryStatus != 'delivered' ||
+          request.resource.data.get('hasDeliveryProof', false) == true)
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // Proof of delivery: the rider's photo of the delivered order, kept in its own document (id = order id) so the
+    // large image never rides along with every order list. Only the rider assigned to that order can create or
+    // replace it, and only as a small JPEG data URL. It can be read by that rider, by the buyer whose order it is,
+    // and by Admin -- nobody else. Only Admin can delete it.
+    match /delivery_proofs/{orderId} {
+      allow read: if request.auth != null && (
+        isAdmin() ||
+        get(/databases/$(database)/documents/buyer_orders/$(orderId)).data.buyerUid == request.auth.uid ||
+        get(/databases/$(database)/documents/buyer_orders/$(orderId)).data.get('riderUid', '') == request.auth.uid
+      );
+
+      allow create, update: if request.auth != null &&
+        get(/databases/$(database)/documents/buyer_orders/$(orderId)).data.get('riderUid', '') == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['photo', 'takenAt', 'riderUid']) &&
+        request.resource.data.riderUid == request.auth.uid &&
+        request.resource.data.photo is string &&
+        request.resource.data.photo.size() <= 700000 &&
+        request.resource.data.photo.matches('^data:image/jpeg;base64,.*');
+
+      allow delete: if isAdmin();
+    }
+
+    // Stock holds: placing an order also writes a hold (same document id as the order) so every buyer
+    // sees the ordered quantity come off the available stock immediately, before Admin fulfils it.
+    // Any signed-in user may read holds (they contain only the ordered items). A hold can only be
+    // created in the same batch as the buyer's own matching order -- checked with getAfter -- and with
+    // exactly that order's items, so it can't be forged, inflated, or attached to someone else's order.
+    // Buyers can never edit or delete a hold; Admin releases it when the order is cancelled or fulfilled.
+    match /stock_holds/{holdId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        request.resource.data.keys().hasOnly(['items', 'createdAt']) &&
+        getAfter(/databases/$(database)/documents/buyer_orders/$(holdId)).data.buyerUid == request.auth.uid &&
+        request.resource.data.items == getAfter(/databases/$(database)/documents/buyer_orders/$(holdId)).data.items;
+
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // Repair jobs: the admin sends a broken-equipment or sprinkler-damage report to ONE Maintenance worker by
+    // creating a job (id = "<kind>-<reportId>") that holds a copy of what that worker needs to see. Workers'
+    // reports live in each worker's private document, which other workers can't read -- so this separate job is
+    // how Maintenance sees them. Only the admin creates, reassigns and deletes jobs. The assigned worker (matched
+    // by uid) may read only their own jobs and change nothing but the progress fields: start it, then mark it
+    // fixed with a short note saying what was done and which parts were used. Once fixed, only the admin can change it again.
+    match /repair_jobs/{jobId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.get('assignedToUid', '') == request.auth.uid);
+
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin() || (
+        request.auth != null &&
+        resource.data.get('assignedToUid', '') == request.auth.uid &&
+        resource.data.status != 'fixed' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'startedAt', 'fixedAt', 'fixNote', 'partsUsed']) &&
+        request.resource.data.status in ['in_progress', 'fixed'] &&
+        (request.resource.data.status != 'fixed' || (
+          request.resource.data.get('fixNote', '') is string &&
+          request.resource.data.get('fixNote', '').size() > 0 &&
+          request.resource.data.get('fixNote', '').size() <= 500 &&
+          request.resource.data.get('fixedAt', '') is string &&
+          // The parts / materials used up (e.g. 4 screws) -- optional, at most 10 entries. The website reads
+          // each entry defensively, since rules cannot look inside a list.
+          request.resource.data.get('partsUsed', []) is list &&
+          request.resource.data.get('partsUsed', []).size() <= 10
+        ))
+      );
     }
 
     // Direct Admin <-> Owner message thread: exactly one Admin and one Owner account exist, so
@@ -88,7 +195,18 @@ service cloud.firestore {
     // in Maintenance -- writes stay restricted to the profile's own owner.
     match /users/{userId} {
       allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      allow write: if request.auth != null && request.auth.uid == userId;
+
+      // Public sign-up means anyone can hold a Firebase account, so a profile may never be used
+      // to self-assign a trusted role: an account can only create its OWN profile as a BUYER, and
+      // can never change its own `role` afterwards (updates that keep the role -- last sign-in
+      // time, clearing mustChangePassword, display name -- stay allowed). FARM_STAFF / OWNER /
+      // ADMINISTRATOR profiles are written by the admin (web worker form) or the Admin SDK.
+      allow create: if isAdmin() ||
+        (request.auth != null && request.auth.uid == userId && request.resource.data.role == 'BUYER');
+      allow update: if isAdmin() ||
+        (request.auth != null && request.auth.uid == userId &&
+          request.resource.data.get('role', null) == resource.data.get('role', null));
+      allow delete: if isAdmin();
     }
 
     match /users/{userId}/login_history/{entryId} {

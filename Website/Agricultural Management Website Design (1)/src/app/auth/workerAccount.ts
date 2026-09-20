@@ -1,7 +1,7 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
-import { doc, getFirestore, serverTimestamp, setDoc } from 'firebase/firestore';
-import { firebaseConfig } from '../firebase/config';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { db, firebaseConfig } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 
 const WORKER_AUTH_APP_NAME = 'worker-account-creator';
@@ -49,14 +49,16 @@ export async function createWorkerAuthAccount(args: {
 }): Promise<CreatedWorkerAccount> {
   const app = workerAccountApp();
   const secondaryAuth = getAuth(app);
-  const secondaryDb = getFirestore(app);
   const email = args.email?.trim() || workerEmailFor(args.name, args.workerId);
   const password = args.password || generateWorkerPassword();
 
   try {
     const credential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     const user = credential.user;
-    await setDoc(doc(secondaryDb, COLLECTIONS.USERS, user.uid), {
+    // Written through the PRIMARY db (the signed-in admin), not the new worker's own session:
+    // firestore.rules only lets an account create its own profile as a BUYER, so a FARM_STAFF
+    // profile -- the role that unlocks farm-data writes -- must come from the admin.
+    await setDoc(doc(db, COLLECTIONS.USERS, user.uid), {
       email,
       displayName: args.name.trim(),
       role: 'FARM_STAFF',

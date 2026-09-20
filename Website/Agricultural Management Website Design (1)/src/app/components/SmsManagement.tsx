@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useFarmData } from '../store/FarmDataProvider';
 import { type SmsMessageRecord, type WorkerRecord } from '../types/appState';
 import { isWorkerActive } from '../lib/workerUi';
+import { isValidPhone11, PHONE_ERROR_MESSAGE, sanitizePhoneInput } from '../lib/phone';
 import { 
   Search, 
   Send, 
@@ -43,7 +44,7 @@ export function SmsManagement() {
   const [messageText, setMessageText] = useState('');
   
   // Admin details
-  const [adminPhone, setAdminPhone] = useState('+63 917 123 4567');
+  const [adminPhone, setAdminPhone] = useState('09171234567');
   const [isEditingPhone, setIsEditingPhone] = useState(false);
 
   const workers = state.workers || [];
@@ -156,16 +157,19 @@ export function SmsManagement() {
             {isEditingPhone ? (
               <div className="flex items-center gap-1.5 mt-1">
                 <input
-                  type="text"
+                  type="tel"
+                  inputMode="numeric"
                   value={adminPhone}
-                  onChange={(e) => setAdminPhone(e.target.value)}
+                  onChange={(e) => setAdminPhone(sanitizePhoneInput(e.target.value))}
                   className="text-xs font-mono font-bold text-foreground bg-transparent border-b border-accent focus:outline-none w-28"
                   autoFocus
                 />
                 <button
                   type="button"
                   onClick={() => setIsEditingPhone(false)}
-                  className="p-0.5 text-accent hover:bg-accent/10 rounded"
+                  disabled={!isValidPhone11(adminPhone)}
+                  title={isValidPhone11(adminPhone) ? undefined : PHONE_ERROR_MESSAGE}
+                  className="p-0.5 text-accent hover:bg-accent/10 rounded disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Check className="w-3.5 h-3.5" />
                 </button>

@@ -29,6 +29,15 @@ object FirebaseCollections {
     const val USERS = "users"
     const val LOGIN_HISTORY = "login_history"
     const val PASSWORD_RESET_REQUESTS = "password_reset_requests"
+
+    /** Orders placed by Buyers on the website; a Delivery Rider reads only the ones assigned to them. */
+    const val BUYER_ORDERS = "buyer_orders"
+
+    /** The rider's proof-of-delivery photo, one doc per order (same id as the order). */
+    const val DELIVERY_PROOFS = "delivery_proofs"
+
+    /** Repair jobs the admin assigned to a Maintenance worker (equipment / sprinkler reports). */
+    const val REPAIR_JOBS = "repair_jobs"
     const val WORKERS = "workers"
     const val TREES = "trees"
     /** Per-tree ripeness scan samples saved from the mobile CNN scanner. */

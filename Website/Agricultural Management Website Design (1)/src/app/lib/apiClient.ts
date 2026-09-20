@@ -9,6 +9,7 @@
  */
 
 import { auth } from '../firebase/config';
+import { explainBackend401, MISSING_API_KEY_MESSAGE } from './backendErrors';
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_API_URL as string) || 'http://localhost:8000';
 const API_KEY = (import.meta.env.VITE_BACKEND_API_KEY as string) || '';
@@ -136,6 +137,8 @@ export interface BackendResetPasswordResponse {
  * signed in as the admin account before it will touch a worker's password.
  */
 export async function adminResetWorkerPassword(email: string): Promise<BackendResetPasswordResponse> {
+  // Without the API key the backend can only answer 401, so say so up front instead of a misleading "sign in again".
+  if (!API_KEY) throw new Error(MISSING_API_KEY_MESSAGE);
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) {
     throw new Error('You must be signed in as the admin to reset a worker password.');
@@ -148,7 +151,7 @@ export async function adminResetWorkerPassword(email: string): Promise<BackendRe
   });
 
   if (res.status === 401) {
-    throw new Error('Backend rejected the request. Sign out and back in, then try again.');
+    throw new Error(explainBackend401(await res.text().catch(() => '')));
   }
   if (res.status === 403) {
     throw new Error('Only the farm admin account can reset a worker password.');

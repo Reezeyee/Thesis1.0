@@ -57,6 +57,12 @@ import com.melodypenero.coffeefarm.ui.dashboard.DashboardScreen
 import com.melodypenero.coffeefarm.ui.navigation.AppDestination
 import com.melodypenero.coffeefarm.ui.navigation.administratorMobileDestinations
 import com.melodypenero.coffeefarm.ui.navigation.farmStaffMobileDestinations
+import com.melodypenero.coffeefarm.ui.navigation.maintenanceMobileDestinations
+import com.melodypenero.coffeefarm.ui.navigation.riderMobileDestinations
+import com.melodypenero.coffeefarm.ui.screens.MaintenanceJobsScreen
+import com.melodypenero.coffeefarm.domain.findMaintenanceWorker
+import com.melodypenero.coffeefarm.ui.screens.RiderDeliveriesScreen
+import com.melodypenero.coffeefarm.domain.findRiderWorker
 import com.melodypenero.coffeefarm.ui.screens.ChangePasswordScreen
 import com.melodypenero.coffeefarm.ui.screens.CoffeeCherryScreen
 import com.melodypenero.coffeefarm.ui.screens.EquipmentScreen
@@ -144,9 +150,21 @@ fun CoffeeFarmApp() {
         )
         return
     }
-    val allowedDestinations = remember(currentSession.role) {
-        destinationsForRole(currentSession.role)
+    // A Farm Staff login whose worker record has the Delivery Rider role gets the rider screens instead
+    // of the field tools. Read from the store so it updates once the worker list has synced.
+    val workers = store.appState.value.workers
+    val isRider = remember(currentSession.userId, currentSession.email, currentSession.role, workers) {
+        currentSession.role == UserRole.FARM_STAFF &&
+            findRiderWorker(currentSession.userId, currentSession.email, workers) != null
     }
+    val isMaintenance = remember(currentSession.userId, currentSession.email, currentSession.role, workers) {
+        currentSession.role == UserRole.FARM_STAFF &&
+            findMaintenanceWorker(currentSession.userId, currentSession.email, workers) != null
+    }
+    val allowedDestinations = remember(currentSession.role, isRider, isMaintenance) {
+        destinationsForRole(currentSession.role, isRider, isMaintenance)
+    }
+    val homeRoute = allowedDestinations.first().route
 
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -175,9 +193,9 @@ fun CoffeeFarmApp() {
     }
     val palette = farmPalette()
 
-    LaunchedEffect(currentRoute, currentSession.role) {
+    LaunchedEffect(currentRoute, currentSession.role, isRider, isMaintenance) {
         if (currentRoute != null && allowedDestinations.none { it.route == currentRoute }) {
-            navController.navigate(AppDestination.Dashboard.route) {
+            navController.navigate(homeRoute) {
                 popUpTo(navController.graph.startDestinationId) {
                     inclusive = false
                 }
@@ -215,7 +233,7 @@ fun CoffeeFarmApp() {
                             modifier = Modifier.padding(top = 2.dp)
                         )
                         Text(
-                            text = "${currentSession.displayName} · ${roleLabel(currentSession.role)}",
+                            text = "${currentSession.displayName} · ${if (isRider) "Delivery Rider" else if (isMaintenance) "Maintenance" else roleLabel(currentSession.role)}",
                             color = palette.textSecondary,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 8.dp)
@@ -272,7 +290,7 @@ fun CoffeeFarmApp() {
                             title = {
                                 Text(
                                     text = allowedDestinations.firstOrNull { it.route == currentRoute }?.title
-                                        ?: "Dashboard",
+                                        ?: allowedDestinations.first().title,
                                     color = palette.textPrimary,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -298,7 +316,7 @@ fun CoffeeFarmApp() {
                 ) { innerPadding ->
                     NavHost(
                         navController = navController,
-                        startDestination = AppDestination.Dashboard.route,
+                        startDestination = homeRoute,
                         modifier = Modifier
                             .padding(innerPadding)
                             .padding(horizontal = 4.dp),
@@ -315,6 +333,12 @@ fun CoffeeFarmApp() {
                             DashboardScreen(
                                 onNavigateToModule = navigateToDestination
                             )
+                        }
+                        composable(AppDestination.RiderDeliveries.route) {
+                            RiderDeliveriesScreen(session = currentSession)
+                        }
+                        composable(AppDestination.MaintenanceJobs.route) {
+                            MaintenanceJobsScreen(session = currentSession)
                         }
                         composable(AppDestination.StaffAttendance.route) {
                             StaffAttendanceScreen(session = currentSession)
@@ -358,9 +382,13 @@ fun CoffeeFarmApp() {
  * Mobile app focuses on CNN cherry scanning and worker field tools (attendance, irrigation, equipment, settings).
  * Workers & operations HR and sales/finance screens live on the `Website/` React admin portal for administrators.
  */
-private fun destinationsForRole(role: UserRole): List<AppDestination> = when (role) {
+private fun destinationsForRole(role: UserRole, isRider: Boolean, isMaintenance: Boolean): List<AppDestination> = when (role) {
     UserRole.ADMINISTRATOR -> administratorMobileDestinations
-    UserRole.FARM_STAFF -> farmStaffMobileDestinations
+    UserRole.FARM_STAFF -> when {
+        isRider -> riderMobileDestinations
+        isMaintenance -> maintenanceMobileDestinations
+        else -> farmStaffMobileDestinations
+    }
 }
 
 private fun roleLabel(role: UserRole): String = when (role) {

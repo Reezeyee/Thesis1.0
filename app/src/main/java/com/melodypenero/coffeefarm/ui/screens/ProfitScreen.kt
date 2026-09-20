@@ -189,7 +189,7 @@ fun ProfitScreen(
         val equipmentOptions = listOf(PROFIT_LINK_NONE) + state.equipment.map { it.name }
         val fields = when (activeTab) {
             "Sales" -> listOf(
-                RecordField("Buyer name"),
+                RecordField("Buyer name", kind = FieldKind.PERSON_NAME),
                 RecordField("Product type", options = productTypeOptions),
                 RecordField("Link batch (Cherry)", options = batchOptions),
                 RecordField("Notes"),
@@ -290,7 +290,7 @@ fun ProfitScreen(
         val equipmentOptionsEdit = listOf(PROFIT_LINK_NONE) + state.equipment.map { it.name }
         val fields = when (activeTab) {
             "Sales" -> listOf(
-                RecordField("Buyer name"),
+                RecordField("Buyer name", kind = FieldKind.PERSON_NAME),
                 RecordField("Product type", productTypeOptions),
                 RecordField("Link batch (Cherry)", batchOptionsEdit),
                 RecordField("Notes"),

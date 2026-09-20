@@ -87,7 +87,7 @@ fun SmsScreen(session: AuthSession) {
     val palette = farmPalette()
 
     // Configurable/default phone numbers
-    var adminPhoneNumber by remember { mutableStateOf("+639171234567") }
+    var adminPhoneNumber by remember { mutableStateOf("09171234567") }
     var selectedWorker by remember { mutableStateOf<String?>(null) }
     var messageText by remember { mutableStateOf("") }
 
@@ -215,11 +215,13 @@ fun SmsScreen(session: AuthSession) {
                         // Workers edit or see Admin phone number
                         OutlinedTextField(
                             value = adminPhoneNumber,
-                            onValueChange = { adminPhoneNumber = it },
+                            onValueChange = { adminPhoneNumber = sanitizePhoneInput(it) },
                             label = { Text("Admin Phone Number") },
+                            isError = !isValidPhone11(adminPhoneNumber),
+                            supportingText = { Text(if (isValidPhone11(adminPhoneNumber)) "Numbers only, 11 digits starting with 09." else PHONE_ERROR_MESSAGE) },
                             leadingIcon = { Icon(Icons.Default.SettingsPhone, contentDescription = null, tint = palette.textSecondary) },
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth()
                         )
                     } else {

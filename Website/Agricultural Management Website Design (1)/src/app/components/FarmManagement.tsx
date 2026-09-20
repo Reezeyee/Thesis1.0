@@ -1,3 +1,6 @@
+import { RepairAssignControl } from './RepairAssignControl';
+import { repairJobId, sprinklerRepairJob } from '../lib/repairJobs';
+import { useRepairJobs } from '../store/useRepairJobs';
 import { useMemo, useState, type MouseEvent } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -61,7 +64,7 @@ import { BATAAN_PROVINCE } from '../data/bataanAddressCatalog';
 import { useFarmData } from '../store/FarmDataProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { createWorkerAuthAccount, type CreatedWorkerAccount } from '../auth/workerAccount';
-import { distinctRoles, hourlyRateForWorkerRole, payrollLineAmount, responsibilitiesForWorkerRole } from '../lib/farmFinance';
+import { distinctRoles, hourlyRateForWorkerRole, payrollLineAmount, responsibilitiesForWorkerRole, WORKER_ROLES } from '../lib/farmFinance';
 import { formatCurrency } from '../lib/currencyFormat';
 import { runSave, showSaveError } from '../lib/saveFeedback';
 import { logStateApiActivity, logUiAction } from '../lib/apiRouteLogger';
@@ -113,6 +116,7 @@ function isHarvestReady(field: CoffeeFieldRecord): boolean {
 
 export function FarmManagement() {
   const { state, loading, updateState, saving } = useFarmData();
+  const repairJobs = useRepairJobs();
   const { session } = useAuth();
   const managerName = session?.displayName || 'Farm Manager';
   const workers = state.workers.map((w, index) => workerRecordToUi(w, index));
@@ -1766,7 +1770,8 @@ export function FarmManagement() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            // Capped height so a long list of reports scrolls inside the board instead of stretching the page.
+            <div className="grid max-h-[620px] grid-cols-1 gap-3.5 overflow-y-auto pr-2 md:grid-cols-2">
               {harvestReadinessReports.map((report) => {
                 const isConfirmed = report.status === 'Confirmed' || report.status === 'Approved';
                 const isRejected = report.status === 'Rejected';
@@ -1946,7 +1951,8 @@ export function FarmManagement() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          // Capped height so a long list of logs scrolls inside the board instead of stretching the page.
+          <div className="grid max-h-[520px] grid-cols-1 gap-3.5 overflow-y-auto pr-2 md:grid-cols-2 lg:grid-cols-3">
             {[...state.cherryHarvests]
               .reverse()
               .slice(0, 12)
@@ -1984,7 +1990,7 @@ export function FarmManagement() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
-        <div className="flex h-full min-h-[560px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
+        <div className="flex h-fit flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm lg:self-start">
           <div className="flex items-center justify-between gap-3 mb-4 flex-wrap gap-y-2">
             <h3 className="font-bold text-base font-heading text-foreground">Coffee Fields</h3>
             <button
@@ -1999,7 +2005,8 @@ export function FarmManagement() {
           <div className="mb-4">
             <CoffeeFieldLandscapeMap existingFields={coffeeFields} />
           </div>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
+          {/* Capped height so a long field list scrolls inside the card instead of stretching the page. */}
+          <div className="max-h-[440px] min-h-0 space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
             {coffeeFields.length === 0 ? (
               <p className="text-xs text-muted-foreground font-mono">No coffee fields yet. Add one or wait for starter data to sync from Firebase.</p>
             ) : null}
@@ -2216,7 +2223,8 @@ export function FarmManagement() {
                 + Report Problem
               </button>
             </div>
-            <div className="space-y-3">
+            {/* Capped height so a long report list scrolls inside the card instead of stretching the page. */}
+            <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
               {irrigationDamageReports.length === 0 ? (
                 <p className="text-xs text-muted-foreground font-mono">No sprinkler damage reports yet. Workers can submit reports from the Irrigation module in the mobile app.</p>
               ) : null}
@@ -2257,6 +2265,14 @@ export function FarmManagement() {
                           {report.details ? (
                             <p className="text-xs text-foreground/90 mt-2 whitespace-pre-line font-medium">{report.details}</p>
                           ) : null}
+                          <RepairAssignControl
+                            kind="sprinkler"
+                            reportId={report.reportId}
+                            workers={state.workers ?? []}
+                            job={report.reportId ? repairJobs[repairJobId('sprinkler', report.reportId)] : undefined}
+                            closed={isResolved}
+                            buildJob={(to) => sprinklerRepairJob(report, to)}
+                          />
                         </div>
 
                         {!isResolved ? (
@@ -2510,10 +2526,9 @@ export function FarmManagement() {
                   className="w-full h-9 px-2.5 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
                 >
                   <option value="All">All Roles</option>
-                  <option value="Picker">Picker</option>
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Farm Manager">Farm Manager</option>
-                  <option value="Farm Assist">Farm Assist</option>
+                  {WORKER_ROLES.map((role) => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
                 </select>
               </div>
               <div className="sm:col-span-3">

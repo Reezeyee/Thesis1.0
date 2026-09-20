@@ -5,6 +5,9 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { LocationPicker, type PickedLocation } from '../components/LocationPicker';
 import { useAuth } from './AuthProvider';
+import { authErrorMessage } from './authConfig';
+import { isValidPersonName, NAME_ERROR_MESSAGE, sanitizeNameInput } from '../lib/personName';
+import { isValidPhone11, PHONE_ERROR_MESSAGE, PHONE_PLACEHOLDER, sanitizePhoneInput } from '../lib/phone';
 
 /**
  * Buyer sign-in / sign-up modal, opened from the Admin LoginScreen's "Shopping for coffee?"
@@ -13,9 +16,10 @@ import { useAuth } from './AuthProvider';
  * email), sign-up uses the new AuthProvider.signUpAsBuyer.
  */
 export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { signIn, signUpAsBuyer, resetPassword, error } = useAuth();
+  const { signIn, signUpAsBuyer, resetPassword } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [location, setLocation] = useState<PickedLocation | null>(null);
@@ -26,6 +30,7 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
 
   const reset = () => {
     setName('');
+    setPhone('');
     setEmail('');
     setPassword('');
     setLocation(null);
@@ -33,8 +38,10 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
     setResetMessage(null);
   };
 
+  // `pinned` = the buyer actually tapped/dragged the map. Typing an address alone leaves the pin at the
+  // map's default centre, which would put the buyer (and later the delivery rider) in the wrong place.
   const locationIsValid = (loc: PickedLocation | null): loc is PickedLocation =>
-    !!loc && loc.address.trim().length > 0 && (loc.lat !== 0 || loc.lng !== 0);
+    !!loc && loc.pinned === true && loc.address.trim().length > 0 && (loc.lat !== 0 || loc.lng !== 0);
 
   const handleForgotPassword = async () => {
     if (!email) {
@@ -47,8 +54,8 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
     try {
       await resetPassword(email);
       setResetMessage("If that account exists, we've sent a password reset link to it. Check your inbox (and spam folder).");
-    } catch {
-      setLocalError(error ?? 'Could not send the reset email.');
+    } catch (err) {
+      setLocalError(authErrorMessage(err, 'Could not send the reset email.'));
     } finally {
       setResetSubmitting(false);
     }
@@ -57,21 +64,21 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (mode === 'signup' && !locationIsValid(location)) {
-      setLocalError('Set your business / pickup location on the map first -- it is required to create a buyer account.');
+      setLocalError('Tap the map to drop a pin on your business / pickup location first -- it is required to create a buyer account.');
       return;
     }
     setSubmitting(true);
     setLocalError(null);
     try {
       if (mode === 'signup' && locationIsValid(location)) {
-        await signUpAsBuyer(email, password, name, location);
+        await signUpAsBuyer(email, password, name, location, phone);
       } else {
-        await signIn(email, password);
+        await signIn(email, password, 'buyer');
       }
       onOpenChange(false);
       reset();
-    } catch {
-      setLocalError(error ?? (mode === 'signup' ? 'Could not create your account.' : 'Sign-in failed.'));
+    } catch (err) {
+      setLocalError(authErrorMessage(err, mode === 'signup' ? 'Could not create your account.' : 'Sign-in failed.'));
     } finally {
       setSubmitting(false);
     }
@@ -95,10 +102,34 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
               <Input
                 id="buyer-name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => setName(sanitizeNameInput(e.target.value))}
                 placeholder="Juan Dela Cruz"
-                className="h-10 rounded-xl text-xs"
+                autoComplete="name"
+                aria-invalid={name.trim() !== '' && !isValidPersonName(name)}
+                className={`h-10 rounded-xl text-xs ${name.trim() !== '' && !isValidPersonName(name) ? 'border-rose-500' : ''}`}
               />
+              {name.trim() !== '' && !isValidPersonName(name) ? (
+                <p className="text-[11px] text-rose-500 font-medium">{NAME_ERROR_MESSAGE}</p>
+              ) : null}
+            </div>
+          ) : null}
+          {mode === 'signup' ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="buyer-phone" className="text-xs font-semibold">Phone number</Label>
+              <Input
+                id="buyer-phone"
+                type="tel"
+                inputMode="numeric"
+                value={phone}
+                onChange={(e) => setPhone(sanitizePhoneInput(e.target.value))}
+                placeholder={PHONE_PLACEHOLDER}
+                autoComplete="tel"
+                aria-invalid={phone !== '' && !isValidPhone11(phone)}
+                className={`h-10 rounded-xl text-xs ${phone !== '' && !isValidPhone11(phone) ? 'border-rose-500' : ''}`}
+              />
+              <p className={`text-[11px] ${phone !== '' && !isValidPhone11(phone) ? 'text-rose-500 font-medium' : 'text-muted-foreground'}`}>
+                {phone !== '' && !isValidPhone11(phone) ? PHONE_ERROR_MESSAGE : 'Numbers only, 11 digits starting with 09.'}
+              </p>
             </div>
           ) : null}
           {mode === 'signup' ? (

@@ -26,7 +26,8 @@ import {
   ACCEPTED_NAME_CHARS_DESCRIPTION,
   type WorkerFormDraft,
 } from '../lib/workerUi';
-import { hourlyRateForWorkerRole, responsibilitiesForWorkerRole } from '../lib/farmFinance';
+import { hourlyRateForWorkerRole, responsibilitiesForWorkerRole, WORKER_ROLES } from '../lib/farmFinance';
+import { FixedSelect } from './ui/FixedSelect';
 import { formatCurrency } from '../lib/currencyFormat';
 
 const ADDRESS_SELECT_CLASS =
@@ -335,7 +336,6 @@ export function WorkerFormDialog({
                   id="worker-phone"
                   type="tel"
                   inputMode="numeric"
-                  maxLength={11}
                   value={form.phone}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, phone: sanitizePhoneInput(e.target.value) }))
@@ -360,14 +360,14 @@ export function WorkerFormDialog({
 
               {/* Role */}
               <div className="sm:col-span-2">
-                <SelectWithOther
+                <FixedSelect
                   id="worker-role"
                   label="Assigned Role"
                   value={form.role}
                   onChange={(val) => setForm((f) => ({ ...f, role: val }))}
-                  options={['Picker', 'Maintenance', 'Farm Manager', 'Farm Assist']}
+                  options={WORKER_ROLES}
                   selectClassName={ADDRESS_SELECT_CLASS}
-                  otherPlaceholder="Sample: Machine Technician"
+                  className="space-y-2"
                 />
                 {(() => {
                   const rate = hourlyRateForWorkerRole(form.role);
@@ -576,7 +576,6 @@ export function WorkerFormDialog({
                   id="worker-emergency-phone"
                   type="tel"
                   inputMode="numeric"
-                  maxLength={11}
                   value={form.emergencyPhone}
                   onChange={(e) =>
                     setForm((f) => ({

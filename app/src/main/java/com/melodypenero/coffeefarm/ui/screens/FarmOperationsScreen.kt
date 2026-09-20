@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.melodypenero.coffeefarm.data.store.AttendanceRecord
+import com.melodypenero.coffeefarm.domain.FarmFinance
 import com.melodypenero.coffeefarm.data.store.LocalAppStore
 
 @Composable
@@ -165,19 +166,13 @@ fun FarmOperationsScreen() {
                 val floweringSectionNames = state.flowering.map { it.sectionName }.distinct()
                 val harvestScheduleSectionOptions =
                     if (floweringSectionNames.isNotEmpty()) floweringSectionNames else sectionNames
-                val workerRoleOptions = listOf(
-                    "Picker",
-                    "Maintenance",
-                    "Farm Manager",
-                    "Farm Assist",
-                    "Other"
-                )
+                val workerRoleOptions = FarmFinance.WORKER_ROLES
                 val fields = when (activeTab) {
                     "Workers" -> listOf(
-                        RecordField("Worker Name"),
+                        RecordField("Worker Name", kind = FieldKind.PERSON_NAME),
                         RecordField("Worker ID (optional)"),
                         RecordField("Role", options = workerRoleOptions),
-                        RecordField("Phone Number"),
+                        RecordField("Phone Number", kind = FieldKind.PHONE),
                         RecordField("Address"),
                         RecordField("Emergency Contact"),
                         RecordField("Worker Details")
@@ -261,13 +256,10 @@ fun FarmOperationsScreen() {
                     if (floweringSectionNames.isNotEmpty()) floweringSectionNames else sectionNames
                 val fields = when (activeTab) {
                     "Workers" -> listOf(
-                        RecordField("Worker Name"),
+                        RecordField("Worker Name", kind = FieldKind.PERSON_NAME),
                         RecordField("Worker ID (optional)"),
-                        RecordField(
-                            "Role",
-                            listOf("Picker", "Maintenance", "Farm Manager", "Farm Assist", "Other")
-                        ),
-                        RecordField("Phone Number"),
+                        RecordField("Role", FarmFinance.WORKER_ROLES),
+                        RecordField("Phone Number", kind = FieldKind.PHONE),
                         RecordField("Address"),
                         RecordField("Emergency Contact"),
                         RecordField("Worker Details")

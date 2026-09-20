@@ -2906,20 +2906,42 @@ class AppStore(context: Context) {
 
     private fun commitSharedSnapshotToCloud(db: FirebaseFirestore, next: AppState) {
         val now = System.currentTimeMillis()
-        val batch = db.batch()
         val farmId = FirebaseCollections.SHARED_FARM_DOCUMENT_ID
         val mainRef = db.collection(FirebaseCollections.APP_STATE).document(farmId)
+        val ourJson = gson.toJson(next)
+        // Read-modify-write in a transaction so sections this app doesn't model (the website's
+        // `productListings`, ...) survive -- see [preserveUnknownFields]. The transaction also means a
+        // website save landing at the same moment can't be overwritten with a stale copy.
         // merge:true so a normal sync write can never silently drop the `hardReset` marker a
         // wipe/restore stamped on this doc (a plain .set() replaces the whole document) -- losing
         // that marker would permanently disable every device's "was this doc just wiped?" check.
-        batch.set(
-            mainRef,
-            mapOf(
-                "stateJson" to gson.toJson(next),
-                "updatedAt" to now
-            ),
-            SetOptions.merge()
-        )
+        db.runTransaction { tx ->
+            val remoteJson = tx.get(mainRef).getString("stateJson")
+            tx.set(
+                mainRef,
+                mapOf(
+                    "stateJson" to preserveUnknownFields(remoteJson, ourJson),
+                    "updatedAt" to now
+                ),
+                SetOptions.merge()
+            )
+            null
+        }
+            .addOnSuccessListener { commitSharedMirrors(db, farmId, next, now) }
+            .addOnFailureListener { e ->
+                // Offline / unavailable: nothing was written (so nothing can be overwritten). The app
+                // re-syncs when the network returns (registerAutoSyncWhenOnline).
+                cloudSyncStatusState.value = when ((e as? FirebaseFirestoreException)?.code) {
+                    FirebaseFirestoreException.Code.UNAVAILABLE,
+                    FirebaseFirestoreException.Code.DEADLINE_EXCEEDED -> CloudSyncStatus.PENDING_UPLOAD
+                    else -> CloudSyncStatus.ERROR
+                }
+            }
+    }
+
+    /** Legacy write-only mirrors under `user_data/farm/...` (nothing reads them back). */
+    private fun commitSharedMirrors(db: FirebaseFirestore, farmId: String, next: AppState, now: Long) {
+        val batch = db.batch()
 
         fun mirrorList(collectionName: String, itemsJson: String, itemCount: Int) {
             val ref = db
@@ -2982,8 +3004,17 @@ class AppStore(context: Context) {
      */
     private fun commitPrivateSnapshotToCloud(db: FirebaseFirestore, uid: String, next: AppState) {
         val now = System.currentTimeMillis()
-        db.collection(FirebaseCollections.APP_STATE).document(uid)
-            .set(mapOf("stateJson" to gson.toJson(next), "updatedAt" to now), SetOptions.merge())
+        val ref = db.collection(FirebaseCollections.APP_STATE).document(uid)
+        val ourJson = gson.toJson(next)
+        db.runTransaction { tx ->
+            val remoteJson = tx.get(ref).getString("stateJson")
+            tx.set(
+                ref,
+                mapOf("stateJson" to preserveUnknownFields(remoteJson, ourJson), "updatedAt" to now),
+                SetOptions.merge()
+            )
+            null
+        }
             .addOnSuccessListener {
                 lastCloudSyncAtState.value = System.currentTimeMillis()
                 cloudSyncStatusState.value = CloudSyncStatus.CONNECTED
@@ -3028,7 +3059,10 @@ class AppStore(context: Context) {
                 val updated = normalizeAppState(updater(current))
                 val privateToWrite = projectPrivateFields(updated)
                 ref.set(
-                    mapOf("stateJson" to gson.toJson(privateToWrite), "updatedAt" to System.currentTimeMillis()),
+                    mapOf(
+                        "stateJson" to preserveUnknownFields(remoteJson, gson.toJson(privateToWrite)),
+                        "updatedAt" to System.currentTimeMillis()
+                    ),
                     SetOptions.merge()
                 )
                     .addOnSuccessListener { onComplete(true) }

@@ -72,49 +72,51 @@ export function WebsiteSettingsPanel({
   };
 
   /**
-   * Approving sets the request's status, then asks the backend (which holds privileged Firebase
-   * Admin credentials) to set a brand-new temporary password directly on the worker's account --
-   * no real email required, so this works even for the auto-generated @acojidofarm.local
-   * placeholder accounts. The worker is forced through the existing "set a new password" screen
-   * the next time they log in with it. The temp password is posted into the in-app message thread
-   * and revealed to the admin in the TempPasswordModal (copy / one-tap SMS).
+   * Approving asks the backend (which holds privileged Firebase Admin credentials) to set a brand-new
+   * temporary password directly on the worker's account -- no real email required, so this works even for the
+   * auto-generated @acojidofarm.local placeholder accounts. The worker is forced through the existing "set a new
+   * password" screen the next time they log in with it.
+   *
+   * Order matters: the password is set FIRST, and the request is only marked approved afterwards. If the backend
+   * can't do it, nothing changes and the request stays pending, so the admin can simply press Approve again
+   * (it used to be marked "approved" before the backend was asked, which left a failed request stuck).
+   * The temp password is revealed to the admin (copy / one-tap SMS) before anything else is saved so it is never lost.
    */
   const handleApproveResetRequest = async (id: string, email: string, displayName: string) => {
-    try {
-      await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, id), {
+    const markApproved = () =>
+      updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, id), {
         status: 'approved',
         approvedAt: serverTimestamp(),
       });
-    } catch (err) {
-      console.error('Failed to approve password reset request:', err);
+
+    if (!email) {
+      try {
+        await markApproved();
+      } catch (err) {
+        console.error('Failed to approve password reset request:', err);
+      }
       return;
     }
 
-    if (!email) return;
-
     setResettingId(id);
     try {
-      const result = await adminResetWorkerPassword(email);
-      const tempPassword = result.temp_password;
+      let tempPassword: string;
+      try {
+        tempPassword = (await adminResetWorkerPassword(email)).temp_password;
+      } catch (err) {
+        console.error('Failed to set a new temporary password via the backend:', err);
+        window.alert(
+          `The worker's password was NOT changed, and the request is still waiting.\n\n${
+            err instanceof Error ? err.message : String(err)
+          }\n\nFix the problem above (the backend must be running -- see backend/app.py), then press the button again.`
+        );
+        return;
+      }
+
       const worker = (state.workers || []).find((w) => w.accountEmail === email);
       const messageBody = `Your password reset was approved. Your new temporary password is: ${tempPassword}\nLog in with it in the app -- you'll be asked to set your own new password right after.`;
 
-      await updateState((prev) => ({
-        ...prev,
-        smsMessages: [
-          ...(prev.smsMessages || []),
-          {
-            messageId: `pwreset-temppass-${id}-${Date.now()}`,
-            senderName: 'admin',
-            recipientName: displayName || 'Worker',
-            messageBody,
-            timestamp: Date.now(),
-            status: 'Sent',
-            viaGateway: worker?.phoneNumber ? 'Native SMS' : 'In-app only',
-          } as SmsMessageRecord,
-        ],
-      }));
-
+      // Show it right away so it can't be lost, then record what happened.
       setPasswordReveal({
         displayName: displayName || 'Worker',
         email,
@@ -122,13 +124,31 @@ export function WebsiteSettingsPanel({
         phoneNumber: worker?.phoneNumber,
         smsBody: messageBody,
       });
-    } catch (err) {
-      console.error('Failed to set a new temporary password via the backend:', err);
-      window.alert(
-        `The request was approved, but a new password could not be set automatically.\n\n${
-          err instanceof Error ? err.message : String(err)
-        }\n\nMake sure the backend server is running (see backend/app.py) and has a Firebase service account key configured.`
-      );
+
+      try {
+        await markApproved();
+      } catch (err) {
+        console.error('Password was set, but the request could not be marked approved:', err);
+      }
+      try {
+        await updateState((prev) => ({
+          ...prev,
+          smsMessages: [
+            ...(prev.smsMessages || []),
+            {
+              messageId: `pwreset-temppass-${id}-${Date.now()}`,
+              senderName: 'admin',
+              recipientName: displayName || 'Worker',
+              messageBody,
+              timestamp: Date.now(),
+              status: 'Sent',
+              viaGateway: worker?.phoneNumber ? 'Native SMS' : 'In-app only',
+            } as SmsMessageRecord,
+          ],
+        }));
+      } catch (err) {
+        console.error('Password was set, but the in-app message could not be saved:', err);
+      }
     } finally {
       setResettingId(null);
     }
@@ -277,14 +297,27 @@ export function WebsiteSettingsPanel({
                       </Button>
                     )}
                     {request.status === 'approved' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-xs h-7 px-2.5 border-emerald-600/50 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
-                        onClick={() => void handleResolveResetRequest(request.id)}
-                      >
-                        Mark Resolved
-                      </Button>
+                      <>
+                        {/* For a request that was marked approved but never got a password (e.g. the backend was down). */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={resettingId === request.id}
+                          className="text-xs h-7 px-2.5 border-purple-600/50 text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950 disabled:opacity-60"
+                          onClick={() => void handleApproveResetRequest(request.id, request.email, request.displayName)}
+                        >
+                          <KeyRound className="w-3.5 h-3.5 mr-1" />
+                          {resettingId === request.id ? 'Setting password…' : 'Set password again'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-7 px-2.5 border-emerald-600/50 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                          onClick={() => void handleResolveResetRequest(request.id)}
+                        >
+                          Mark Resolved
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

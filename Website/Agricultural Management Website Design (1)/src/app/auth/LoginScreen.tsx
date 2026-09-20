@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Coffee, ShieldCheck, Lock, ArrowRight } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { authErrorMessage } from './authConfig';
 import { BuyerAuthDialog } from './BuyerAuthDialog';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -119,9 +120,9 @@ export function LoginScreen() {
     setSubmitting(true);
     setLocalError(null);
     try {
-      await signIn(username, password);
-    } catch {
-      setLocalError(error ?? 'Sign-in failed. Check administrator username and password.');
+      await signIn(username, password, 'staff');
+    } catch (err) {
+      setLocalError(authErrorMessage(err, 'Sign-in failed. Check administrator username and password.'));
     } finally {
       setSubmitting(false);
     }
@@ -134,22 +135,10 @@ export function LoginScreen() {
     try {
       await resetPassword(resetEmail);
       setResetMessage("If that account exists, we've sent a password reset link to it. Check your inbox (and spam folder).");
-    } catch {
-      setResetError(error ?? 'Could not send the reset email. Double-check the address and try again.');
+    } catch (err) {
+      setResetError(authErrorMessage(err, 'Could not send the reset email. Double-check the address and try again.'));
     } finally {
       setResetSubmitting(false);
-    }
-  };
-
-  const handleQuickAdminSignIn = async () => {
-    setSubmitting(true);
-    setLocalError(null);
-    try {
-      await signIn('farmacojido@gmail.com', 'Farm012345');
-    } catch {
-      setLocalError('Admin sign-in failed. Please enter credentials manually.');
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -198,10 +187,15 @@ export function LoginScreen() {
             </Label>
             <Input
               id="admin-username"
+              name="admin-portal-username"
+              // No autofill on the administrator form: the buyer and admin sign-ins share one web address,
+              // so a saved BUYER login was being dropped in here. (data-* opt out common password managers.)
+              data-lpignore="true"
+              data-1p-ignore="true"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="e.g. admin or farmacojido@gmail.com"
-              autoComplete="username"
+              autoComplete="off"
               className="bg-background border-border/80 h-11 rounded-xl text-xs"
             />
           </div>
@@ -226,11 +220,14 @@ export function LoginScreen() {
             </div>
             <Input
               id="admin-password"
+              name="admin-portal-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              autoComplete="current-password"
+              autoComplete="new-password"
               className="bg-background border-border/80 h-11 rounded-xl text-xs"
             />
           </div>
@@ -246,7 +243,7 @@ export function LoginScreen() {
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
                   placeholder="you@email.com"
-                  autoComplete="email"
+                  autoComplete="off"
                   className="bg-background border-border/80 h-9 rounded-xl text-xs flex-1"
                 />
                 <Button
@@ -284,13 +281,7 @@ export function LoginScreen() {
 
         {/* Admin Sign-in Quick Helper & Firebase Info */}
         <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-          <button
-            type="button"
-            onClick={handleQuickAdminSignIn}
-            className="hover:text-amber-500 transition-colors underline text-[11px] cursor-pointer"
-          >
-            Auto-fill Admin Sign-in
-          </button>
+          <span />
           <span className="text-[11px] font-mono text-muted-foreground/70">
             Admin Portal
           </span>

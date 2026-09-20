@@ -1,3 +1,7 @@
+import { RepairAssignControl } from './RepairAssignControl';
+import { equipmentRepairJob, repairJobId, type RepairJobRecord } from '../lib/repairJobs';
+import { findExistingEquipmentIndex, findExistingSupply } from '../lib/inventoryMatch';
+import { useRepairJobs } from '../store/useRepairJobs';
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { SelectWithOther } from './ui/SelectWithOther';
@@ -170,6 +174,7 @@ function parseNonNegativeAmount(raw: string): number | null {
 
 export function EquipmentManagement() {
   const { state, loading, updateState, saving } = useFarmData();
+  const repairJobs = useRepairJobs();
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EquipmentRecord | null>(null);
   const [fixingReportIndex, setFixingReportIndex] = useState<number | null>(null);
@@ -339,11 +344,8 @@ export function EquipmentManagement() {
     // merges into the existing record) instead of creating a duplicate row -- e.g. adding
     // "Organic Nitrogen - 40kg bag" a second time becomes one record at the combined stock,
     // never two separate rows. A different unit (25kg vs 40kg) stays a separate item.
-    const existingMatch = state.consumableSupplies.find(
-      (c) =>
-        c.name.trim().toLowerCase() === name.toLowerCase() &&
-        c.unit.trim().toLowerCase() === record.unit.toLowerCase(),
-    );
+    // The unit is only compared when the admin typed one: leaving it blank means "the supply I already have".
+    const existingMatch = findExistingSupply(state.consumableSupplies, name, supplyForm.unit);
     // Buying stock cost real money -- log it as an expense too so it hits the Profit & Sales
     // expense breakdown and net profit, not just the inventory's own valuation.
     // Category string must match EXPENSE_CATEGORY_OPTIONS in ProfitManagement.tsx.
@@ -360,11 +362,8 @@ export function EquipmentManagement() {
 
     const ok = await runSave('Consumable supply', () =>
       updateState((prev) => {
-        const matchIndex = prev.consumableSupplies.findIndex(
-          (c) =>
-            c.name.trim().toLowerCase() === name.toLowerCase() &&
-            c.unit.trim().toLowerCase() === record.unit.toLowerCase(),
-        );
+        const found = findExistingSupply(prev.consumableSupplies, name, supplyForm.unit);
+        const matchIndex = found ? prev.consumableSupplies.indexOf(found) : -1;
         let consumableSupplies: ConsumableSupplyRecord[];
         if (matchIndex >= 0) {
           consumableSupplies = prev.consumableSupplies.map((c, i) => {
@@ -587,19 +586,27 @@ export function EquipmentManagement() {
     setRepairCost('');
   };
 
+  // When a Maintenance worker already repaired it, the parts come out of the supplies and their time is payroll,
+  // so no extra repair cost is required here (the admin may still add one, e.g. a part bought outside).
+  const fixedByMaintenance = (report: { reportId?: string } | undefined) =>
+    Boolean(report?.reportId) && repairJobs[repairJobId('equipment', report!.reportId!)]?.status === 'fixed';
+
+  const fixingByMaintenance = fixingReportIndex !== null && fixedByMaintenance(state.equipmentReports[fixingReportIndex]);
+
   const markReportFixed = async () => {
     if (fixingReportIndex === null) return;
-    const parsedRepairCost = parsePositiveAmount(repairCost);
+    const index = fixingReportIndex;
+    const report = state.equipmentReports[index];
+    if (!report) return;
+    const costOptional = fixedByMaintenance(report);
+    const parsedRepairCost = repairCost.trim() === '' && costOptional ? 0 : parsePositiveAmount(repairCost);
     if (parsedRepairCost === null) {
       showSaveError('Enter a valid repair cost greater than zero.');
       return;
     }
-    const index = fixingReportIndex;
-    const report = state.equipmentReports[index];
-    if (!report) return;
     const targetId = report.reportId;
     const today = new Date().toISOString().slice(0, 10);
-    const normalizedCost = `₱${Math.round(parsedRepairCost).toLocaleString()}`;
+    const normalizedCost = parsedRepairCost > 0 ? `₱${Math.round(parsedRepairCost).toLocaleString()}` : 'No extra cost';
     const ok = await runSave('Equipment fixed', () =>
       updateState((prev) => {
         const equipmentReports = prev.equipmentReports.map((r, i) =>
@@ -633,16 +640,19 @@ export function EquipmentManagement() {
         ];
         // Repair costs are real farm spending -- record them as an expense so Profit & Sales
         // reflects equipment upkeep instead of only tracking it in the maintenance log text.
-        const expenses = [
-          ...prev.expenses,
-          {
-            category: 'Equipment & maintenance',
-            description: `Repair: ${report.equipmentName}`,
-            amount: Math.round(parsedRepairCost),
-            date: today,
-            linkedEquipmentName: report.equipmentName,
-          },
-        ];
+        const expenses =
+          parsedRepairCost > 0
+            ? [
+                ...prev.expenses,
+                {
+                  category: 'Equipment & maintenance',
+                  description: `Repair: ${report.equipmentName}`,
+                  amount: Math.round(parsedRepairCost),
+                  date: today,
+                  linkedEquipmentName: report.equipmentName,
+                },
+              ]
+            : prev.expenses;
         return { ...prev, equipmentReports, equipment, maintenanceLogs, expenses };
       }),
     );
@@ -667,6 +677,10 @@ export function EquipmentManagement() {
     }
     const isNew = editingIndex === -1;
     const existing = !isNew && editingIndex !== null ? state.equipment[editingIndex] : null;
+    if (!isNew && editingIndex !== null && findExistingEquipmentIndex(state.equipment, editForm.name, editingIndex) >= 0) {
+      showSaveError(`"${editForm.name.trim()}" is already in the fleet. Use Add Equipment to add more of it instead of renaming another one to the same name.`);
+      return;
+    }
     const enteredQuantity = isNew ? Math.max(1, Math.round(editForm.quantity ?? 1)) : 1;
     const record: EquipmentRecord = {
       name: editForm.name.trim(),
@@ -684,14 +698,10 @@ export function EquipmentManagement() {
       updateState((prev) => {
         let equipment: EquipmentRecord[];
         if (isNew) {
-          // Stack onto an existing item with the same name + category instead of creating a
+          // Stack onto an existing item with the same name instead of creating a
           // duplicate row -- e.g. adding "Coffee Grinder" a second time becomes x2 on the
           // existing entry rather than two separate "Coffee Grinder" rows.
-          const matchIndex = prev.equipment.findIndex(
-            (e) =>
-              e.name.trim().toLowerCase() === record.name.toLowerCase() &&
-              e.category.trim().toLowerCase() === record.category.toLowerCase(),
-          );
+          const matchIndex = findExistingEquipmentIndex(prev.equipment, record.name);
           if (matchIndex >= 0) {
             equipment = prev.equipment.map((e, i) => {
               if (i !== matchIndex) return e;
@@ -904,14 +914,16 @@ export function EquipmentManagement() {
       <Dialog open={fixingReportIndex !== null} onOpenChange={(o) => { if (!o) closeFixReportDialog(); }}>
         <DialogContent className="sm:max-w-md bg-card text-card-foreground border-border/80">
           <DialogHeader>
-            <DialogTitle>Record repair cost</DialogTitle>
+            <DialogTitle>{fixingByMaintenance ? 'Mark equipment fixed' : 'Record repair cost'}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 py-2">
             <p className="text-sm text-muted-foreground">
-              Enter the amount spent to repair this equipment before marking it fixed.
+              {fixingByMaintenance
+                ? 'Maintenance already repaired this. The parts they used are deducted from the supplies on the report card, so a cost is optional — fill it in only if you paid for something else.'
+                : 'Enter the amount spent to repair this equipment before marking it fixed.'}
             </p>
             <div className="space-y-2">
-              <Label>Repair cost (₱)</Label>
+              <Label>{fixingByMaintenance ? 'Extra repair cost (₱, optional)' : 'Repair cost (₱)'}</Label>
               <Input
                 type="text"
                 inputMode="numeric"
@@ -1170,6 +1182,7 @@ export function EquipmentManagement() {
                   onMarkReviewed={markReportReviewed}
                   onMarkFixed={openFixReportDialog}
                   workers={state.workers}
+                  repairJob={repairJobs[repairJobId('equipment', entry.report.reportId)]}
                 />
               ) : (
                 <MaintenanceLogReportCard
@@ -1797,6 +1810,7 @@ function WorkerEquipmentReportCard({
   onMarkReviewed,
   onMarkFixed,
   workers,
+  repairJob,
 }: {
   report: EquipmentConditionReport;
   index: number;
@@ -1804,6 +1818,7 @@ function WorkerEquipmentReportCard({
   onMarkReviewed: (index: number, applyBrokenStatus: boolean) => Promise<void>;
   onMarkFixed: (index: number) => void | Promise<void>;
   workers?: WorkerRecord[];
+  repairJob?: RepairJobRecord;
 }) {
   const isFixed = isEquipmentFixedReport(report);
   const isResolved = Boolean(report.reviewed || report.fixedAt);
@@ -1843,8 +1858,16 @@ function WorkerEquipmentReportCard({
       {report.notes ? (
         <p className="text-sm text-muted-foreground mb-3">{report.notes}</p>
       ) : null}
+      <RepairAssignControl
+        kind="equipment"
+        reportId={report.reportId}
+        workers={workers ?? []}
+        job={repairJob}
+        closed={isResolved || isFixed}
+        buildJob={(to) => equipmentRepairJob(report, to)}
+      />
       {report.fixedAt ? (
-        <p className="text-xs text-[#2d5016] font-medium mb-2">
+        <p className="text-xs text-[#2d5016] font-medium mb-2 mt-2">
           Fixed on {report.fixedAt}
           {report.fixedBy ? ` · ${report.fixedBy}` : ''}
         </p>

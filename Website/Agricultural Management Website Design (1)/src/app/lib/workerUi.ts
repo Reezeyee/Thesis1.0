@@ -1,5 +1,7 @@
 import type { WorkerRecord } from '../types/appState';
 import { BATAAN_PROVINCE } from '../data/bataanAddressCatalog';
+import { sanitizePhoneInput } from './phone';
+import { isValidPersonName } from './personName';
 
 export type WorkerUi = {
   index: number;
@@ -61,52 +63,16 @@ export type EmergencyContactMeta = {
 export const defaultAvatarUrl = (name: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Worker')}&background=2d5016&color=fff&rounded=true`;
 
-/** Philippine mobile numbers: strictly 11 digits starting with 09. */
-export function sanitizePhoneInput(raw: string): string {
-  let cleaned = raw.replace(/\D/g, '');
-  if (cleaned.startsWith('639')) {
-    cleaned = '0' + cleaned.slice(2);
-  }
-  return cleaned.slice(0, 11);
-}
+export { sanitizePhoneInput, isValidPhone11 } from './phone';
 
-export function isValidPhone11(phone: string): boolean {
-  const value = sanitizePhoneInput(phone);
-  return /^09\d{9}$/.test(value) && value.length === 11;
-}
-
-/** Emergency contact numbers can be local or international. */
-export function sanitizeEmergencyPhoneInput(raw: string): string {
-  return raw.replace(/[^\d\s\-\+\(\)]/g, '').slice(0, 25);
-}
-
-export function isValidEmergencyPhone(phone: string): boolean {
-  const value = sanitizeEmergencyPhoneInput(phone).trim();
-  if (!value) return true;
-  const digits = value.replace(/\D/g, '');
-  return digits.length >= 7 && digits.length <= 15;
-}
-
-/**
- * Accepted characters in names:
- * Letters (A-Z, a-z, including ñ/Ñ and accented characters), spaces, hyphens (-), apostrophes ('), and periods (.).
- */
-export const ACCEPTED_NAME_CHARS_DESCRIPTION =
-  "Letters (A–Z, a–z), spaces, hyphens (-), apostrophes ('), and periods (.)";
+export { ACCEPTED_NAME_CHARS_DESCRIPTION } from './personName';
 
 export function isValidNamePart(value: string, allowPeriod = false): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  const regex = allowPeriod
-    ? /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s'\-\.]+$/
-    : /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s'\-]+$/;
-  return regex.test(trimmed);
+  return isValidPersonName(value, allowPeriod);
 }
 
 export function isValidName(name: string): boolean {
-  const trimmed = name.trim();
-  if (!trimmed) return false;
-  return /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s'\-\.]+$/.test(trimmed);
+  return isValidPersonName(name, true);
 }
 
 /**

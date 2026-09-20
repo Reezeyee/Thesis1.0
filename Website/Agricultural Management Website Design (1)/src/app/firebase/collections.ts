@@ -39,6 +39,12 @@ export const COLLECTIONS = {
    * a Buyer only has permission to create/read their own order docs (see firestore.rules), never
    * to write the shared farm state the blob holds. */
   BUYER_ORDERS: 'buyer_orders',
+  /** One doc per pending buyer order (same id) holding its items, so ordered stock shows as reserved right away. */
+  STOCK_HOLDS: 'stock_holds',
+  /** The rider's proof-of-delivery photo, one doc per order (same id), readable by Admin, that order's buyer and its rider. */
+  DELIVERY_PROOFS: 'delivery_proofs',
+  /** Admin assigns a broken-equipment / sprinkler-damage report to one Maintenance worker as a job; the worker updates its progress. */
+  REPAIR_JOBS: 'repair_jobs',
   /** Direct Admin <-> Owner message thread. Its own collection for the same reason as
    * BUYER_ORDERS: the read-only Owner role cannot write the app_state/farm blob, so a message
    * Owner sends needs a collection where both Admin and Owner may create documents. */

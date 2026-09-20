@@ -413,6 +413,17 @@ object AuthManager {
         )
     }
 
+    /**
+     * Best-effort bookkeeping after a successful sign-in: last sign-in time and a history entry.
+     *
+     * It must never block a login, and it deliberately does NOT write `role` or `displayName`:
+     * - firestore.rules forbids an account changing its own `role` (only the admin assigns it), so
+     *   writing the role guessed from the email would be denied for Owner/Buyer accounts -- and used
+     *   to silently demote them to Farm Staff before the rules existed.
+     * - `displayName` is the real name the admin typed for the worker (e.g. "Rico Rider"); overwriting it
+     *   with a name derived from the login email ("Rico.rider.w123") corrupted it on every sign-in.
+     * Both are written once, when the profile is created (see [tryBootstrapRegister]).
+     */
     private suspend fun afterSuccessfulAuthWriteProfileAndHistory(
         uid: String,
         email: String,
@@ -421,24 +432,26 @@ object AuthManager {
     ) {
         val db = FirebaseFirestore.getInstance()
         val userRef = db.collection(FirebaseCollections.USERS).document(uid)
-        userRef.set(
-            mapOf(
-                "email" to email,
-                "displayName" to display,
-                "role" to role.name,
-                "lastSignInAt" to FieldValue.serverTimestamp()
-            ),
-            SetOptions.merge()
-        ).await()
-        userRef.collection(FirebaseCollections.LOGIN_HISTORY).add(
-            mapOf(
-                "email" to email,
-                "displayName" to display,
-                "role" to role.name,
-                "at" to FieldValue.serverTimestamp(),
-                "source" to "android"
-            )
-        ).await()
+        runCatching {
+            userRef.set(
+                mapOf(
+                    "email" to email,
+                    "lastSignInAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).await()
+        }
+        runCatching {
+            userRef.collection(FirebaseCollections.LOGIN_HISTORY).add(
+                mapOf(
+                    "email" to email,
+                    "displayName" to display,
+                    "role" to role.name,
+                    "at" to FieldValue.serverTimestamp(),
+                    "source" to "android"
+                )
+            ).await()
+        }
     }
 
     fun saveSession(context: Context, session: AuthSession) {

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -40,7 +42,9 @@ import java.util.Locale
 
 data class RecordField(
     val label: String,
-    val options: List<String> = emptyList()
+    val options: List<String> = emptyList(),
+    /** PHONE / PERSON_NAME fields are filtered as typed and validated before Save (see InputRules.kt). */
+    val kind: FieldKind = FieldKind.TEXT
 )
 
 /**
@@ -52,7 +56,7 @@ data class RecordField(
  */
 private fun fieldsContentSignature(fields: List<RecordField>): String =
     fields.joinToString("\u0001") { f ->
-        f.label + "\u0002" + f.options.joinToString("\u0003")
+        f.label + "\u0002" + f.options.joinToString("\u0003") + "\u0004" + f.kind.name
     }
 
 private fun initialCellForField(field: RecordField, initial: String): String =
@@ -164,10 +168,31 @@ fun SimpleRecordDialog(
             Column(modifier = Modifier.fillMaxWidth()) {
                 fields.forEachIndexed { index, field ->
                     if (field.options.isEmpty() && !isDateField(field)) {
+                        val invalid = field.kind != FieldKind.TEXT &&
+                            values[index].isNotBlank() &&
+                            !isFieldValueValid(field.kind, values[index])
                         OutlinedTextField(
                             value = values[index],
-                            onValueChange = { values[index] = it },
+                            onValueChange = {
+                                values[index] = when (field.kind) {
+                                    FieldKind.PHONE -> sanitizePhoneInput(it)
+                                    FieldKind.PERSON_NAME -> sanitizeNameInput(it)
+                                    FieldKind.TEXT -> it
+                                }
+                            },
                             label = { Text(field.label) },
+                            isError = invalid,
+                            supportingText = when {
+                                invalid && field.kind == FieldKind.PHONE -> ({ Text(PHONE_ERROR_MESSAGE) })
+                                invalid && field.kind == FieldKind.PERSON_NAME -> ({ Text(NAME_ERROR_MESSAGE) })
+                                field.kind == FieldKind.PHONE -> ({ Text("Numbers only, 11 digits starting with 09.") })
+                                else -> null
+                            },
+                            keyboardOptions = if (field.kind == FieldKind.PHONE) {
+                                KeyboardOptions(keyboardType = KeyboardType.Number)
+                            } else {
+                                KeyboardOptions.Default
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 8.dp),
@@ -282,10 +307,11 @@ fun SimpleRecordDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    onSave(values.toList())
+                    onSave(values.mapIndexed { i, v -> normalizeFieldValue(fields[i].kind, v) })
                     onDismiss()
                 },
-                enabled = values.all { it.isNotBlank() }
+                enabled = values.all { it.isNotBlank() } &&
+                    fields.indices.all { isFieldValueValid(fields[it].kind, values[it]) }
             ) {
                 Text("Save", color = Color(0xFF84B626), fontWeight = FontWeight.SemiBold)
             }

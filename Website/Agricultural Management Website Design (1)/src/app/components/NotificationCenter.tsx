@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Bell, CheckCircle2, ChevronRight, KeyRound, Lock, RefreshCw, Wrench, X } from 'lucide-react';
-import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, type Timestamp } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, type Timestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
@@ -8,10 +8,12 @@ import { computeLowStockThreshold, type SmsMessageRecord, type WorkerRecord } fr
 import { adminResetWorkerPassword } from '../lib/apiClient';
 import { TempPasswordModal, type TempPasswordReveal } from './TempPasswordModal';
 import type { AppModuleId } from '../App';
+import { partsSummary } from '../lib/repairParts';
+import { repairAwaitsAdmin, type RepairJobRecord, type RepairKind } from '../lib/repairJobs';
 
 export interface PendingReportItem {
   id: string;
-  type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest' | 'harvest_log' | 'password_reset';
+  type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest' | 'harvest_log' | 'password_reset' | 'delivery' | 'repair_done';
   title: string;
   subtitle: string;
   details: string;
@@ -21,6 +23,8 @@ export interface PendingReportItem {
   rawReportId: string;
   /** password_reset only: raw Firestore status (`pending` | `approved` | `resolved` | ...). */
   status?: string;
+  /** repair_done only: which kind of report was repaired (decides which card to jump to). */
+  repairKind?: RepairKind;
   /** password_reset only: the worker's account email, used to set a new temp password via the backend on approval. */
   email?: string;
 }
@@ -87,6 +91,57 @@ interface NotificationCenterProps {
 export function usePendingReports() {
   const { state } = useFarmData();
   const [passwordResetItems, setPasswordResetItems] = useState<PendingReportItem[]>([]);
+  const [deliveredItems, setDeliveredItems] = useState<PendingReportItem[]>([]);
+  const [fixedJobs, setFixedJobs] = useState<{ id: string; job: RepairJobRecord }[]>([]);
+
+  // Repair jobs a Maintenance worker has marked fixed. Whether the admin still has to act on one depends on the
+  // underlying report (see repairAwaitsAdmin), so it disappears by itself once the admin closes the report.
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, COLLECTIONS.REPAIR_JOBS), where('status', '==', 'fixed')),
+      (snapshot) => setFixedJobs(snapshot.docs.map((d) => ({ id: d.id, job: d.data() as RepairJobRecord }))),
+      (err) => {
+        console.warn('Repair jobs listener error:', err);
+        setFixedJobs([]);
+      },
+    );
+  }, []);
+
+  // Orders a rider has marked delivered that the admin hasn't closed yet (status still 'pending'): the admin is
+  // notified right away, sees the proof photo on the order, and marks it fulfilled (which also updates stock).
+  // Once fulfilled or cancelled the order drops out of this list by itself.
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, COLLECTIONS.BUYER_ORDERS), where('deliveryStatus', '==', 'delivered'), where('status', '==', 'pending')),
+      (snapshot) => {
+        const items: PendingReportItem[] = snapshot.docs
+          .map((d): PendingReportItem => {
+            const data = d.data();
+            const when = new Date(String(data.deliveredAt ?? data.deliveryUpdatedAt ?? ''));
+            const valid = !Number.isNaN(when.getTime());
+            const buyer = String(data.buyerName || 'Buyer');
+            const rider = String(data.riderName || 'The rider');
+            return {
+              id: `delivered-${d.id}`,
+              type: 'delivery' as const,
+              title: `Delivered: ${buyer}`,
+              subtitle: `${rider} marked the order delivered${data.hasDeliveryProof ? ' (photo attached)' : ''}`,
+              details: `${rider} delivered ${buyer}'s order (₱${Number(data.totalAmount ?? 0).toLocaleString()}). Check the delivery photo, then mark the order fulfilled to update stock.`,
+              reportedBy: rider,
+              reportedAt: valid ? when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }) : 'Just now',
+              timestamp: valid ? when.getTime() : Date.now(),
+              rawReportId: d.id,
+            };
+          })
+          .sort((a, b) => b.timestamp - a.timestamp);
+        setDeliveredItems(items);
+      },
+      (err) => {
+        console.warn('Delivered-orders listener error:', err);
+        setDeliveredItems([]);
+      },
+    );
+  }, []);
 
   // Real-time Firestore subscription to Password Reset Requests from worker mobile scanners
   useEffect(() => {
@@ -135,7 +190,29 @@ export function usePendingReports() {
   }, []);
 
   const pendingList = useMemo(() => {
-    const list: PendingReportItem[] = [...passwordResetItems];
+    const list: PendingReportItem[] = [...passwordResetItems, ...deliveredItems];
+
+    // 0. Repairs finished by Maintenance, waiting for the admin to confirm
+    fixedJobs.forEach(({ id, job }) => {
+      if (!repairAwaitsAdmin(job, { equipment: state.equipmentReports ?? [], sprinkler: state.irrigationDamageReports ?? [] })) return;
+      const when = new Date(String(job.fixedAt ?? ''));
+      const valid = !Number.isNaN(when.getTime());
+      list.push({
+        id: `repair-done-${id}`,
+        type: 'repair_done',
+        repairKind: job.kind,
+        title: `Repair done: ${job.title}`,
+        subtitle: `${job.assignedToName} marked it fixed`,
+        details:
+          (job.fixNote ? `${job.assignedToName}: "${job.fixNote}".` : `${job.assignedToName} says it is fixed.`) +
+          (job.partsUsed?.length ? ` Parts used: ${partsSummary(job.partsUsed)}.` : '') +
+          ' Please check it and close the report.',
+        reportedBy: job.assignedToName,
+        reportedAt: valid ? when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }) : 'Just now',
+        timestamp: valid ? when.getTime() : Date.now(),
+        rawReportId: job.reportId,
+      });
+    });
 
     // 1. Irrigation / Sprinkler damage reports
     (state.irrigationDamageReports ?? []).forEach((r, idx) => {
@@ -276,6 +353,8 @@ export function usePendingReports() {
     return list.sort((a, b) => b.timestamp - a.timestamp);
   }, [
     passwordResetItems,
+    deliveredItems,
+    fixedJobs,
     state.irrigationDamageReports,
     state.equipmentReports,
     state.consumableReports,
@@ -305,18 +384,23 @@ async function approvePasswordResetRequest(
 ) {
   if (item.type !== 'password_reset' || !item.rawReportId) return;
 
-  try {
-    await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, item.rawReportId), {
+  const markApproved = () =>
+    updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, item.rawReportId), {
       status: 'approved',
       approvedAt: serverTimestamp(),
     });
-  } catch (err) {
-    console.error('Failed to approve password reset request:', err);
+
+  if (!item.email) {
+    try {
+      await markApproved();
+    } catch (err) {
+      console.error('Failed to approve password reset request:', err);
+    }
     return;
   }
 
-  if (!item.email) return;
-
+  // The password is set FIRST and the request is only marked approved afterwards: if the backend can't do it,
+  // nothing changes and the request stays pending, so it can simply be approved again.
   let tempPassword: string;
   try {
     const result = await adminResetWorkerPassword(item.email);
@@ -324,9 +408,9 @@ async function approvePasswordResetRequest(
   } catch (err) {
     console.error('Failed to set a new temporary password via the backend:', err);
     window.alert(
-      `The request was approved, but a new password could not be set automatically.\n\n${
+      `The worker's password was NOT changed, and the request is still waiting.\n\n${
         err instanceof Error ? err.message : String(err)
-      }\n\nMake sure the backend server is running (see backend/app.py) and has a Firebase service account key configured.`
+      }\n\nFix the problem above (the backend must be running -- see backend/app.py), then press the button again.`
     );
     return;
   }
@@ -334,22 +418,7 @@ async function approvePasswordResetRequest(
   const worker = workers.find((w) => w.accountEmail === item.email);
   const messageBody = `Your password reset was approved. Your new temporary password is: ${tempPassword}\nLog in with it in the app -- you'll be asked to set your own new password right after.`;
 
-  await updateState((prev) => ({
-    ...prev,
-    smsMessages: [
-      ...(prev.smsMessages || []),
-      {
-        messageId: `pwreset-temppass-${item.rawReportId}-${Date.now()}`,
-        senderName: 'admin',
-        recipientName: item.reportedBy || 'Worker',
-        messageBody,
-        timestamp: Date.now(),
-        status: 'Sent',
-        viaGateway: worker?.phoneNumber ? 'Native SMS' : 'In-app only',
-      } as SmsMessageRecord,
-    ],
-  }));
-
+  // Show the password right away so it can never be lost, then record what happened.
   onRevealed({
     displayName: item.reportedBy || 'Worker',
     email: item.email,
@@ -357,6 +426,31 @@ async function approvePasswordResetRequest(
     phoneNumber: worker?.phoneNumber,
     smsBody: messageBody,
   });
+
+  try {
+    await markApproved();
+  } catch (err) {
+    console.error('Password was set, but the request could not be marked approved:', err);
+  }
+  try {
+    await updateState((prev) => ({
+      ...prev,
+      smsMessages: [
+        ...(prev.smsMessages || []),
+        {
+          messageId: `pwreset-temppass-${item.rawReportId}-${Date.now()}`,
+          senderName: 'admin',
+          recipientName: item.reportedBy || 'Worker',
+          messageBody,
+          timestamp: Date.now(),
+          status: 'Sent',
+          viaGateway: worker?.phoneNumber ? 'Native SMS' : 'In-app only',
+        } as SmsMessageRecord,
+      ],
+    }));
+  } catch (err) {
+    console.error('Password was set, but the in-app message could not be saved:', err);
+  }
 }
 
 export function GlobalNotificationBanner({
@@ -416,6 +510,12 @@ export function GlobalNotificationBanner({
     } else if (item.type === 'password_reset') {
       targetModule = 'settings';
       targetElementId = 'password-reset-requests-section';
+    } else if (item.type === 'delivery') {
+      targetModule = 'buyerOrders';
+      targetElementId = `order-${item.rawReportId}`;
+    } else if (item.type === 'repair_done') {
+      targetModule = item.repairKind === 'equipment' ? 'equipment' : 'farm';
+      targetElementId = item.repairKind === 'equipment' ? `equipment-${item.rawReportId}` : `report-${item.rawReportId}`;
     } else if (item.type === 'irrigation') {
       targetModule = 'farm';
       targetElementId = item.rawReportId ? `report-${item.rawReportId}` : 'sprinkler-damage-reports-section';
@@ -429,6 +529,8 @@ export function GlobalNotificationBanner({
 
   const handleResolveReport = async (item: PendingReportItem) => {
     dismissNotification(item.id);
+    // A delivered-order notice has nothing to resolve in the farm data: the admin closes the order itself.
+    if (item.type === 'delivery' || item.type === 'repair_done') return;
     if (item.type === 'password_reset' && item.rawReportId) {
       try {
         await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, item.rawReportId), {
@@ -487,13 +589,17 @@ export function GlobalNotificationBanner({
               onClick={() => handleNavigateToReport(latestPendingReport)}
             >
               <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#d4183d]/15 text-[#d4183d] shadow-sm group-hover:scale-105 transition-transform">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-[#d4183d]/30 animate-ping" />
-                <AlertTriangle className="h-5 w-5 relative z-10 text-[#d4183d]" />
+                <span className={`absolute inline-flex h-full w-full rounded-full animate-ping ${(latestPendingReport.type === 'delivery' || latestPendingReport.type === 'repair_done') ? 'bg-[#0f766e]/30' : 'bg-[#d4183d]/30'}`} />
+                {(latestPendingReport.type === 'delivery' || latestPendingReport.type === 'repair_done') ? (
+                  <CheckCircle2 className="h-5 w-5 relative z-10 text-[#0f766e]" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5 relative z-10 text-[#d4183d]" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap gap-y-1">
                   <h4 className="text-xs font-black text-foreground uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
-                    Worker Problem Reported!
+                    {latestPendingReport.type === 'delivery' ? 'Order Delivered!' : latestPendingReport.type === 'repair_done' ? 'Repair Done!' : 'Worker Problem Reported!'}
                   </h4>
                   <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#d4183d] text-white uppercase animate-pulse">
                     NEW
@@ -544,6 +650,18 @@ export function GlobalNotificationBanner({
             >
               Mark as Read
             </button>
+            {latestPendingReport.type === 'password_reset' && latestPendingReport.status === 'approved' ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() =>
+                  void approvePasswordResetRequest(latestPendingReport, state.workers || [], updateState, setPasswordReveal)
+                }
+                className="text-xs font-bold px-3 py-1.5 rounded-lg border border-[#6b21a8]/50 text-[#6b21a8] hover:bg-[#6b21a8]/10 transition-all active:scale-95 disabled:opacity-60 inline-flex items-center gap-1.5"
+              >
+                <KeyRound className="w-3.5 h-3.5" /> Set password again
+              </button>
+            ) : null}
             {latestPendingReport.type === 'password_reset' && latestPendingReport.status === 'pending' ? (
               <button
                 type="button"
@@ -628,6 +746,12 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
     } else if (item.type === 'password_reset') {
       targetModule = 'settings';
       targetElementId = 'password-reset-requests-section';
+    } else if (item.type === 'delivery') {
+      targetModule = 'buyerOrders';
+      targetElementId = `order-${item.rawReportId}`;
+    } else if (item.type === 'repair_done') {
+      targetModule = item.repairKind === 'equipment' ? 'equipment' : 'farm';
+      targetElementId = item.repairKind === 'equipment' ? `equipment-${item.rawReportId}` : `report-${item.rawReportId}`;
     } else if (item.type === 'irrigation') {
       targetModule = 'farm';
       targetElementId = item.rawReportId ? `report-${item.rawReportId}` : 'sprinkler-damage-reports-section';
@@ -640,6 +764,10 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
   };
 
   const handleResolve = async (item: PendingReportItem) => {
+    if (item.type === 'delivery' || item.type === 'repair_done') {
+      dismissNotification(item.id);
+      return;
+    }
     if (item.type === 'password_reset' && item.rawReportId) {
       try {
         await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, item.rawReportId), {
@@ -754,6 +882,8 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
                     ? 'bg-[#b01230] text-white'
                     : item.type === 'password_reset'
                     ? 'bg-[#6b21a8] text-white'
+                    : item.type === 'delivery' || item.type === 'repair_done'
+                    ? 'bg-[#0f766e] text-white'
                     : 'bg-[#2d5016] text-white';
 
                 return (
@@ -795,6 +925,18 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
                         >
                           View
                         </button>
+                        {item.type === 'password_reset' && item.status === 'approved' ? (
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() =>
+                              void approvePasswordResetRequest(item, state.workers || [], updateState, setPasswordReveal)
+                            }
+                            className="font-bold px-2.5 py-1 rounded-lg border border-[#6b21a8]/50 text-[#6b21a8] text-[11px] hover:bg-[#6b21a8]/10 transition-colors disabled:opacity-60"
+                          >
+                            Set password again
+                          </button>
+                        ) : null}
                         {item.type === 'password_reset' && item.status === 'pending' ? (
                           <button
                             type="button"

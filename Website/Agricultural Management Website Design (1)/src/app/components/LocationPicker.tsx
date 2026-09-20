@@ -6,7 +6,8 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { BATAAN_BBOX } from '../data/bataanProvinceMap';
 
-export type PickedLocation = { lat: number; lng: number; address: string };
+/** `pinned` is true only once the location came from an actual map pin (tap/drag), not from typing an address alone. */
+export type PickedLocation = { lat: number; lng: number; address: string; pinned?: boolean };
 
 const PIN_ICON = L.divIcon({
   className: '',
@@ -52,10 +53,12 @@ export function LocationPicker({
   value,
   onChange,
   id = 'buyer-location',
+  label = 'Business / pickup location',
 }: {
   value: PickedLocation | null;
   onChange: (loc: PickedLocation) => void;
   id?: string;
+  label?: string;
 }) {
   const [resolving, setResolving] = useState(false);
 
@@ -63,7 +66,7 @@ export function LocationPicker({
     async (lat: number, lng: number) => {
       setResolving(true);
       const address = await reverseGeocode(lat, lng);
-      onChange({ lat, lng, address });
+      onChange({ lat, lng, address, pinned: true });
       setResolving(false);
     },
     [onChange],
@@ -74,12 +77,12 @@ export function LocationPicker({
   return (
     <div className="space-y-1.5">
       <Label htmlFor={`${id}-address`} className="text-xs font-semibold">
-        Business / pickup location <span className="text-destructive">*</span>
+        {label} <span className="text-destructive">*</span>
       </Label>
       <Input
         id={`${id}-address`}
         value={value?.address ?? ''}
-        onChange={(e) => onChange({ lat: value?.lat ?? DEFAULT_CENTER[0], lng: value?.lng ?? DEFAULT_CENTER[1], address: e.target.value })}
+        onChange={(e) => onChange({ lat: value?.lat ?? DEFAULT_CENTER[0], lng: value?.lng ?? DEFAULT_CENTER[1], address: e.target.value, pinned: value?.pinned ?? false })}
         placeholder="Tap the map below, then adjust the address if needed"
         className="h-10 rounded-xl text-xs"
       />

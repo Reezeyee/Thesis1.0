@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -20,8 +21,13 @@ import {
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
+import { isValidPhone11, PHONE_ERROR_MESSAGE, sanitizePhoneInput } from '../lib/phone';
+import { isValidPersonName, NAME_ERROR_MESSAGE, normalizeName } from '../lib/personName';
 import {
+  portalAllowsRole,
   usernameToEmail,
+  WRONG_PORTAL_MESSAGES,
+  type SignInPortal,
   type UserRole,
 } from './authConfig';
 
@@ -43,7 +49,12 @@ type AuthContextValue = {
   session: AuthSession | null;
   loading: boolean;
   error: string | null;
-  signIn: (username: string, password: string) => Promise<void>;
+  /**
+   * `portal` says which form is signing in. Each form only accepts its own kind of account (see
+   * portalAllowsRole): a wrong-door account is signed straight back out with an error and never gets a session.
+   * Without a portal (e.g. restoring a saved session) any account signs in and its role picks the screen.
+   */
+  signIn: (username: string, password: string, portal?: SignInPortal) => Promise<void>;
   /**
    * Buyer self-registration -- the only role in this app that creates its own account.
    * `location` is mandatory (enforced by BuyerAuthDialog before calling this) so the admin
@@ -54,6 +65,7 @@ type AuthContextValue = {
     password: string,
     displayName: string,
     location: { lat: number; lng: number; address: string },
+    phone: string,
   ) => Promise<void>;
   /**
    * Standard self-service "forgot password" flow (panel feedback: the web app had no password
@@ -90,15 +102,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Set while a portal-restricted sign-in is in flight, so the listener below doesn't open a session for an
+  // account that signIn() is about to reject.
+  const portalRef = useRef<SignInPortal | null>(null);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
+      const portal = portalRef.current;
       if (!firebaseUser?.email) {
+        setUser(null);
         setSession(null);
         setLoading(false);
         return;
       }
       const role = await loadRole(firebaseUser.uid, firebaseUser.email);
+      // Wrong door: signIn() reports it and signs the account out -- don't open a session for it. Also skip if
+      // this account has already signed out while we were loading its role.
+      if (portal && !portalAllowsRole(portal, role)) return;
+      if (auth.currentUser?.uid !== firebaseUser.uid) return;
+      setUser(firebaseUser);
       setSession({
         userId: firebaseUser.uid,
         email: firebaseUser.email,
@@ -111,14 +133,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, []);
 
-  const signIn = useCallback(async (username: string, password: string) => {
+  const signIn = useCallback(async (username: string, password: string, portal?: SignInPortal) => {
     setError(null);
     const email = usernameToEmail(username);
     if (!email) {
       setError('Unknown username. Try admin, worker, or your full email.');
-      throw new Error('invalid username');
+      throw new Error('Unknown username. Try admin, worker, or your full email.');
     }
-    await signInWithEmailAndPassword(auth, email, password);
+    portalRef.current = portal ?? null;
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      if (portal) {
+        const role = await loadRole(credential.user.uid, email);
+        if (!portalAllowsRole(portal, role)) {
+          await firebaseSignOut(auth);
+          setSession(null);
+          setUser(null);
+          setError(WRONG_PORTAL_MESSAGES[portal]);
+          throw new Error(WRONG_PORTAL_MESSAGES[portal]);
+        }
+      }
+    } finally {
+      portalRef.current = null;
+    }
   }, []);
 
   const resetPassword = useCallback(async (usernameOrEmail: string) => {
@@ -129,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const email = usernameToEmail(trimmed) ?? (trimmed.includes('@') ? trimmed.toLowerCase() : null);
     if (!email) {
       setError('Enter your email address.');
-      throw new Error('invalid email for password reset');
+      throw new Error('Enter your email address.');
     }
     try {
       await sendPasswordResetEmail(auth, email);
@@ -145,18 +182,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password: string,
       displayName: string,
       location: { lat: number; lng: number; address: string },
+      phone: string,
     ) => {
       setError(null);
       const trimmedEmail = email.trim().toLowerCase();
-      const trimmedName = displayName.trim();
+      const trimmedName = normalizeName(displayName);
+      const trimmedPhone = sanitizePhoneInput(phone);
       const trimmedAddress = location.address.trim();
       if (!trimmedEmail || !password || !trimmedName) {
         setError('Enter your name, email, and a password.');
-        throw new Error('missing buyer sign-up fields');
+        throw new Error('Enter your name, email, and a password.');
+      }
+      if (!isValidPersonName(trimmedName)) {
+        setError(NAME_ERROR_MESSAGE);
+        throw new Error(NAME_ERROR_MESSAGE);
+      }
+      if (!isValidPhone11(trimmedPhone)) {
+        setError(PHONE_ERROR_MESSAGE);
+        throw new Error(PHONE_ERROR_MESSAGE);
       }
       if (!trimmedAddress || (location.lat === 0 && location.lng === 0)) {
         setError('Set your business / pickup location on the map -- it is required.');
-        throw new Error('missing buyer location');
+        throw new Error('Set your business / pickup location on the map -- it is required.');
       }
       try {
         const credential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
@@ -165,6 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: trimmedEmail,
           displayName: trimmedName,
           role: 'BUYER',
+          phone: trimmedPhone,
           createdAt: serverTimestamp(),
           locationLat: location.lat,
           locationLng: location.lng,

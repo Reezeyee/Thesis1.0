@@ -557,7 +557,9 @@ export interface BuyerOrderItem {
  * COLLECTIONS.BUYER_ORDERS) rather than inside the app_state/farm blob, because a Buyer is only
  * ever allowed to create/read their own order docs -- never write shared farm state.
  * Inventory (ProductListingRecord.availableQty) only decrements when Admin marks an order
- * fulfilled, not when the Buyer places it, to avoid stock mismatches from cancelled orders.
+ * fulfilled, to avoid stock mismatches from cancelled orders. Meanwhile a pending order is
+ * RESERVED through its `stock_holds/{orderId}` doc: buyers see stock minus holds, Admin deleting the
+ * hold (on cancel or fulfil) is what releases it.
  */
 export interface BuyerOrderRecord {
   orderId: string;
@@ -569,7 +571,41 @@ export interface BuyerOrderRecord {
   status: 'pending' | 'fulfilled' | 'cancelled';
   createdAt?: string;
   fulfilledAt?: string | null;
+  /** How the buyer gets the order. Absent on orders placed before this option existed. */
+  fulfillmentMethod?: BuyerFulfillmentMethod;
+  /** Address the buyer typed at checkout for a delivery; null for pickup orders. */
+  deliveryAddress?: string | null;
+  buyerPhone?: string;
+  /** Luzon province chosen for delivery (drives `deliveryFee`); null for pickup orders. */
+  deliveryProvince?: string | null;
+  /** Items total before the delivery fee. `totalAmount` = subtotal + deliveryFee (what the buyer pays). */
+  subtotal?: number;
+  deliveryFee?: number;
+  paymentMethod?: BuyerPaymentMethod;
+  /** Delivery Rider the admin assigned to a delivery order (copied from the worker record when assigned). */
+  riderWorkerId?: string;
+  riderName?: string;
+  riderPhone?: string;
+  riderAssignedAt?: string;
+  /** Firebase uid of the rider's login (WorkerRecord.authUid): lets firestore.rules show the order to that rider only. */
+  riderUid?: string;
+  /** Map pin the buyer dropped for this delivery, so the rider's app can show the location. */
+  deliveryLat?: number | null;
+  deliveryLng?: number | null;
+  /** Set by the rider's app: 'assigned' -> 'out_for_delivery' -> 'delivered'. Admin's `status` (fulfilled) is separate. */
+  deliveryStatus?: BuyerDeliveryStatus | null;
+  deliveryUpdatedAt?: string | null;
+  deliveredAt?: string | null;
+  /** True once the rider has saved a proof-of-delivery photo (the photo itself is in `delivery_proofs/{orderId}`). */
+  hasDeliveryProof?: boolean;
 }
+
+export type BuyerDeliveryStatus = 'assigned' | 'out_for_delivery' | 'delivered';
+
+export type BuyerFulfillmentMethod = 'delivery' | 'pickup';
+
+/** Cash means Cash on Delivery for a delivery order and cash at the farm for a pickup order. */
+export type BuyerPaymentMethod = 'cash' | 'e_wallet';
 
 /**
  * A single message in the direct Admin <-> Owner thread, stored in its own top-level
