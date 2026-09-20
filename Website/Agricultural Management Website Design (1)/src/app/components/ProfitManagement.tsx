@@ -71,8 +71,22 @@ import { PayrollPayFlowDialog, type PayrollPayTarget } from './PayrollPayFlowDia
 import type { PayrollPaymentMethod } from '../types/appState';
 import { payrollPaymentMethodLabel } from '../lib/profitUi';
 
-/** Exhaustive expense types for sales & farm finance (used in forms and recorded transactions). */
+/**
+ * Exhaustive expense types for sales & farm finance (used in forms and recorded transactions).
+ * The first block matches the farm owner's named operational expenses exactly (electricity,
+ * salaries, insecticide/pesticide, termite control, construction, gas for grasscutter, general
+ * housekeeping); the rest cover broader financial categories. "Supplies & farm inputs" and
+ * "Equipment & maintenance" are also written programmatically (EquipmentManagement.tsx restock
+ * expenses / repair cost logging) -- keep those two exact strings if reordering this list.
+ */
 export const EXPENSE_CATEGORY_OPTIONS = [
+  'Electricity',
+  'Salaries',
+  'Insecticide / Pesticide',
+  'Termite Control',
+  'Construction',
+  'Gas for Grasscutter',
+  'General Housekeeping',
   'Transport & freight',
   'Fuel & logistics',
   'Packaging & materials',
@@ -201,6 +215,14 @@ export function ProfitManagement() {
     category: EXPENSE_CATEGORY_OPTIONS[0] as string,
     description: '',
     amount: '',
+    date: dateLabel(),
+  });
+  const [addSaleOpen, setAddSaleOpen] = useState(false);
+  const [saleForm, setSaleForm] = useState({
+    buyer: '',
+    product: '',
+    quantityKg: '',
+    pricePerKg: '',
     date: dateLabel(),
   });
   const [payFlowTarget, setPayFlowTarget] = useState<PayrollPayTarget | null>(null);
@@ -421,6 +443,44 @@ export function ProfitManagement() {
     setAddExpenseOpen(false);
   };
 
+  const saleQuantityKg = Number.parseFloat(saleForm.quantityKg);
+  const salePricePerKg = Number.parseFloat(saleForm.pricePerKg);
+  const saleTotal =
+    Number.isFinite(saleQuantityKg) && saleQuantityKg > 0 && Number.isFinite(salePricePerKg) && salePricePerKg > 0
+      ? Math.round(saleQuantityKg * salePricePerKg)
+      : 0;
+
+  /** Manual sale entry, for walk-in/direct sales made outside the Buyer storefront order flow
+   * (e.g. from a paper sales invoice) -- the only other way a SaleRecord gets created today is
+   * BuyerOrdersManagement.fulfillOrder(). */
+  const addSale = async () => {
+    if (!saleForm.buyer.trim() || !saleForm.product.trim() || saleTotal <= 0) {
+      showSaveError('Enter a buyer, product, and a quantity/price that add up to a total greater than zero.');
+      return;
+    }
+    const ok = await runSave('Sale', () =>
+      updateState((prev) => ({
+        ...prev,
+        sales: [
+          ...prev.sales,
+          {
+            buyer: saleForm.buyer.trim(),
+            details: saleForm.product.trim(),
+            date: saleForm.date.trim() || new Date().toLocaleDateString(),
+            total: saleTotal,
+            type: 'Manual Sale',
+            saleId: crypto.randomUUID(),
+            quantityKg: saleQuantityKg,
+            pricePerKg: salePricePerKg,
+          },
+        ],
+      })),
+    );
+    if (!ok) return;
+    setSaleForm((f) => ({ ...f, buyer: '', product: '', quantityKg: '', pricePerKg: '' }));
+    setAddSaleOpen(false);
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -449,6 +509,15 @@ export function ProfitManagement() {
         <div className="flex flex-wrap gap-2 shrink-0">
           <Button
             type="button"
+            onClick={() => setAddSaleOpen(true)}
+            variant="outline"
+            className="border-border/80 shrink-0"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add sale
+          </Button>
+          <Button
+            type="button"
             onClick={() => setAddExpenseOpen(true)}
             className="bg-[#2d5016] hover:bg-[#234010] text-white shrink-0"
           >
@@ -457,6 +526,91 @@ export function ProfitManagement() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={addSaleOpen} onOpenChange={setAddSaleOpen}>
+        <DialogContent className="max-w-lg border-border/80 bg-card text-card-foreground">
+          <DialogHeader>
+            <DialogTitle>Record sale</DialogTitle>
+            <DialogDescription>
+              Log a walk-in or direct sale (e.g. from a paper sales invoice) that didn't go through a Buyer storefront order.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="sale-buyer">Buyer / customer name</Label>
+              <Input
+                id="sale-buyer"
+                value={saleForm.buyer}
+                onChange={(e) => setSaleForm((f) => ({ ...f, buyer: e.target.value }))}
+                placeholder="e.g., Juan Dela Cruz Roastery"
+                className="bg-background/80 border-border/80"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sale-product">Product sold</Label>
+              <Input
+                id="sale-product"
+                value={saleForm.product}
+                onChange={(e) => setSaleForm((f) => ({ ...f, product: e.target.value }))}
+                placeholder="e.g., Roasted Arabica Beans"
+                className="bg-background/80 border-border/80"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="sale-qty">Quantity (kg)</Label>
+                <Input
+                  id="sale-qty"
+                  type="text"
+                  inputMode="decimal"
+                  value={saleForm.quantityKg}
+                  onChange={(e) => setSaleForm((f) => ({ ...f, quantityKg: e.target.value }))}
+                  placeholder="0"
+                  className="bg-background/80 border-border/80"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sale-price">Price per kg (₱)</Label>
+                <Input
+                  id="sale-price"
+                  type="text"
+                  inputMode="decimal"
+                  value={saleForm.pricePerKg}
+                  onChange={(e) => setSaleForm((f) => ({ ...f, pricePerKg: e.target.value }))}
+                  placeholder="0"
+                  className="bg-background/80 border-border/80"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sale-date">Date (label)</Label>
+              <Input
+                id="sale-date"
+                value={saleForm.date}
+                onChange={(e) => setSaleForm((f) => ({ ...f, date: e.target.value }))}
+                placeholder={dateLabel()}
+                className="bg-background/80 border-border/80"
+              />
+            </div>
+            <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              Total: {formatCurrency(saleTotal)}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAddSaleOpen(false)} className="border-border/80">
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void addSale()}
+              disabled={saving || !saleForm.buyer.trim() || !saleForm.product.trim() || saleTotal <= 0}
+              className="bg-[#2d5016] hover:bg-[#234010] text-white"
+            >
+              Save sale
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <PayrollPayFlowDialog
         target={payFlowTarget}
