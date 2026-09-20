@@ -27,8 +27,11 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
   const [myOrders, setMyOrders] = useState<BuyerOrderRecord[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
 
+  // Out-of-stock listings still show (greyed out, "Out of Stock" badge) instead of silently
+  // disappearing, so a buyer can tell "sold out, check back" apart from "never existed". In-stock
+  // listings sort first so the catalog leads with what's actually purchasable.
   const listings = useMemo(
-    () => (state.productListings ?? []).filter((l) => l.availableQty > 0),
+    () => [...(state.productListings ?? [])].sort((a, b) => (b.availableQty > 0 ? 1 : 0) - (a.availableQty > 0 ? 1 : 0)),
     [state.productListings],
   );
 
@@ -167,34 +170,47 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
             <p className="text-xs text-muted-foreground">Nothing is listed for sale right now — check back soon.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {listings.map((l) => (
-                <Card key={l.listingId}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-bold flex items-center justify-between">
-                      <span>{l.name}</span>
-                      <span className="text-xs font-normal text-muted-foreground">{l.category}</span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <p className="text-lg font-bold">
-                      {formatCurrency(l.pricePerUnit)} <span className="text-xs font-normal text-muted-foreground">/ {l.unit}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">{l.availableQty} {l.unit} available</p>
-                    <div className="flex items-center gap-2 pt-1">
-                      <Input
-                        type="number"
-                        min={0}
-                        max={l.availableQty}
-                        value={cart[l.listingId] ?? ''}
-                        onChange={(e) => setQty(l.listingId, Number(e.target.value), l.availableQty)}
-                        placeholder="0"
-                        className="h-9 w-24 rounded-lg text-xs"
-                      />
-                      <span className="text-xs text-muted-foreground">{l.unit}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+              {listings.map((l) => {
+                const outOfStock = l.availableQty <= 0;
+                return (
+                  <Card key={l.listingId} className={outOfStock ? 'opacity-60' : undefined}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-bold flex items-center justify-between gap-2">
+                        <span>{l.name}</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {outOfStock ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 uppercase whitespace-nowrap">
+                              Out of Stock
+                            </span>
+                          ) : null}
+                          <span className="text-xs font-normal text-muted-foreground">{l.category}</span>
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <p className="text-lg font-bold">
+                        {formatCurrency(l.pricePerUnit)} <span className="text-xs font-normal text-muted-foreground">/ {l.unit}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {outOfStock ? 'Out of stock — check back soon' : `${l.availableQty} ${l.unit} available`}
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={l.availableQty}
+                          value={cart[l.listingId] ?? ''}
+                          onChange={(e) => setQty(l.listingId, Number(e.target.value), l.availableQty)}
+                          placeholder="0"
+                          disabled={outOfStock}
+                          className="h-9 w-24 rounded-lg text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                        <span className="text-xs text-muted-foreground">{l.unit}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </section>
