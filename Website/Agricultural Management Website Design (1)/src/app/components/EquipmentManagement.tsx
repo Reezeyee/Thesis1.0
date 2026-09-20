@@ -109,8 +109,17 @@ const EQUIPMENT_CATEGORIES = [
   'Power',
 ] as const;
 
-const SUPPLY_CATEGORIES = ['Fertilizer', 'Pesticides', 'Vitamins', 'Packaging', 'Cleaning', 'Other'] as const;
-const SUPPLY_UNITS = ['Bags', 'Liters', 'Kg', 'Sacks', 'Bottles', 'Pieces', 'Boxes', 'Other'] as const;
+const SUPPLY_CATEGORIES = [
+  'Coffee Beans',
+  'Fertilizer',
+  'Seedlings',
+  'Pesticides',
+  'Vitamins',
+  'Packaging',
+  'Cleaning',
+  'Other',
+] as const;
+const SUPPLY_UNITS = ['Bags', 'Liters', 'Kg', 'Sacks', 'Bottles', 'Pieces', 'Boxes', 'Seedlings', 'Other'] as const;
 
 type SupplyForm = {
   name: string;
