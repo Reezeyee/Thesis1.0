@@ -75,12 +75,12 @@ import type { PayrollPaymentMethod } from '../types/appState';
 import { payrollPaymentMethodLabel } from '../lib/profitUi';
 
 /**
- * Exhaustive expense types for sales & farm finance (used in forms and recorded transactions).
- * The first block matches the farm owner's named operational expenses exactly (electricity,
- * salaries, insecticide/pesticide, termite control, construction, gas for grasscutter, general
- * housekeeping); the rest cover broader financial categories. "Supplies & farm inputs" and
- * "Equipment & maintenance" are also written programmatically (EquipmentManagement.tsx restock
- * expenses / repair cost logging) -- keep those two exact strings if reordering this list.
+ * Expense types selectable in the "Add expense" form -- matches the farm owner's named
+ * operational expenses exactly. "Supplies & farm inputs" and "Equipment & maintenance" are not
+ * offered here (removed per owner request to only list what they actually record) but are still
+ * written programmatically by EquipmentManagement.tsx (restock expenses / repair cost logging),
+ * so those exact strings can still appear on recorded expenses and the expense breakdown chart --
+ * just not as a manual dropdown choice.
  */
 export const EXPENSE_CATEGORY_OPTIONS = [
   'Electricity',
@@ -90,24 +90,6 @@ export const EXPENSE_CATEGORY_OPTIONS = [
   'Construction',
   'Gas for Grasscutter',
   'General Housekeeping',
-  'Transport & freight',
-  'Fuel & logistics',
-  'Packaging & materials',
-  'Marketing & commissions',
-  'Payroll & wages',
-  'Supplies & farm inputs',
-  'Equipment & maintenance',
-  'Utilities',
-  'Rent / land lease',
-  'Insurance',
-  'Licenses & permits',
-  'Taxes & regulatory',
-  'Bank & transaction fees',
-  'Professional & legal fees',
-  'Processing & drying',
-  'Quality & certifications',
-  'Warehousing & storage',
-  'Other',
 ] as const;
 
 export type BuyerCategory = 'channel' | 'cafe' | 'custom';
