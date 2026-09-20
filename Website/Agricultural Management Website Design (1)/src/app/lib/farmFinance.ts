@@ -130,13 +130,39 @@ export function distinctRoles(workers: AppState['workers']): number {
 export function hourlyRateForWorkerRole(roleRate: string): number {
   const key = roleRate.trim().toLowerCase();
   if (key === 'picker' || key.includes('harvester')) return 50;
-  if (key.includes('operator')) return 150;
+  if (key.includes('farm assist')) return 150;
   if (key.includes('maintenance')) return 180;
-  if (key.includes('sorter')) return 200;
-  if (key.includes('field manager') || key.includes('supervisor')) return 250;
-  if (key.includes('quality') || key.includes('inspector')) return 300;
-  if (key.includes('agronomist')) return 350;
+  if (key.includes('farm manager')) return 250;
   return 0;
+}
+
+/** Job responsibilities shown to admin when assigning a role, and on a worker's profile. */
+export const ROLE_RESPONSIBILITIES: Record<string, string[]> = {
+  Picker: ['Harvesting ripe coffee/cacao cherries and other fruit from the trees'],
+  Maintenance: [
+    'Upkeep and repair of farm and resort equipment',
+    'Reporting and fixing broken equipment',
+  ],
+  'Farm Manager': [
+    'Oversees the upkeep of the resort and the farm',
+    'Recommends strategies to improve the farm produce',
+    'Plans for marketing activities to advertise the resort',
+  ],
+  'Farm Assist': [
+    'Grasscutting and cleaning of the premises, both the farm and the resort grounds',
+    'Dogkeeper (feed them, clean their cages, etc)',
+    'Pruning/weeding of Coffee and Cacao trees and all other fruitbearing trees of the land',
+    'Composting (Vermi/Milli)',
+    'Upkeep of the nursery',
+    'Planting of crops/trees as needed',
+    'Application of Fertilizer/insecticide as need be',
+  ],
+};
+
+export function responsibilitiesForWorkerRole(roleRate: string): string[] {
+  const key = roleRate.trim().toLowerCase();
+  const match = Object.keys(ROLE_RESPONSIBILITIES).find((r) => key.includes(r.toLowerCase()));
+  return match ? ROLE_RESPONSIBILITIES[match] : [];
 }
 
 export function estimateWorkerGross(roleRate: string, daysWorked = 22): number {

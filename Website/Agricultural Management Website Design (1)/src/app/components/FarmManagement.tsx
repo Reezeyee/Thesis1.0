@@ -61,7 +61,7 @@ import { BATAAN_PROVINCE } from '../data/bataanAddressCatalog';
 import { useFarmData } from '../store/FarmDataProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { createWorkerAuthAccount, type CreatedWorkerAccount } from '../auth/workerAccount';
-import { distinctRoles, hourlyRateForWorkerRole, payrollLineAmount } from '../lib/farmFinance';
+import { distinctRoles, hourlyRateForWorkerRole, payrollLineAmount, responsibilitiesForWorkerRole } from '../lib/farmFinance';
 import { formatCurrency } from '../lib/currencyFormat';
 import { runSave, showSaveError } from '../lib/saveFeedback';
 import { logStateApiActivity, logUiAction } from '../lib/apiRouteLogger';
@@ -2511,10 +2511,9 @@ export function FarmManagement() {
                 >
                   <option value="All">All Roles</option>
                   <option value="Picker">Picker</option>
-                  <option value="Sorter">Sorter</option>
-                  <option value="Field Supervisor">Field Supervisor</option>
-                  <option value="Operator">Operator</option>
-                  <option value="Quality Inspector">Quality Inspector</option>
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Farm Manager">Farm Manager</option>
+                  <option value="Farm Assist">Farm Assist</option>
                 </select>
               </div>
               <div className="sm:col-span-3">
@@ -2652,6 +2651,13 @@ export function FarmManagement() {
                       ? `${formatCurrency(hourlyRateForWorkerRole(selectedWorker.role))} / hour`
                       : 'No fixed hourly rate for this role'}
                   </p>
+                  {responsibilitiesForWorkerRole(selectedWorker.role).length > 0 ? (
+                    <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground list-disc pl-4">
+                      {responsibilitiesForWorkerRole(selectedWorker.role).map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </div>
                 <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
                   <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Worker ID</p>

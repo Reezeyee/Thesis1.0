@@ -26,7 +26,7 @@ import {
   ACCEPTED_NAME_CHARS_DESCRIPTION,
   type WorkerFormDraft,
 } from '../lib/workerUi';
-import { hourlyRateForWorkerRole } from '../lib/farmFinance';
+import { hourlyRateForWorkerRole, responsibilitiesForWorkerRole } from '../lib/farmFinance';
 import { formatCurrency } from '../lib/currencyFormat';
 
 const ADDRESS_SELECT_CLASS =
@@ -365,20 +365,32 @@ export function WorkerFormDialog({
                   label="Assigned Role"
                   value={form.role}
                   onChange={(val) => setForm((f) => ({ ...f, role: val }))}
-                  options={['Picker', 'Sorter', 'Field Supervisor', 'Operator', 'Quality Inspector', 'Agronomist']}
+                  options={['Picker', 'Maintenance', 'Farm Manager', 'Farm Assist']}
                   selectClassName={ADDRESS_SELECT_CLASS}
                   otherPlaceholder="Sample: Machine Technician"
                 />
                 {(() => {
                   const rate = hourlyRateForWorkerRole(form.role);
-                  return rate > 0 ? (
-                    <p className="mt-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                      Pay rate for this role: {formatCurrency(rate)} / hour
-                    </p>
-                  ) : (
-                    <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      No fixed hourly rate for this role yet — payroll lines will need a matching rate before they can be created.
-                    </p>
+                  const responsibilities = responsibilitiesForWorkerRole(form.role);
+                  return (
+                    <>
+                      {rate > 0 ? (
+                        <p className="mt-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          Pay rate for this role: {formatCurrency(rate)} / hour
+                        </p>
+                      ) : (
+                        <p className="mt-1.5 text-[11px] text-muted-foreground">
+                          No fixed hourly rate for this role yet — payroll lines will need a matching rate before they can be created.
+                        </p>
+                      )}
+                      {responsibilities.length > 0 ? (
+                        <ul className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground list-disc pl-4">
+                          {responsibilities.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </>
                   );
                 })()}
               </div>

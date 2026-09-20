@@ -167,9 +167,9 @@ fun FarmOperationsScreen() {
                     if (floweringSectionNames.isNotEmpty()) floweringSectionNames else sectionNames
                 val workerRoleOptions = listOf(
                     "Picker",
-                    "Field Manager",
-                    "Quality Sorter",
-                    "Agronomist",
+                    "Maintenance",
+                    "Farm Manager",
+                    "Farm Assist",
                     "Other"
                 )
                 val fields = when (activeTab) {
@@ -265,7 +265,7 @@ fun FarmOperationsScreen() {
                         RecordField("Worker ID (optional)"),
                         RecordField(
                             "Role",
-                            listOf("Picker", "Field Manager", "Quality Sorter", "Agronomist", "Other")
+                            listOf("Picker", "Maintenance", "Farm Manager", "Farm Assist", "Other")
                         ),
                         RecordField("Phone Number"),
                         RecordField("Address"),

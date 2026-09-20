@@ -83,10 +83,10 @@ object FarmFinance {
     fun hourlyRateForWorkerRole(roleRate: String): Double {
         val key = roleRate.trim().lowercase()
         return when {
-            key == "picker" -> 80.0
-            key.contains("field manager") -> 250.0
-            key.contains("quality sorter") -> 300.0
-            key.contains("agronomist") -> 350.0
+            key == "picker" || key.contains("harvester") -> 50.0
+            key.contains("farm assist") -> 150.0
+            key.contains("maintenance") -> 180.0
+            key.contains("farm manager") -> 250.0
             else -> 0.0
         }
     }
