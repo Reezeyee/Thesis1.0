@@ -290,6 +290,10 @@ export function BuyerOrdersManagement() {
           total: order.totalAmount,
           type: 'Buyer Storefront Order',
           saleId: `S-${order.orderId.slice(0, 8).toUpperCase()}`,
+          // Without these, this sale doesn't count toward the buyer's totals on the admin
+          // Buyer Locations Map, which only attributes a sale to a buyer via buyerUid.
+          buyerUid: order.buyerUid,
+          buyerEmail: order.buyerEmail,
         };
         return { ...prev, productListings, sales: [...prev.sales, sale] };
       }),
