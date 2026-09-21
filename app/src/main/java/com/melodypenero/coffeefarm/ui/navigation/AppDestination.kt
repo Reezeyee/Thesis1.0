@@ -12,6 +12,8 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.melodypenero.coffeefarm.ui.icons.CoffeeCherry
 
@@ -35,6 +37,9 @@ sealed class AppDestination(
     /** Maintenance home: the equipment / sprinkler repair jobs the admin assigned to this worker. */
     data object MaintenanceJobs : AppDestination("maintenance_jobs", "Repair Jobs", Icons.Default.Build)
     data object Sms : AppDestination("sms", "SMS Communication", Icons.Default.Forum)
+    /** Buyer home: browse Admin-managed product listings, cart, checkout, and this buyer's own order history. */
+    data object BuyerShop : AppDestination("buyer_shop", "Shop", Icons.Default.ShoppingCart)
+    data object BuyerOrders : AppDestination("buyer_orders_screen", "My Orders", Icons.Default.ReceiptLong)
     data object Settings : AppDestination("settings", "Settings", Icons.Default.Settings)
 }
 
@@ -78,5 +83,12 @@ val maintenanceMobileDestinations = listOf(
     AppDestination.MaintenanceJobs,
     AppDestination.StaffAttendance,
     AppDestination.Sms,
+    AppDestination.Settings
+)
+
+/** Buyer drawer: shop the catalog, track their own orders. No farm field tools or internal comms. */
+val buyerMobileDestinations = listOf(
+    AppDestination.BuyerShop,
+    AppDestination.BuyerOrders,
     AppDestination.Settings
 )
