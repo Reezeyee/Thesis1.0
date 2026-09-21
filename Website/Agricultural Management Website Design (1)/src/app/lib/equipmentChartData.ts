@@ -1,4 +1,4 @@
-import type { AppState, EquipmentConditionReport, MaintenanceRecord, UsageLogRecord } from '../types/appState';
+import type { AppState, EquipmentConditionReport, EquipmentRecord, MaintenanceRecord, UsageLogRecord } from '../types/appState';
 import { parseMoneyAmount } from './farmFinance';
 import { currentMonthSortKey, monthLabelFromSortKey, monthSortKeyFromDate } from './chartTheme';
 import { CHART_EQUIPMENT_STATUS } from './chartTheme';
@@ -252,12 +252,76 @@ export function effectiveEquipmentStatus(
   return base;
 }
 
-/** Fleet status from inventory, app maintenance notes, and worker reports. */
+/**
+ * How many units of [equipmentName] are currently broken according to worker reports: every open "broken" report is
+ * one unit, and a repair report or the admin's "Mark fixed" frees one. Reports are replayed oldest-first so a fix
+ * only clears units that were reported before it.
+ */
+export function openBrokenUnits(equipmentName: string, state: AppState): number {
+  const name = equipmentName.trim().toLowerCase();
+  const reports = state.equipmentReports
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.equipmentName.trim().toLowerCase() === name)
+    .sort((a, b) => (a.r.reportedAt || '').localeCompare(b.r.reportedAt || '') || a.i - b.i);
+  let broken = 0;
+  for (const { r } of reports) {
+    if (r.isFixedReport) broken = Math.max(0, broken - 1);
+    else if (r.isWrecked && !r.fixedAt) broken += 1;
+  }
+  return broken;
+}
+
+/** Units of one equipment record split by condition, so a stack of 3 can be "2 available, 1 broken". */
+export type EquipmentUnitBreakdown = {
+  total: number;
+  available: number;
+  inUse: number;
+  maintenance: number;
+  broken: number;
+};
+
+export function equipmentUnitBreakdown(e: EquipmentRecord, state: AppState): EquipmentUnitBreakdown {
+  const total = Math.max(1, Math.round(e.quantity ?? 1));
+  const effective = effectiveEquipmentStatus(e.name, e.status, state);
+  const counts: EquipmentUnitBreakdown = { total, available: 0, inUse: 0, maintenance: 0, broken: 0 };
+  const put = (status: EquipmentUiStatus, n: number) => {
+    if (status === 'damaged') counts.broken += n;
+    else if (status === 'maintenance') counts.maintenance += n;
+    else if (status === 'in-use') counts.inUse += n;
+    else counts.available += n;
+  };
+
+  if (total === 1) {
+    put(effective, 1);
+    return counts;
+  }
+
+  // A stack: the record's own status is one value for all units, so the per-unit picture comes from the reports.
+  const base = mapEquipStatus(e.status);
+  let broken = Math.min(total, openBrokenUnits(e.name, state));
+  // The admin set the whole record to broken by hand (or an older report did), with nothing to say which units.
+  if (effective === 'damaged' && base === 'damaged') broken = total;
+  // Maintenance notes that mention damage, without any report: at least one unit is down.
+  else if (effective === 'damaged' && broken === 0) broken = 1;
+
+  put('damaged', broken);
+  const working = total - broken;
+  if (working > 0) {
+    put(effective !== 'damaged' ? effective : base === 'damaged' ? 'available' : base, working);
+  }
+  return counts;
+}
+
+/** Fleet status per unit, from inventory, app maintenance notes, and worker reports. */
 export function buildEquipmentStatusSlices(state: AppState): StatusSlice[] {
   const counts = { available: 0, 'in-use': 0, maintenance: 0, damaged: 0 };
 
   for (const e of state.equipment) {
-    counts[effectiveEquipmentStatus(e.name, e.status, state)] += 1;
+    const u = equipmentUnitBreakdown(e, state);
+    counts.available += u.available;
+    counts['in-use'] += u.inUse;
+    counts.maintenance += u.maintenance;
+    counts.damaged += u.broken;
   }
 
   const slices: StatusSlice[] = [
@@ -287,8 +351,8 @@ export function buildUsageByEquipmentChart(
 export function pendingMaintenanceIssueCount(state: AppState): number {
   let n = 0;
   for (const e of state.equipment) {
-    const effective = effectiveEquipmentStatus(e.name, e.status, state);
-    if (effective === 'damaged' || effective === 'maintenance') n += 1;
+    const u = equipmentUnitBreakdown(e, state);
+    n += u.broken + u.maintenance;
   }
   return n;
 }

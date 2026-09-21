@@ -41,6 +41,8 @@ import {
   buildUsageByEquipmentChart,
   computeUsageDurationHours,
   effectiveEquipmentStatus,
+  equipmentUnitBreakdown,
+  openBrokenUnits,
   formatUsageTimestamp,
   mapEquipStatus,
   maintenanceChartHasData,
@@ -182,7 +184,7 @@ export function EquipmentManagement() {
   const [editForm, setEditForm] = useState<EquipmentRecord | null>(null);
   const [fixingReportIndex, setFixingReportIndex] = useState<number | null>(null);
   const [repairCost, setRepairCost] = useState('');
-  const [activeInventoryTab, setActiveInventoryTab] = useState<'fleet' | 'consumables'>('fleet');
+  const [activeInventoryTab, setActiveInventoryTab] = useState<'fleet' | 'consumables' | 'supplyReports'>('fleet');
   const [supplyFormOpen, setSupplyFormOpen] = useState(false);
   const [supplyForm, setSupplyForm] = useState<SupplyForm>(() => emptySupplyForm());
 
@@ -206,7 +208,10 @@ export function EquipmentManagement() {
   useEffect(() => {
     const handleScrollTarget = () => {
       const hash = window.location.hash;
-      if (hash.includes('consumable') || hash.includes('supply')) {
+      // Notification links point at a specific worker report (`#supply-<id>`) or the reports list.
+      if (hash.includes('supply-') || hash.includes('consumable-reports')) {
+        setActiveInventoryTab('supplyReports');
+      } else if (hash.includes('consumable') || hash.includes('supply')) {
         setActiveInventoryTab('consumables');
       }
     };
@@ -432,18 +437,48 @@ export function EquipmentManagement() {
 
   const equipmentData = useMemo(
     () =>
-      state.equipment.map((e, id) => ({
+      state.equipment.map((e, id) => {
+        const units = equipmentUnitBreakdown(e, state);
+        const effective = effectiveEquipmentStatus(e.name, e.status, state);
+        // A stack reads as broken only when every unit is; otherwise it is as usable as its working units.
+        const status =
+          units.total === 1
+            ? effective
+            : units.broken === units.total
+              ? 'damaged'
+              : units.maintenance > 0 && units.available + units.inUse === 0
+                ? 'maintenance'
+                : units.inUse > 0 && units.available === 0
+                  ? 'in-use'
+                  : 'available';
+        return {
         id,
         name: e.name,
         type: e.category,
         quantity: e.quantity ?? 1,
         inventoryStatus: e.status,
-        status: effectiveEquipmentStatus(e.name, e.status, state),
+        status,
+        units,
         lastMaintenance: latestMaintenanceLabel(state.maintenanceLogs, e.name),
         usageHours: sumUsageHoursForEquipment(state.usageLogs, e.name),
-      })),
+        };
+      }),
     [state],
   );
+
+  // The fixed categories plus any a supply already uses (e.g. one added from the mobile app), so every supply can be filtered.
+  const supplyCategoryOptions = useMemo(() => {
+    const known = new Set(SUPPLY_CATEGORIES.map((c) => c.toLowerCase()));
+    const extra: string[] = [];
+    for (const c of consumables) {
+      const label = c.category.trim();
+      if (label && !known.has(label.toLowerCase())) {
+        known.add(label.toLowerCase());
+        extra.push(label);
+      }
+    }
+    return [...SUPPLY_CATEGORIES, ...extra.sort((a, b) => a.localeCompare(b))];
+  }, [consumables]);
 
   const filteredConsumables = useMemo(() => {
     let list = [...consumables];
@@ -488,7 +523,14 @@ export function EquipmentManagement() {
       list = list.filter((e) => e.type.toLowerCase() === fleetCategoryFilter.toLowerCase());
     }
     if (fleetStatusFilter !== 'All') {
-      list = list.filter((e) => e.status.toLowerCase() === fleetStatusFilter.toLowerCase());
+      // A stack matches a status when any of its units has it (2 available + 1 broken shows under both).
+      list = list.filter((e) => {
+        if (fleetStatusFilter === 'available') return e.units.available > 0;
+        if (fleetStatusFilter === 'in-use') return e.units.inUse > 0;
+        if (fleetStatusFilter === 'maintenance') return e.units.maintenance > 0;
+        if (fleetStatusFilter === 'damaged') return e.units.broken > 0;
+        return e.status.toLowerCase() === fleetStatusFilter.toLowerCase();
+      });
     }
     return list;
   }, [equipmentData, fleetSearchQuery, fleetCategoryFilter, fleetStatusFilter]);
@@ -534,10 +576,11 @@ export function EquipmentManagement() {
     );
   };
 
-  const availableCount = equipmentData.filter((e) => e.status === 'available').length;
+  const totalUnitCount = equipmentData.reduce((sum, e) => sum + e.units.total, 0);
+  const availableCount = equipmentData.reduce((sum, e) => sum + e.units.available, 0);
   const maintenanceIssueCount = pendingMaintenanceIssueCount(state);
-  const damagedCount = equipmentData.filter((e) => e.status === 'damaged').length;
-  const pendingWreckedCount = equipmentData.filter((e) => e.status === 'damaged').length;
+  const damagedCount = equipmentData.reduce((sum, e) => sum + e.units.broken, 0);
+  const pendingWreckedCount = damagedCount;
 
   const workerReports = useMemo(() => {
     const reports = state.equipmentReports.map((report, index) => ({
@@ -602,6 +645,11 @@ export function EquipmentManagement() {
           (e) => e.name.trim().toLowerCase() === report.equipmentName.trim().toLowerCase(),
         );
         if (eqIdx < 0) return { ...prev, equipmentReports };
+        // One broken unit of a stack must not mark the whole stack broken -- its units are counted from the reports.
+        const stackSize = prev.equipment[eqIdx].quantity ?? 1;
+        if (stackSize > 1 && openBrokenUnits(report.equipmentName, { ...prev, equipmentReports }) < stackSize) {
+          return { ...prev, equipmentReports };
+        }
         const equipment = prev.equipment.map((e, i) =>
           i === eqIdx ? { ...e, status: 'broken' } : e,
         );
@@ -823,7 +871,7 @@ export function EquipmentManagement() {
             </div>
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Equipment</p>
-              <p className="text-2xl font-bold font-heading text-foreground">{equipmentData.length}</p>
+              <p className="text-2xl font-bold font-heading text-foreground">{totalUnitCount}</p>
             </div>
           </div>
         </div>
@@ -1326,8 +1374,19 @@ export function EquipmentManagement() {
                     : 'text-muted-foreground hover:bg-[#4a2c2a]/5'
                 }`}
               >
-                Consumable Supplies ({consumables.length})
-                {pendingConsumableReports > 0 ? ` · ${pendingConsumableReports} report${pendingConsumableReports === 1 ? '' : 's'}` : ''}
+                Supply Stock ({consumables.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveInventoryTab('supplyReports')}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                  activeInventoryTab === 'supplyReports'
+                    ? 'bg-[#2d5016] text-white shadow'
+                    : 'text-muted-foreground hover:bg-[#4a2c2a]/5'
+                }`}
+              >
+                Supply Reports ({consumableReports.length})
+                {pendingConsumableReports > 0 ? ` · ${pendingConsumableReports} pending` : ''}
               </button>
             </div>
 
@@ -1336,7 +1395,7 @@ export function EquipmentManagement() {
                 <Plus className="w-3.5 h-3.5 mr-1" />
                 Add Equipment
               </Button>
-            ) : (
+            ) : activeInventoryTab === 'consumables' ? (
               <Button
                 className="bg-[#2d5016] text-white text-xs px-3 py-1.5 shrink-0"
                 onClick={() => setSupplyFormOpen(true)}
@@ -1344,7 +1403,7 @@ export function EquipmentManagement() {
                 <Plus className="w-3.5 h-3.5 mr-1" />
                 Add Supply
               </Button>
-            )}
+            ) : null}
           </div>
 
           {activeInventoryTab === 'fleet' ? (
@@ -1433,24 +1492,45 @@ export function EquipmentManagement() {
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <div className="flex flex-col items-end gap-1">
-                          <span
-                            className={`text-xs px-3 py-1 rounded-full ${
-                              equipment.status === 'available'
-                                ? 'bg-[#2d5016] text-white'
-                                : equipment.status === 'in-use'
-                                ? 'bg-[#4a2c2a] text-white'
-                                : equipment.status === 'maintenance'
-                                ? 'bg-[#d4a574] text-white'
-                                : 'bg-[#d4183d] text-white'
-                            }`}
-                          >
-                            {equipment.status}
-                          </span>
-                          {mapEquipStatus(equipment.inventoryStatus) !== equipment.status ? (
-                            <span className="text-[10px] text-muted-foreground">
-                              On file: {equipment.inventoryStatus}
-                            </span>
-                          ) : null}
+                          {equipment.units.total > 1 ? (
+                            <div className="flex flex-wrap justify-end gap-1">
+                              {(
+                                [
+                                  ['available', equipment.units.available, 'bg-[#2d5016] text-white'],
+                                  ['in use', equipment.units.inUse, 'bg-[#4a2c2a] text-white'],
+                                  ['maintenance', equipment.units.maintenance, 'bg-[#d4a574] text-white'],
+                                  ['broken', equipment.units.broken, 'bg-[#d4183d] text-white'],
+                                ] as const
+                              )
+                                .filter(([, count]) => count > 0)
+                                .map(([label, count, badgeClass]) => (
+                                  <span key={label} className={`text-xs px-3 py-1 rounded-full ${badgeClass}`}>
+                                    {count} {label}
+                                  </span>
+                                ))}
+                            </div>
+                          ) : (
+                            <>
+                              <span
+                                className={`text-xs px-3 py-1 rounded-full ${
+                                  equipment.status === 'available'
+                                    ? 'bg-[#2d5016] text-white'
+                                    : equipment.status === 'in-use'
+                                    ? 'bg-[#4a2c2a] text-white'
+                                    : equipment.status === 'maintenance'
+                                    ? 'bg-[#d4a574] text-white'
+                                    : 'bg-[#d4183d] text-white'
+                                }`}
+                              >
+                                {equipment.status}
+                              </span>
+                              {mapEquipStatus(equipment.inventoryStatus) !== equipment.status ? (
+                                <span className="text-[10px] text-muted-foreground">
+                                  On file: {equipment.inventoryStatus}
+                                </span>
+                              ) : null}
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1474,59 +1554,8 @@ export function EquipmentManagement() {
                 ))}
               </div>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Consumable Search, Filter & Sort */}
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                <div className="sm:col-span-5 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder="Search supplies, fertilizers, chemicals..."
-                    value={supplySearchQuery}
-                    onChange={(e) => setSupplySearchQuery(e.target.value)}
-                    className="pl-9 h-9 text-xs bg-background/80"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <select
-                    value={supplyCategoryFilter}
-                    onChange={(e) => setSupplyCategoryFilter(e.target.value)}
-                    className="w-full h-9 px-2 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
-                  >
-                    <option value="All">All Categories</option>
-                    {SUPPLY_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="sm:col-span-2">
-                  <select
-                    value={supplyStatusFilter}
-                    onChange={(e) => setSupplyStatusFilter(e.target.value)}
-                    className="w-full h-9 px-2 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
-                  >
-                    <option value="All">All Statuses</option>
-                    <option value="Low Stock">⚠️ Low Stock (≤30%)</option>
-                    <option value="Out of Stock">🚫 Out of Stock</option>
-                    <option value="In Stock">✅ In Stock</option>
-                  </select>
-                </div>
-                <div className="sm:col-span-3">
-                  <select
-                    value={supplySortOrder}
-                    onChange={(e) => setSupplySortOrder(e.target.value as 'name' | 'stock_asc' | 'stock_desc' | 'newest')}
-                    className="w-full h-9 px-2 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
-                  >
-                    <option value="newest">Sort: Newest First</option>
-                    <option value="stock_asc">Sort: Stock (Low to High)</option>
-                    <option value="stock_desc">Sort: Stock (High to Low)</option>
-                    <option value="name">Sort: Name (A–Z)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className={`space-y-3 max-h-[540px] ${SCROLL_PANEL_CLASS}`}>
+          ) : activeInventoryTab === 'supplyReports' ? (
+            <div className={`space-y-3 max-h-[600px] ${SCROLL_PANEL_CLASS}`}>
                 <div className="bg-background/80 rounded-xl p-4 border border-border/60">
                   <div className="flex items-center justify-between gap-3 mb-3 flex-wrap gap-y-2">
                     <div>
@@ -1544,15 +1573,15 @@ export function EquipmentManagement() {
                   ) : (
                     <div id="consumable-reports-section" className="space-y-2">
                       {consumableReports
-                        .slice()
+                        // Reports only carry a date, so many share one; a later entry in the list is a newer report.
+                        .map((report, order) => ({ report, order }))
                         .sort((a, b) => {
-                          const timeA = Date.parse(a.reportedAt || '') || 0;
-                          const timeB = Date.parse(b.reportedAt || '') || 0;
+                          const timeA = Date.parse(a.report.reportedAt || '') || 0;
+                          const timeB = Date.parse(b.report.reportedAt || '') || 0;
                           if (timeA !== timeB) return timeB - timeA;
-                          return (b.reportedAt || '').localeCompare(a.reportedAt || '');
+                          return b.order - a.order;
                         })
-                        .slice(0, 10)
-                        .map((report, index) => {
+                        .map(({ report }, index) => {
                           const isRunOut = Boolean(report.isRunOut);
                           return (
                             <div
@@ -1600,13 +1629,87 @@ export function EquipmentManagement() {
                     </div>
                   )}
                 </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Consumable Search, Filter & Sort */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="sm:col-span-3 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Search supplies, fertilizers, chemicals..."
+                    value={supplySearchQuery}
+                    onChange={(e) => setSupplySearchQuery(e.target.value)}
+                    className="pl-9 h-9 text-xs bg-background/80"
+                  />
+                </div>
+                <div>
+                  <select
+                    value={supplyCategoryFilter}
+                    onChange={(e) => setSupplyCategoryFilter(e.target.value)}
+                    className="w-full h-9 px-2 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
+                  >
+                    <option value="All">All Categories</option>
+                    {supplyCategoryOptions.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <select
+                    value={supplyStatusFilter}
+                    onChange={(e) => setSupplyStatusFilter(e.target.value)}
+                    className="w-full h-9 px-2 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
+                  >
+                    <option value="All">All Statuses</option>
+                    <option value="Low Stock">⚠️ Low Stock</option>
+                    <option value="Out of Stock">🚫 Out of Stock</option>
+                    <option value="In Stock">✅ In Stock</option>
+                  </select>
+                </div>
+                <div>
+                  <select
+                    value={supplySortOrder}
+                    onChange={(e) => setSupplySortOrder(e.target.value as 'name' | 'stock_asc' | 'stock_desc' | 'newest')}
+                    className="w-full h-9 px-2 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
+                  >
+                    <option value="newest">Sort: Newest First</option>
+                    <option value="stock_asc">Sort: Stock (Low to High)</option>
+                    <option value="stock_desc">Sort: Stock (High to Low)</option>
+                    <option value="name">Sort: Name (A–Z)</option>
+                  </select>
+                </div>
+              </div>
 
+              <div className={`space-y-3 max-h-[540px] ${SCROLL_PANEL_CLASS}`}>
                 {filteredConsumables.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-8 text-center font-mono">
-                    {supplySearchQuery || supplyCategoryFilter !== 'All' || supplyStatusFilter !== 'All'
-                      ? 'No consumable supplies match your filter criteria.'
-                      : 'No consumable supplies registered yet.'}
-                  </p>
+                  <div className="py-8 text-center space-y-3">
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {supplySearchQuery || supplyCategoryFilter !== 'All' || supplyStatusFilter !== 'All'
+                        ? `None of your ${consumables.length} supplies match ${[
+                            supplySearchQuery.trim() ? `"${supplySearchQuery.trim()}"` : null,
+                            supplyCategoryFilter !== 'All' ? supplyCategoryFilter : null,
+                            supplyStatusFilter !== 'All' ? supplyStatusFilter : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' + ')}.`
+                        : 'No consumable supplies registered yet.'}
+                    </p>
+                    {supplySearchQuery || supplyCategoryFilter !== 'All' || supplyStatusFilter !== 'All' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSupplySearchQuery('');
+                          setSupplyCategoryFilter('All');
+                          setSupplyStatusFilter('All');
+                        }}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-background/80 border border-border/70 hover:bg-[#2d5016] hover:text-white transition-all"
+                      >
+                        Clear filters
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
 
                 {filteredConsumables.map((item) => {
@@ -1767,22 +1870,29 @@ export function EquipmentManagement() {
                 </p>
               ) : null}
               {equipmentData
-                .filter((e) => e.status === 'maintenance' || e.status === 'damaged')
+                .filter((e) => e.units.maintenance > 0 || e.units.broken > 0)
                 .slice(0, 5)
                 .map((equipment, idx) => (
                   <div key={idx} className="bg-muted/40 rounded-lg p-3">
                     <div className="flex items-start justify-between mb-2">
                       <h4 className="text-sm">{equipment.name}</h4>
-                      {equipment.status === 'damaged' && (
+                      {equipment.units.broken > 0 && (
                         <AlertTriangle className="w-4 h-4 text-[#d4183d]" />
                       )}
                     </div>
+                    {equipment.units.total > 1 ? (
+                      <p className="text-xs text-muted-foreground">
+                        {equipment.units.broken > 0 ? `${equipment.units.broken} of ${equipment.units.total} broken` : null}
+                        {equipment.units.broken > 0 && equipment.units.maintenance > 0 ? ' · ' : null}
+                        {equipment.units.maintenance > 0 ? `${equipment.units.maintenance} in maintenance` : null}
+                      </p>
+                    ) : null}
                     <p className="text-xs text-muted-foreground">
                       Last service: {equipment.lastMaintenance}
                     </p>
                   </div>
                 ))}
-              {equipmentData.filter((e) => e.status === 'maintenance' || e.status === 'damaged').length === 0 &&
+              {equipmentData.filter((e) => e.units.maintenance > 0 || e.units.broken > 0).length === 0 &&
               pendingWreckedCount === 0 ? (
                 <p className="text-sm text-muted-foreground">No equipment flagged for repair.</p>
               ) : null}

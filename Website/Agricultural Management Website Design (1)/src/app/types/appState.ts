@@ -880,11 +880,46 @@ export function mergeWorkerPrivateStates(
 ): AppState {
   const result = { ...sharedState };
   for (const key of PRIVATE_FIELD_KEYS) {
-    (result[key] as unknown[]) = Object.values(privateStatesByUid).flatMap(
-      (s) => (s[key] as unknown[]) ?? [],
+    const items = Object.entries(privateStatesByUid).flatMap(([uid, s]) =>
+      ((s[key] as unknown[]) ?? []).map((item) => ({ uid, item })),
     );
+    (result[key] as unknown[]) = dedupeByReportId(items);
   }
   return result;
+}
+
+/**
+ * The same report can be stored in more than one worker document (a stale copy left under a previous owner, or a
+ * worker's app saving reports it merely received), and joining the documents would then list it several times -- and
+ * count it several times. A report id identifies one report, so keep a single copy of each, preferring the one in
+ * the reporter's own document. Records without a report id (attendance, scans, ...) are always kept as they are.
+ */
+function dedupeByReportId(entries: { uid: string; item: unknown }[]): unknown[] {
+  const reportIdOf = (item: unknown): string => {
+    const id = (item as { reportId?: unknown } | null)?.reportId;
+    return typeof id === 'string' ? id.trim() : '';
+  };
+  const ownerOf = (item: unknown): string => {
+    const uid = (item as { reportedByAuthUid?: unknown } | null)?.reportedByAuthUid;
+    return typeof uid === 'string' ? uid.trim() : '';
+  };
+  const out: { uid: string; item: unknown }[] = [];
+  const slotById = new Map<string, number>();
+  for (const entry of entries) {
+    const id = reportIdOf(entry.item);
+    if (!id) {
+      out.push(entry);
+      continue;
+    }
+    const slot = slotById.get(id);
+    if (slot === undefined) {
+      slotById.set(id, out.length);
+      out.push(entry);
+    } else if (out[slot].uid !== ownerOf(out[slot].item) && entry.uid === ownerOf(entry.item)) {
+      out[slot] = entry;
+    }
+  }
+  return out.map((e) => e.item);
 }
 
 export function totalItemCount(state: AppState): number {

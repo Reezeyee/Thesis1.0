@@ -55,20 +55,34 @@ export async function createWorkerAuthAccount(args: {
   try {
     const credential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     const user = credential.user;
-    // Written through the PRIMARY db (the signed-in admin), not the new worker's own session:
-    // firestore.rules only lets an account create its own profile as a BUYER, so a FARM_STAFF
-    // profile -- the role that unlocks farm-data writes -- must come from the admin.
-    await setDoc(doc(db, COLLECTIONS.USERS, user.uid), {
-      email,
-      displayName: args.name.trim(),
-      role: 'FARM_STAFF',
-      workerId: args.workerId,
-      workerRole: args.role,
-      mustChangePassword: true,
-      isTemporaryPassword: true,
-      createdAt: serverTimestamp(),
-      source: 'web-admin-worker-form',
-    }).catch(() => undefined);
+    try {
+      // Written through the PRIMARY db (the signed-in admin), not the new worker's own session:
+      // firestore.rules only lets an account create its own profile as a BUYER, so a FARM_STAFF
+      // profile -- the role that unlocks farm-data writes -- must come from the admin.
+      await setDoc(doc(db, COLLECTIONS.USERS, user.uid), {
+        email,
+        displayName: args.name.trim(),
+        role: 'FARM_STAFF',
+        workerId: args.workerId,
+        workerRole: args.role,
+        mustChangePassword: true,
+        isTemporaryPassword: true,
+        createdAt: serverTimestamp(),
+        source: 'web-admin-worker-form',
+      });
+    } catch (profileError) {
+      // A login without a FARM_STAFF profile can't write farm data, and the form would still report
+      // success. Undo the login (the secondary session is the new worker, so it may delete itself)
+      // so the admin can simply retry with the same worker id instead of hitting "email already in use".
+      const reason = profileError instanceof Error ? profileError.message : String(profileError);
+      const removed = await user.delete().then(() => true, () => false);
+      throw new Error(
+        `The login was created but the worker profile could not be saved (${reason}). ` +
+          (removed
+            ? 'The login was removed, so nothing was left half-created. Please try again.'
+            : `The login ${email} could not be removed automatically; delete it in Firebase Authentication before retrying.`),
+      );
+    }
     return { uid: user.uid, email, password };
   } finally {
     await signOut(secondaryAuth).catch(() => undefined);
