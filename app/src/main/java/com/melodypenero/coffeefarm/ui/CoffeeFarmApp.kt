@@ -56,9 +56,12 @@ import com.melodypenero.coffeefarm.data.store.LocalAppStore
 import com.melodypenero.coffeefarm.ui.dashboard.DashboardScreen
 import com.melodypenero.coffeefarm.ui.navigation.AppDestination
 import com.melodypenero.coffeefarm.ui.navigation.administratorMobileDestinations
+import com.melodypenero.coffeefarm.ui.navigation.buyerMobileDestinations
 import com.melodypenero.coffeefarm.ui.navigation.farmStaffMobileDestinations
 import com.melodypenero.coffeefarm.ui.navigation.maintenanceMobileDestinations
 import com.melodypenero.coffeefarm.ui.navigation.riderMobileDestinations
+import com.melodypenero.coffeefarm.ui.screens.BuyerOrdersScreen
+import com.melodypenero.coffeefarm.ui.screens.BuyerShopScreen
 import com.melodypenero.coffeefarm.ui.screens.MaintenanceJobsScreen
 import com.melodypenero.coffeefarm.domain.findMaintenanceWorker
 import com.melodypenero.coffeefarm.ui.screens.RiderDeliveriesScreen
@@ -103,7 +106,10 @@ fun CoffeeFarmApp() {
 
     LaunchedEffect(session?.userId) {
         val s = session
-        if (s != null) {
+        // Buyer accounts are never staff-role, so firestore.rules blocks them from the shared
+        // app_state/farm write path store's passive sync can trigger -- keep store inactive for
+        // them; the buyer screens read/write their own dedicated Firestore collections instead.
+        if (s != null && s.role != UserRole.BUYER) {
             store.setActiveUserId(s.userId)
             store.initializeIfNeeded()
         } else {
@@ -340,6 +346,12 @@ fun CoffeeFarmApp() {
                         composable(AppDestination.MaintenanceJobs.route) {
                             MaintenanceJobsScreen(session = currentSession)
                         }
+                        composable(AppDestination.BuyerShop.route) {
+                            BuyerShopScreen(session = currentSession)
+                        }
+                        composable(AppDestination.BuyerOrders.route) {
+                            BuyerOrdersScreen(session = currentSession)
+                        }
                         composable(AppDestination.StaffAttendance.route) {
                             StaffAttendanceScreen(session = currentSession)
                         }
@@ -389,9 +401,11 @@ private fun destinationsForRole(role: UserRole, isRider: Boolean, isMaintenance:
         isMaintenance -> maintenanceMobileDestinations
         else -> farmStaffMobileDestinations
     }
+    UserRole.BUYER -> buyerMobileDestinations
 }
 
 private fun roleLabel(role: UserRole): String = when (role) {
     UserRole.ADMINISTRATOR -> "Admin"
     UserRole.FARM_STAFF -> "Worker"
+    UserRole.BUYER -> "Buyer"
 }

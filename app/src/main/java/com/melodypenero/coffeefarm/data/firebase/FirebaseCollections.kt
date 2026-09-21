@@ -30,8 +30,11 @@ object FirebaseCollections {
     const val LOGIN_HISTORY = "login_history"
     const val PASSWORD_RESET_REQUESTS = "password_reset_requests"
 
-    /** Orders placed by Buyers on the website; a Delivery Rider reads only the ones assigned to them. */
+    /** Orders placed by Buyers on the website or app; a Delivery Rider reads only the ones assigned to them. */
     const val BUYER_ORDERS = "buyer_orders"
+
+    /** Reserved-stock hold written alongside a pending buyer order (same doc id); see firestore.rules. */
+    const val STOCK_HOLDS = "stock_holds"
 
     /** The rider's proof-of-delivery photo, one doc per order (same id as the order). */
     const val DELIVERY_PROOFS = "delivery_proofs"

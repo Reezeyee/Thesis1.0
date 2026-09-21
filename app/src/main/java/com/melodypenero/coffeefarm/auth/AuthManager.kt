@@ -13,7 +13,9 @@ import kotlinx.coroutines.tasks.await
 
 enum class UserRole {
     ADMINISTRATOR,
-    FARM_STAFF
+    FARM_STAFF,
+    /** Self-registered storefront customer (see firestore.rules `isBuyerRole()`); never a staff role. */
+    BUYER
 }
 
 data class AuthSession(
