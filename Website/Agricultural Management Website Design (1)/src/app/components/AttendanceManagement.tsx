@@ -987,7 +987,26 @@ export function AttendanceManagement() {
                           className="rounded-full bg-blue-500/15 hover:bg-blue-500/25 text-blue-500 border border-blue-500/25 px-2.5 py-0.5 text-xs font-medium cursor-pointer transition-colors"
                           title="Click to view full photo proof"
                         >
-                          👤 Face Verified (View Photo ↗)
+                          👤 Time In Verified (View Photo ↗)
+                        </button>
+                      ) : null}
+                      {isClockedOut && attendance.isTimeOutGeofenceVerified !== undefined && attendance.isTimeOutGeofenceVerified !== null ? (
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            attendance.isTimeOutGeofenceVerified ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/25' : 'bg-amber-500/15 text-amber-500 border border-amber-500/25'
+                          }`}
+                        >
+                          {attendance.isTimeOutGeofenceVerified ? '📍 Time Out In Geofence' : '⚠️ Time Out Remote / Outside Field'}
+                        </span>
+                      ) : null}
+                      {attendance.timeOutFaceSnapshotBase64 ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAttendanceProof(attendance)}
+                          className="rounded-full bg-blue-500/15 hover:bg-blue-500/25 text-blue-500 border border-blue-500/25 px-2.5 py-0.5 text-xs font-medium cursor-pointer transition-colors"
+                          title="Click to view full photo proof"
+                        >
+                          👤 Time Out Verified (View Photo ↗)
                         </button>
                       ) : null}
                       {attendance.details?.includes('Approved correction') ? (
@@ -1048,6 +1067,23 @@ export function AttendanceManagement() {
                     </div>
                   ) : null}
 
+                  {attendance.timeOutLatitude != null && attendance.timeOutLongitude != null ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#6b5d56]">
+                      <span className="font-semibold text-foreground">Time Out Location:</span>
+                      <span>
+                        {attendance.timeOutLocationName || `${attendance.timeOutLatitude.toFixed(5)}, ${attendance.timeOutLongitude.toFixed(5)}`}
+                      </span>
+                      <a
+                        href={`https://www.google.com/maps?q=${attendance.timeOutLatitude},${attendance.timeOutLongitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-[#2d5016] underline hover:text-foreground"
+                      >
+                        Map Pin ↗
+                      </a>
+                    </div>
+                  ) : null}
+
                   {attendance.faceSnapshotBase64 ? (
                     <div
                       onClick={() => setSelectedAttendanceProof(attendance)}
@@ -1055,14 +1091,33 @@ export function AttendanceManagement() {
                     >
                       <img
                         src={attendance.faceSnapshotBase64.startsWith('data:') ? attendance.faceSnapshotBase64 : `data:image/jpeg;base64,${attendance.faceSnapshotBase64}`}
-                        alt="Face verification snapshot"
+                        alt="Time In face verification snapshot"
                         className="h-12 w-12 rounded-lg object-cover border border-border/80 shadow-xs shrink-0"
                       />
                       <div>
                         <p className="text-xs font-semibold text-foreground flex items-center gap-1">
-                          Biometric Photo Proof <span className="text-[10px] text-accent">(Click to enlarge)</span>
+                          Time In Biometric Photo Proof <span className="text-[10px] text-accent">(Click to enlarge)</span>
                         </p>
                         <p className="text-[11px] text-muted-foreground">Captured on device camera during shift check-in</p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {attendance.timeOutFaceSnapshotBase64 ? (
+                    <div
+                      onClick={() => setSelectedAttendanceProof(attendance)}
+                      className="mt-2 flex items-center gap-3 cursor-pointer p-2 rounded-lg bg-background/60 hover:bg-background/90 border border-border/50 transition-colors"
+                    >
+                      <img
+                        src={attendance.timeOutFaceSnapshotBase64.startsWith('data:') ? attendance.timeOutFaceSnapshotBase64 : `data:image/jpeg;base64,${attendance.timeOutFaceSnapshotBase64}`}
+                        alt="Time Out face verification snapshot"
+                        className="h-12 w-12 rounded-lg object-cover border border-border/80 shadow-xs shrink-0"
+                      />
+                      <div>
+                        <p className="text-xs font-semibold text-foreground flex items-center gap-1">
+                          Time Out Biometric Photo Proof <span className="text-[10px] text-accent">(Click to enlarge)</span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">Captured on device camera during shift check-out</p>
                       </div>
                     </div>
                   ) : null}
@@ -1252,67 +1307,104 @@ export function AttendanceManagement() {
               Attendance Photo Proof & Verification
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Mobile GPS and live facial verification snapshot captured during time check-in.
+              Mobile GPS and live facial verification snapshots, captured independently at check-in and check-out.
             </DialogDescription>
           </DialogHeader>
 
           {selectedAttendanceProof && (
             <div className="space-y-4 py-2">
-              <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-accent/40 aspect-4/3 flex items-center justify-center">
-                {selectedAttendanceProof.faceSnapshotBase64 ? (
-                  <img
-                    src={
-                      selectedAttendanceProof.faceSnapshotBase64.startsWith('data:')
-                        ? selectedAttendanceProof.faceSnapshotBase64
-                        : `data:image/jpeg;base64,${selectedAttendanceProof.faceSnapshotBase64}`
-                    }
-                    alt="Biometric Snapshot"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <p className="text-xs text-muted-foreground">No snapshot recorded</p>
-                )}
-              </div>
-
               <div className="rounded-xl bg-muted/40 p-3.5 border border-border/60 space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Employee:</span>
                   <span className="font-bold text-foreground">{selectedAttendanceProof.workerName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Date & Time In:</span>
-                  <span className="font-mono font-semibold text-emerald-500">
-                    {selectedAttendanceProof.date} · {selectedAttendanceProof.clockIn || '—'}
-                  </span>
+                  <span className="text-muted-foreground">Date:</span>
+                  <span className="font-mono font-semibold text-foreground">{selectedAttendanceProof.date}</span>
                 </div>
-                {selectedAttendanceProof.clockOut && (
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-emerald-500">Time In · {selectedAttendanceProof.clockIn || '—'}</p>
+                <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-accent/40 aspect-4/3 flex items-center justify-center">
+                  {selectedAttendanceProof.faceSnapshotBase64 ? (
+                    <img
+                      src={
+                        selectedAttendanceProof.faceSnapshotBase64.startsWith('data:')
+                          ? selectedAttendanceProof.faceSnapshotBase64
+                          : `data:image/jpeg;base64,${selectedAttendanceProof.faceSnapshotBase64}`
+                      }
+                      alt="Time In biometric snapshot"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No snapshot recorded</p>
+                  )}
+                </div>
+                <div className="rounded-xl bg-muted/40 p-3.5 border border-border/60 space-y-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Time Out:</span>
-                    <span className="font-mono font-semibold text-amber-500">
-                      {selectedAttendanceProof.clockOut}
+                    <span className="text-muted-foreground">Location:</span>
+                    <span className="font-semibold text-foreground text-right">
+                      {selectedAttendanceProof.timeInLocationName || 'Field Site'}
                     </span>
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Location:</span>
-                  <span className="font-semibold text-foreground text-right">
-                    {selectedAttendanceProof.timeInLocationName || 'Field Site'}
-                  </span>
+                  {selectedAttendanceProof.timeInLatitude != null && selectedAttendanceProof.timeInLongitude != null && (
+                    <div className="flex justify-between pt-1 border-t border-border/40">
+                      <span className="text-muted-foreground">GPS Coordinates:</span>
+                      <a
+                        href={`https://www.google.com/maps?q=${selectedAttendanceProof.timeInLatitude},${selectedAttendanceProof.timeInLongitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono font-bold text-accent hover:underline flex items-center gap-1"
+                      >
+                        {selectedAttendanceProof.timeInLatitude.toFixed(5)}, {selectedAttendanceProof.timeInLongitude.toFixed(5)} ↗
+                      </a>
+                    </div>
+                  )}
                 </div>
-                {selectedAttendanceProof.timeInLatitude != null && selectedAttendanceProof.timeInLongitude != null && (
-                  <div className="flex justify-between pt-1 border-t border-border/40">
-                    <span className="text-muted-foreground">GPS Coordinates:</span>
-                    <a
-                      href={`https://www.google.com/maps?q=${selectedAttendanceProof.timeInLatitude},${selectedAttendanceProof.timeInLongitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono font-bold text-accent hover:underline flex items-center gap-1"
-                    >
-                      {selectedAttendanceProof.timeInLatitude.toFixed(5)}, {selectedAttendanceProof.timeInLongitude.toFixed(5)} ↗
-                    </a>
-                  </div>
-                )}
               </div>
+
+              {selectedAttendanceProof.clockOut ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-amber-500">Time Out · {selectedAttendanceProof.clockOut}</p>
+                  <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-accent/40 aspect-4/3 flex items-center justify-center">
+                    {selectedAttendanceProof.timeOutFaceSnapshotBase64 ? (
+                      <img
+                        src={
+                          selectedAttendanceProof.timeOutFaceSnapshotBase64.startsWith('data:')
+                            ? selectedAttendanceProof.timeOutFaceSnapshotBase64
+                            : `data:image/jpeg;base64,${selectedAttendanceProof.timeOutFaceSnapshotBase64}`
+                        }
+                        alt="Time Out biometric snapshot"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">No snapshot recorded</p>
+                    )}
+                  </div>
+                  <div className="rounded-xl bg-muted/40 p-3.5 border border-border/60 space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Location:</span>
+                      <span className="font-semibold text-foreground text-right">
+                        {selectedAttendanceProof.timeOutLocationName || 'Field Site'}
+                      </span>
+                    </div>
+                    {selectedAttendanceProof.timeOutLatitude != null && selectedAttendanceProof.timeOutLongitude != null && (
+                      <div className="flex justify-between pt-1 border-t border-border/40">
+                        <span className="text-muted-foreground">GPS Coordinates:</span>
+                        <a
+                          href={`https://www.google.com/maps?q=${selectedAttendanceProof.timeOutLatitude},${selectedAttendanceProof.timeOutLongitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono font-bold text-accent hover:underline flex items-center gap-1"
+                        >
+                          {selectedAttendanceProof.timeOutLatitude.toFixed(5)}, {selectedAttendanceProof.timeOutLongitude.toFixed(5)} ↗
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
 
