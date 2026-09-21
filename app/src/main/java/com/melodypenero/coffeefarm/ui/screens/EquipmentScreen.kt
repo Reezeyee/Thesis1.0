@@ -62,10 +62,10 @@ fun EquipmentScreen(reporterDisplayName: String = "") {
         if (isAdmin) {
             listOf("Usage", "Maintenance", "Costs")
         } else {
-            listOf("Maintenance")
+            listOf("Borrow", "Maintenance")
         }
     }
-    var activeTab by remember(isAdmin) { mutableStateOf(if (isAdmin) "Usage" else "Maintenance") }
+    var activeTab by remember(isAdmin) { mutableStateOf(if (isAdmin) "Usage" else "Borrow") }
     var showAddDialog by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var reportEquipmentPreset by remember { mutableStateOf<String?>(null) }
@@ -91,7 +91,31 @@ fun EquipmentScreen(reporterDisplayName: String = "") {
             )
 
             when (activeTab) {
-                "Usage" -> UsageTab(state.usageLogs.map { Triple(it.equipmentName, it.details, it.hoursText) }) { editingIndex = it }
+                "Usage" -> UsageTab(
+                    state.usageLogs.map {
+                        val subtitle = when {
+                            it.borrowedAt != null && it.returnedAt != null ->
+                                "${it.borrowedBy ?: "Unknown"} • ${formatUsageTimestamp(it.borrowedAt)} → ${formatUsageTimestamp(it.returnedAt)}"
+                            it.borrowedAt != null ->
+                                "${it.borrowedBy ?: "Unknown"} • Borrowed ${formatUsageTimestamp(it.borrowedAt)} • still out"
+                            else -> it.details
+                        }
+                        Triple(it.equipmentName, subtitle, it.hoursText)
+                    }
+                ) { editingIndex = it }
+                "Borrow" -> BorrowTab(
+                    equipment = state.equipment,
+                    usageLogs = state.usageLogs,
+                    reporterDisplayName = reporterDisplayName,
+                    onBorrow = { equipmentName ->
+                        store.borrowEquipment(equipmentName, reporterDisplayName)
+                        Toast.makeText(context, "Borrowed $equipmentName", Toast.LENGTH_SHORT).show()
+                    },
+                    onReturn = { logId ->
+                        store.returnEquipment(logId)
+                        Toast.makeText(context, "Equipment returned", Toast.LENGTH_SHORT).show()
+                    }
+                )
                 "Maintenance" -> if (isAdmin) {
                     MaintenanceTab(
                         state.maintenanceLogs.map {
@@ -336,6 +360,127 @@ private fun UsageTab(logs: List<Triple<String, String, String>>, onEdit: (Int) -
                 subtitle = log.second,
                 trailing = log.third
             ) { onEdit(index) }
+        }
+    }
+}
+
+private fun formatUsageTimestamp(iso: String?): String {
+    if (iso.isNullOrBlank()) return "—"
+    return runCatching {
+        val instant = java.time.Instant.parse(iso)
+        java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a")
+            .withZone(java.time.ZoneId.systemDefault())
+            .format(instant)
+    }.getOrDefault(iso)
+}
+
+@Composable
+private fun BorrowTab(
+    equipment: List<EquipmentRecord>,
+    usageLogs: List<com.melodypenero.coffeefarm.data.store.UsageLogRecord>,
+    reporterDisplayName: String,
+    onBorrow: (String) -> Unit,
+    onReturn: (String) -> Unit
+) {
+    val isDarkPalette = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val titleColor = if (isDarkPalette) Color(0xFFF4EDE6) else Color(0xFF3E2723)
+    val subtitleColor = if (isDarkPalette) Color(0xFFB8A99E) else Color(0xFF7A6A5F)
+    val cardColor = if (isDarkPalette) Color(0xFF2D211A) else Color(0xFFFFFFFF)
+    val borderColor = if (isDarkPalette) Color(0xFF5A463A) else Color(0xFFD9CEC3)
+    val name = reporterDisplayName.trim()
+
+    val myActiveBorrows = remember(usageLogs, name) {
+        usageLogs.filter {
+            it.returnedAt == null && it.borrowedAt != null &&
+                (name.isBlank() || it.borrowedBy?.equals(name, ignoreCase = true) == true)
+        }
+    }
+    val myHistory = remember(usageLogs, name) {
+        usageLogs
+            .filter { it.returnedAt != null && (name.isBlank() || it.borrowedBy?.equals(name, ignoreCase = true) == true) }
+            .asReversed()
+    }
+    val availableEquipment = remember(equipment) { equipment.filter { it.status.equals("available", ignoreCase = true) } }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (myActiveBorrows.isNotEmpty()) {
+            item {
+                Text("Currently borrowed", color = titleColor, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+            items(myActiveBorrows, key = { it.logId ?: "${it.equipmentName}-${it.borrowedAt}" }) { log ->
+                Card(colors = CardDefaults.cardColors(containerColor = cardColor), border = BorderStroke(1.dp, borderColor)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(log.equipmentName, color = titleColor, fontWeight = FontWeight.SemiBold)
+                        Text("Borrowed at ${formatUsageTimestamp(log.borrowedAt)}", color = subtitleColor, style = MaterialTheme.typography.labelMedium)
+                        Button(
+                            onClick = { log.logId?.let(onReturn) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD4183D), contentColor = Color.White)
+                        ) {
+                            Text("Return")
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                "Available equipment",
+                color = titleColor,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        if (availableEquipment.isEmpty()) {
+            item { Text("No equipment available to borrow right now.", color = subtitleColor) }
+        } else {
+            items(availableEquipment, key = { it.name }) { eq ->
+                Card(colors = CardDefaults.cardColors(containerColor = cardColor), border = BorderStroke(1.dp, borderColor)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Timer, contentDescription = null, tint = Color(0xFF84B626))
+                        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                            Text(eq.name, color = titleColor, fontWeight = FontWeight.SemiBold)
+                            Text(eq.category, color = subtitleColor)
+                        }
+                        Button(
+                            onClick = { onBorrow(eq.name) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF84B626), contentColor = Color(0xFF111111))
+                        ) {
+                            Text("Borrow")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (myHistory.isNotEmpty()) {
+            item {
+                Text(
+                    "My borrow history",
+                    color = titleColor,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            items(myHistory, key = { it.logId ?: "${it.equipmentName}-${it.returnedAt}" }) { log ->
+                EquipmentSimpleCard(
+                    icon = Icons.Default.Timer,
+                    title = log.equipmentName,
+                    subtitle = "${formatUsageTimestamp(log.borrowedAt)} → ${formatUsageTimestamp(log.returnedAt)}",
+                    trailing = log.hoursText
+                ) {}
+            }
         }
     }
 }

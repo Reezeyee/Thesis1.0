@@ -21,6 +21,23 @@ export function parseUsageHours(hoursText: string): number {
   return Number.isFinite(n) ? Math.round(n * 10) / 10 : 0;
 }
 
+/** Formats an ISO borrow/return timestamp for display, e.g. "Sep 21, 3:45 PM". Falls back to the raw string if unparsable. */
+export function formatUsageTimestamp(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+/** Hours between borrow and return (or now, if still borrowed). Null when there's no borrow timestamp to compute from. */
+export function computeUsageDurationHours(log: UsageLogRecord): number | null {
+  if (!log.borrowedAt) return null;
+  const start = Date.parse(log.borrowedAt);
+  const end = log.returnedAt ? Date.parse(log.returnedAt) : Date.now();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  return (end - start) / 3_600_000;
+}
+
 export function maintenanceLogKey(log: MaintenanceRecord): string {
   return [log.equipmentName.trim().toLowerCase(), log.date ?? '', log.details.trim()].join('\u0001');
 }

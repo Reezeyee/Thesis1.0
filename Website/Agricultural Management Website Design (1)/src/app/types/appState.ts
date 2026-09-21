@@ -243,6 +243,13 @@ export interface UsageLogRecord {
   equipmentName: string;
   details: string;
   hoursText: string;
+  /** Stable id for a borrow/return record, so a later "return" edits this same row instead of appending a new one. */
+  logId?: string;
+  /** Worker who borrowed the equipment, and when (ISO timestamp) -- set by the mobile app's Borrow action. */
+  borrowedBy?: string | null;
+  borrowedAt?: string | null;
+  /** ISO timestamp set by the mobile app's Return action; null/absent means still borrowed. */
+  returnedAt?: string | null;
 }
 
 export interface MaintenanceRecord {

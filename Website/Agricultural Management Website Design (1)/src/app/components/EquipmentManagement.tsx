@@ -5,7 +5,8 @@ import { useRepairJobs } from '../store/useRepairJobs';
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { SelectWithOther } from './ui/SelectWithOther';
-import { Wrench, CheckCircle, AlertTriangle, Calendar, Edit2, Plus, X, Search, Sparkles, MinusCircle } from 'lucide-react';
+import { Wrench, CheckCircle, AlertTriangle, Calendar, Edit2, Plus, X, Search, Sparkles, MinusCircle, FileSpreadsheet } from 'lucide-react';
+import { downloadCsv } from '../lib/csvExport';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
 const containerVariants = {
@@ -38,7 +39,9 @@ import {
   buildEquipmentStatusSlices,
   buildMaintenanceMonthlyChart,
   buildUsageByEquipmentChart,
+  computeUsageDurationHours,
   effectiveEquipmentStatus,
+  formatUsageTimestamp,
   mapEquipStatus,
   maintenanceChartHasData,
   latestMaintenanceLabel,
@@ -498,6 +501,38 @@ export function EquipmentManagement() {
   );
 
   const usageData = useMemo(() => buildUsageByEquipmentChart(state), [state.usageLogs]);
+
+  const borrowLogRows = useMemo(() => {
+    return state.usageLogs
+      .map((log, idx) => {
+        const duration = computeUsageDurationHours(log);
+        return {
+          key: log.logId || `${log.equipmentName}-${log.borrowedAt ?? idx}`,
+          equipment: log.equipmentName,
+          worker: log.borrowedBy || '—',
+          borrowedAtLabel: log.borrowedAt ? formatUsageTimestamp(log.borrowedAt) : 'n/a',
+          returnedAtLabel: log.returnedAt ? formatUsageTimestamp(log.returnedAt) : log.borrowedAt ? '—' : 'n/a',
+          hoursLabel: duration !== null ? `${duration.toFixed(1)}h` : log.hoursText || '—',
+          status: log.borrowedAt ? (log.returnedAt ? 'Returned' : 'Active') : 'Manual entry',
+          sortTime: Date.parse(log.borrowedAt || '') || 0,
+          idx,
+        };
+      })
+      .sort((a, b) => b.sortTime - a.sortTime || b.idx - a.idx);
+  }, [state.usageLogs]);
+
+  const activeBorrowCount = useMemo(
+    () => state.usageLogs.filter((l) => l.borrowedAt && !l.returnedAt).length,
+    [state.usageLogs],
+  );
+
+  const exportBorrowLogCsv = () => {
+    downloadCsv(
+      `equipment-borrow-log-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Equipment', 'Worker', 'Borrowed At', 'Returned At', 'Hours Used', 'Status'],
+      borrowLogRows.map((r) => [r.equipment, r.worker, r.borrowedAtLabel, r.returnedAtLabel, r.hoursLabel, r.status]),
+    );
+  };
 
   const availableCount = equipmentData.filter((e) => e.status === 'available').length;
   const maintenanceIssueCount = pendingMaintenanceIssueCount(state);
@@ -1191,6 +1226,76 @@ export function EquipmentManagement() {
                 />
               ),
             )}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm mb-6">
+        <div className="flex items-start justify-between gap-4 mb-4 flex-wrap gap-y-2">
+          <div>
+            <h3 className="mb-1">Equipment borrow log</h3>
+            <p className="text-sm text-muted-foreground">
+              Borrow and return times recorded from the mobile app; hours used are calculated automatically.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {activeBorrowCount > 0 ? (
+              <span className="text-xs px-3 py-1 rounded-full bg-amber-500/20 text-amber-600 border border-amber-500/30 whitespace-nowrap">
+                {activeBorrowCount} out
+              </span>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              disabled={borrowLogRows.length === 0}
+              onClick={exportBorrowLogCsv}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 mr-1" />
+              Export to Excel
+            </Button>
+          </div>
+        </div>
+        {borrowLogRows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No borrow records yet.</p>
+        ) : (
+          <div className={`overflow-x-auto max-h-[360px] ${SCROLL_PANEL_CLASS}`}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border/60">
+                  <th className="py-2 pr-3 font-semibold">Equipment</th>
+                  <th className="py-2 pr-3 font-semibold">Worker</th>
+                  <th className="py-2 pr-3 font-semibold">Borrowed at</th>
+                  <th className="py-2 pr-3 font-semibold">Returned at</th>
+                  <th className="py-2 pr-3 font-semibold">Hours used</th>
+                  <th className="py-2 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {borrowLogRows.map((row) => (
+                  <tr key={row.key} className="border-b border-border/40 last:border-0">
+                    <td className="py-2 pr-3 font-medium text-foreground">{row.equipment}</td>
+                    <td className="py-2 pr-3">{row.worker}</td>
+                    <td className="py-2 pr-3">{row.borrowedAtLabel}</td>
+                    <td className="py-2 pr-3">{row.returnedAtLabel}</td>
+                    <td className="py-2 pr-3 font-mono">{row.hoursLabel}</td>
+                    <td className="py-2">
+                      <span
+                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${
+                          row.status === 'Active'
+                            ? 'bg-amber-500/20 text-amber-600'
+                            : row.status === 'Returned'
+                            ? 'bg-[#2d5016]/15 text-[#2d5016]'
+                            : 'bg-muted/50 text-muted-foreground'
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
