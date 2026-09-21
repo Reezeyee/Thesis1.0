@@ -78,6 +78,7 @@ import com.melodypenero.coffeefarm.ui.screens.StaffAttendanceScreen
 import com.melodypenero.coffeefarm.ui.screens.SuppliesScreen
 import com.melodypenero.coffeefarm.ui.screens.SmsScreen
 import com.melodypenero.coffeefarm.ui.components.farmPalette
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -118,18 +119,7 @@ fun CoffeeFarmApp() {
     }
 
     if (!authReady) {
-        val palette = farmPalette()
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(palette.pageGradient),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(48.dp),
-                color = palette.accent
-            )
-        }
+        FullScreenLoading()
         return
     }
 
@@ -166,6 +156,24 @@ fun CoffeeFarmApp() {
     val isMaintenance = remember(currentSession.userId, currentSession.email, currentSession.role, workers) {
         currentSession.role == UserRole.FARM_STAFF &&
             findMaintenanceWorker(currentSession.userId, currentSession.email, workers) != null
+    }
+    // Rider/Maintenance are only known once the worker list has synced. Until then a Farm Staff
+    // login would be treated as a plain field worker and land on the field dashboard, then get
+    // redirected away once the list arrives -- so hold a spinner instead of flashing the wrong
+    // home screen. The timeout keeps a genuine field worker (or an offline device) from waiting
+    // forever.
+    var roleResolved by remember(currentSession.userId) {
+        mutableStateOf(currentSession.role != UserRole.FARM_STAFF)
+    }
+    val workersSynced = workers.isNotEmpty()
+    LaunchedEffect(currentSession.userId, workersSynced) {
+        if (roleResolved) return@LaunchedEffect
+        if (!workersSynced) delay(ROLE_RESOLVE_TIMEOUT_MS)
+        roleResolved = true
+    }
+    if (!roleResolved) {
+        FullScreenLoading()
+        return
     }
     val allowedDestinations = remember(currentSession.role, isRider, isMaintenance) {
         destinationsForRole(currentSession.role, isRider, isMaintenance)
@@ -394,6 +402,24 @@ fun CoffeeFarmApp() {
  * Mobile app focuses on CNN cherry scanning and worker field tools (attendance, irrigation, equipment, settings).
  * Workers & operations HR and sales/finance screens live on the `Website/` React admin portal for administrators.
  */
+private const val ROLE_RESOLVE_TIMEOUT_MS = 4_000L
+
+@Composable
+private fun FullScreenLoading() {
+    val palette = farmPalette()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(palette.pageGradient),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(48.dp),
+            color = palette.accent
+        )
+    }
+}
+
 private fun destinationsForRole(role: UserRole, isRider: Boolean, isMaintenance: Boolean): List<AppDestination> = when (role) {
     UserRole.ADMINISTRATOR -> administratorMobileDestinations
     UserRole.FARM_STAFF -> when {

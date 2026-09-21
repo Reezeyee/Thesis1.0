@@ -87,7 +87,8 @@ fun SmsScreen(session: AuthSession) {
     val palette = farmPalette()
 
     // Configurable/default phone numbers
-    var adminPhoneNumber by remember { mutableStateOf("09171234567") }
+    // No default: a made-up number here could text a stranger, so the worker enters the real admin number.
+    var adminPhoneNumber by remember { mutableStateOf("") }
     var selectedWorker by remember { mutableStateOf<String?>(null) }
     var messageText by remember { mutableStateOf("") }
 
@@ -160,8 +161,8 @@ fun SmsScreen(session: AuthSession) {
     val handleSendViaSmsLink = {
         val phone = partnerPhone.trim()
         val text = messageText.trim()
-        if (phone.isBlank()) {
-            Toast.makeText(context, "Cannot send: No phone number specified.", Toast.LENGTH_LONG).show()
+        if (!isValidPhone11(phone)) {
+            Toast.makeText(context, "Cannot send: enter a valid 11-digit phone number (09XXXXXXXXX).", Toast.LENGTH_LONG).show()
         } else if (text.isBlank()) {
             Toast.makeText(context, "Cannot send: Message is empty.", Toast.LENGTH_SHORT).show()
         } else {
@@ -217,8 +218,8 @@ fun SmsScreen(session: AuthSession) {
                             value = adminPhoneNumber,
                             onValueChange = { adminPhoneNumber = sanitizePhoneInput(it) },
                             label = { Text("Admin Phone Number") },
-                            isError = !isValidPhone11(adminPhoneNumber),
-                            supportingText = { Text(if (isValidPhone11(adminPhoneNumber)) "Numbers only, 11 digits starting with 09." else PHONE_ERROR_MESSAGE) },
+                            isError = adminPhoneNumber.isNotEmpty() && !isValidPhone11(adminPhoneNumber),
+                            supportingText = { Text(if (adminPhoneNumber.isEmpty() || isValidPhone11(adminPhoneNumber)) "Numbers only, 11 digits starting with 09." else PHONE_ERROR_MESSAGE) },
                             leadingIcon = { Icon(Icons.Default.SettingsPhone, contentDescription = null, tint = palette.textSecondary) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -409,7 +410,7 @@ fun SmsScreen(session: AuthSession) {
                             FarmPrimaryButton(
                                 text = "Send via SMS Link",
                                 onClick = { handleSendViaSmsLink() },
-                                enabled = partnerPhone.isNotBlank() && messageText.isNotBlank()
+                                enabled = isValidPhone11(partnerPhone.trim()) && messageText.isNotBlank()
                             )
                         }
                     }

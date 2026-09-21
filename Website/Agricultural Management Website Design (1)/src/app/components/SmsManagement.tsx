@@ -44,7 +44,8 @@ export function SmsManagement() {
   const [messageText, setMessageText] = useState('');
   
   // Admin details
-  const [adminPhone, setAdminPhone] = useState('09171234567');
+  // No default: a made-up sender number would be stamped on every message, so the admin enters the real one.
+  const [adminPhone, setAdminPhone] = useState('');
   const [isEditingPhone, setIsEditingPhone] = useState(false);
 
   const workers = state.workers || [];
@@ -176,7 +177,7 @@ export function SmsManagement() {
               </div>
             ) : (
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs font-mono font-bold text-foreground">{adminPhone}</span>
+                <span className="text-xs font-mono font-bold text-foreground">{adminPhone || 'Not set'}</span>
                 <button
                   type="button"
                   onClick={() => setIsEditingPhone(true)}
