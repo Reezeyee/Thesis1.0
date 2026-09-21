@@ -180,6 +180,12 @@ data class AttendanceRecord(
     val timeInLocationName: String = "",
     val faceSnapshotBase64: String = "",
     val isGeofenceVerified: Boolean? = null,
+    /** Independent biometric + location capture for the Time Out punch (never copied from Time In). */
+    val timeOutLatitude: Double? = null,
+    val timeOutLongitude: Double? = null,
+    val timeOutLocationName: String = "",
+    val timeOutFaceSnapshotBase64: String = "",
+    val isTimeOutGeofenceVerified: Boolean? = null,
     /** Set by the website when it creates an attendance row (e.g. from an approved timesheet correction) for sort-order fallback; pass-through only -- see [SmsMessageRecord] for why this app must still declare fields it never reads. */
     val timestampMillis: Long? = null,
     /**
@@ -789,6 +795,11 @@ class AppStore(context: Context) {
             timeInLocationName = (a.timeInLocationName ?: "").trim(),
             faceSnapshotBase64 = (a.faceSnapshotBase64 ?: "").trim(),
             isGeofenceVerified = a.isGeofenceVerified,
+            timeOutLatitude = a.timeOutLatitude,
+            timeOutLongitude = a.timeOutLongitude,
+            timeOutLocationName = (a.timeOutLocationName ?: "").trim(),
+            timeOutFaceSnapshotBase64 = (a.timeOutFaceSnapshotBase64 ?: "").trim(),
+            isTimeOutGeofenceVerified = a.isTimeOutGeofenceVerified,
             regularHours = a.regularHours,
             overtimeHours = a.overtimeHours
         )
@@ -1060,6 +1071,11 @@ class AppStore(context: Context) {
             timeInLocationName = cloud.timeInLocationName.ifBlank { local.timeInLocationName },
             faceSnapshotBase64 = cloud.faceSnapshotBase64.ifBlank { local.faceSnapshotBase64 },
             isGeofenceVerified = cloud.isGeofenceVerified ?: local.isGeofenceVerified,
+            timeOutLatitude = cloud.timeOutLatitude ?: local.timeOutLatitude,
+            timeOutLongitude = cloud.timeOutLongitude ?: local.timeOutLongitude,
+            timeOutLocationName = cloud.timeOutLocationName.ifBlank { local.timeOutLocationName },
+            timeOutFaceSnapshotBase64 = cloud.timeOutFaceSnapshotBase64.ifBlank { local.timeOutFaceSnapshotBase64 },
+            isTimeOutGeofenceVerified = cloud.isTimeOutGeofenceVerified ?: local.isTimeOutGeofenceVerified,
             regularHours = recomputedSplit?.first ?: cloud.regularHours ?: local.regularHours,
             overtimeHours = recomputedSplit?.second ?: cloud.overtimeHours ?: local.overtimeHours,
             timestampMillis = cloudRecord.timestampMillis ?: localRecord.timestampMillis
@@ -2342,7 +2358,12 @@ class AppStore(context: Context) {
         timeInLongitude: Double? = null,
         timeInLocationName: String = "",
         faceSnapshotBase64: String = "",
-        isGeofenceVerified: Boolean? = null
+        isGeofenceVerified: Boolean? = null,
+        timeOutLatitude: Double? = null,
+        timeOutLongitude: Double? = null,
+        timeOutLocationName: String = "",
+        timeOutFaceSnapshotBase64: String = "",
+        isTimeOutGeofenceVerified: Boolean? = null
     ) {
         val prev = state.attendance.getOrNull(index) ?: return
         val computed = FarmFinance.computeHoursFromClock(clockIn, clockOut)
@@ -2369,6 +2390,11 @@ class AppStore(context: Context) {
                         timeInLocationName = timeInLocationName.trim().ifBlank { (prev.timeInLocationName ?: "") },
                         faceSnapshotBase64 = faceSnapshotBase64.trim().ifBlank { (prev.faceSnapshotBase64 ?: "") },
                         isGeofenceVerified = isGeofenceVerified ?: prev.isGeofenceVerified,
+                        timeOutLatitude = timeOutLatitude ?: prev.timeOutLatitude,
+                        timeOutLongitude = timeOutLongitude ?: prev.timeOutLongitude,
+                        timeOutLocationName = timeOutLocationName.trim().ifBlank { (prev.timeOutLocationName ?: "") },
+                        timeOutFaceSnapshotBase64 = timeOutFaceSnapshotBase64.trim().ifBlank { (prev.timeOutFaceSnapshotBase64 ?: "") },
+                        isTimeOutGeofenceVerified = isTimeOutGeofenceVerified ?: prev.isTimeOutGeofenceVerified,
                         regularHours = split?.first,
                         overtimeHours = split?.second
                     )

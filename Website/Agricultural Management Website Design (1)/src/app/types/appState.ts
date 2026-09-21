@@ -45,6 +45,12 @@ export interface AttendanceRecord {
   timeInLocationName?: string;
   faceSnapshotBase64?: string;
   isGeofenceVerified?: boolean | null;
+  /** Independent biometric + location capture for the Time Out punch (never copied from Time In). */
+  timeOutLatitude?: number | null;
+  timeOutLongitude?: number | null;
+  timeOutLocationName?: string;
+  timeOutFaceSnapshotBase64?: string;
+  isTimeOutGeofenceVerified?: boolean | null;
   timestampMillis?: number;
   /**
    * hoursWorked split against the standard shift (see STANDARD_SHIFT_HOURS in farmFinance.ts),

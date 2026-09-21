@@ -190,6 +190,8 @@ fun StaffAttendanceScreen(session: AuthSession) {
 
     var showFaceScanDialog by remember { mutableStateOf(false) }
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    /** Which punch the open face-scan dialog is capturing for: true = Time In, false = Time Out. */
+    var faceScanForTimeIn by remember { mutableStateOf(true) }
 
     var showCorrectionDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
@@ -279,6 +281,34 @@ fun StaffAttendanceScreen(session: AuthSession) {
         capturedBitmap = null
     }
 
+    fun submitTimeOutWithScan() {
+        val attendance = todayAttendance
+        if (attendance == null || todayAttendanceIndex < 0 || !hasTimedInToday || hasTimedOutToday) {
+            showFaceScanDialog = false
+            capturedBitmap = null
+            return
+        }
+        val facePhoto = capturedBitmap?.let { bitmapToBase64(it) } ?: ""
+        val loc = getCurrentLocation()
+        store.updateAttendance(
+            index = todayAttendanceIndex,
+            workerName = attendance.workerName,
+            details = attendance.details,
+            clockIn = attendance.clockIn,
+            clockOut = nowClock(),
+            date = today,
+            awaitingPayrollLine = true,
+            submittedByStaff = true,
+            timeOutLatitude = loc?.first ?: FARM_ORIGIN_LATITUDE,
+            timeOutLongitude = loc?.second ?: FARM_ORIGIN_LONGITUDE,
+            timeOutLocationName = loc?.third ?: "Location unavailable",
+            timeOutFaceSnapshotBase64 = facePhoto,
+            isTimeOutGeofenceVerified = loc?.let { isWithinFarmGeofence(it.first, it.second) } ?: false
+        )
+        showFaceScanDialog = false
+        capturedBitmap = null
+    }
+
     fun selectCorrectionType(timeIn: Boolean) {
         correctingTimeIn = timeIn
         correctionTime = if (timeIn) "08:00 AM" else "05:00 PM"
@@ -311,27 +341,14 @@ fun StaffAttendanceScreen(session: AuthSession) {
 
     fun timeIn() {
         if (selectedWorker.isBlank() || hasTimedInToday) return
+        faceScanForTimeIn = true
         showFaceScanDialog = true
     }
 
     fun timeOut() {
-        val attendance = todayAttendance ?: return
         if (todayAttendanceIndex < 0 || !hasTimedInToday || hasTimedOutToday) return
-        store.updateAttendance(
-            index = todayAttendanceIndex,
-            workerName = attendance.workerName,
-            details = attendance.details,
-            clockIn = attendance.clockIn,
-            clockOut = nowClock(),
-            date = today,
-            awaitingPayrollLine = true,
-            submittedByStaff = true,
-            timeInLatitude = attendance.timeInLatitude ?: FARM_ORIGIN_LATITUDE,
-            timeInLongitude = attendance.timeInLongitude ?: FARM_ORIGIN_LONGITUDE,
-            timeInLocationName = attendance.timeInLocationName.ifBlank { "Location unavailable" },
-            faceSnapshotBase64 = attendance.faceSnapshotBase64.ifBlank { "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%234a2c2a'/><circle cx='50' cy='40' r='20' fill='%2384B626'/><path d='M 20 85 Q 50 60 80 85' fill='none' stroke='%2384B626' stroke-width='6'/></svg>" },
-            isGeofenceVerified = attendance.isGeofenceVerified ?: false
-        )
+        faceScanForTimeIn = false
+        showFaceScanDialog = true
     }
 
     FarmLazyScreen(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -897,7 +914,7 @@ fun StaffAttendanceScreen(session: AuthSession) {
             containerColor = Color(0xFF2D211A),
             title = {
                 Text(
-                    "Biometric Face Verification",
+                    if (faceScanForTimeIn) "Biometric Face Verification — Time In" else "Biometric Face Verification — Time Out",
                     color = Color(0xFFF4EDE6),
                     fontWeight = FontWeight.SemiBold
                 )
@@ -959,11 +976,11 @@ fun StaffAttendanceScreen(session: AuthSession) {
             },
             confirmButton = {
                 TextButton(
-                    onClick = { submitTimeInWithScan() },
+                    onClick = { if (faceScanForTimeIn) submitTimeInWithScan() else submitTimeOutWithScan() },
                     enabled = capturedBitmap != null
                 ) {
                     Text(
-                        "Confirm Time In",
+                        if (faceScanForTimeIn) "Confirm Time In" else "Confirm Time Out",
                         color = Color(0xFF84B626),
                         fontWeight = FontWeight.SemiBold
                     )
