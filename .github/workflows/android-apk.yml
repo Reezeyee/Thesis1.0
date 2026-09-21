@@ -11,6 +11,9 @@ on:
       - '.github/workflows/android-apk.yml'
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,9 +33,28 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Rename APK to a stable filename
+        run: cp app/build/outputs/apk/debug/*.apk coffeefarm-debug.apk
+
+      - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: coffeefarm-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: coffeefarm-debug.apk
           retention-days: 30
+
+      # A GitHub Release asset gets a plain, permanent, one-click download URL -- unlike a
+      # workflow artifact (which downloads as a zip and needs a signed-in collaborator session,
+      # both of which are awkward from a phone browser). This tag is reused/updated on every
+      # build, so the same link always serves the latest main build.
+      - name: Publish/update the "latest-debug" release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: latest-debug
+          name: Latest debug build
+          body: Auto-built debug APK from the latest push to main (commit ${{ github.sha }}). Not a stable release -- for testing only.
+          artifacts: coffeefarm-debug.apk
+          allowUpdates: true
+          replacesArtifacts: true
+          prerelease: true
+          token: ${{ secrets.GITHUB_TOKEN }}
