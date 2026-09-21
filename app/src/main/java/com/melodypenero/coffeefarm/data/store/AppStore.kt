@@ -303,7 +303,18 @@ data class EquipmentRecord(
     val assignedTo: String?,
     val currentValue: Int
 )
-data class UsageLogRecord(val equipmentName: String, val details: String, val hoursText: String)
+data class UsageLogRecord(
+    val equipmentName: String,
+    val details: String,
+    val hoursText: String,
+    /** Stable id for a borrow/return record, so a later return edits this same row instead of appending a new one. */
+    val logId: String? = null,
+    /** Worker who borrowed the equipment, and when (ISO instant) -- set by the Borrow action. */
+    val borrowedBy: String? = null,
+    val borrowedAt: String? = null,
+    /** ISO instant set by the Return action; null means still borrowed. */
+    val returnedAt: String? = null
+)
 data class MaintenanceRecord(
     val equipmentName: String,
     val details: String,
@@ -1057,6 +1068,34 @@ class AppStore(context: Context) {
 
     private fun preferLongerList(local: List<*>, remote: List<*>): Boolean = remote.size > local.size
 
+    private fun usageLogKey(u: UsageLogRecord): String =
+        (u.logId ?: "").trim().ifBlank {
+            listOf(normKeyPart(u.equipmentName), normKeyPart(u.borrowedBy), (u.borrowedAt ?: "").trim(), normKeyPart(u.details))
+                .joinToString("\u0001")
+        }
+
+    /**
+     * Cloud copy wins by default, except a return this device just recorded (`returnedAt` set)
+     * that a stale remote snapshot doesn't have yet -- without this, the next sync could clobber
+     * a just-tapped Return back to "still borrowed", mirroring [mergeAttendanceRecord]'s handling
+     * of a freshly-tapped Time Out.
+     */
+    private fun mergeUsageLogsWithRemote(local: List<UsageLogRecord>, remote: List<UsageLogRecord>): List<UsageLogRecord> {
+        val merged = LinkedHashMap<String, UsageLogRecord>()
+        remote.forEach { item -> merged[usageLogKey(item)] = item }
+        local.forEach { item ->
+            val key = usageLogKey(item)
+            val cloud = merged[key]
+            merged[key] = when {
+                cloud == null -> item
+                item.returnedAt != null && cloud.returnedAt == null ->
+                    cloud.copy(returnedAt = item.returnedAt, hoursText = item.hoursText)
+                else -> cloud
+            }
+        }
+        return merged.values.toList()
+    }
+
     /**
      * Normalizes a composite-key fragment (trim, lowercase, collapse internal whitespace) so two
      * records that describe the same real-world thing but were typed/saved with slightly different
@@ -1173,7 +1212,7 @@ class AppStore(context: Context) {
             cherryHarvests = mergeByKey(local.cherryHarvests, remoteState.cherryHarvests, ::harvestKey),
             batches = mergeByKey(local.batches, remoteState.batches, ::batchKey),
             equipment = mergeByKey(local.equipment, remoteState.equipment, ::equipmentKey),
-            usageLogs = preferLongerListValue(local.usageLogs, remoteState.usageLogs),
+            usageLogs = mergeUsageLogsWithRemote(local.usageLogs, remoteState.usageLogs),
             maintenanceLogs = preferLongerListValue(local.maintenanceLogs, remoteState.maintenanceLogs),
             equipmentReports = mergeEquipmentReportsWithRemote(local.equipmentReports, remoteState.equipmentReports),
             sales = mergeByKey(local.sales, remoteState.sales, ::saleKey),
@@ -2004,7 +2043,49 @@ class AppStore(context: Context) {
         persist(state.copy(equipment = state.equipment + EquipmentRecord(name, category, status, assignedTo, currentValue)))
 
     fun addUsageLog(equipmentName: String, details: String, hoursText: String) =
-        persist(state.copy(usageLogs = state.usageLogs + UsageLogRecord(equipmentName, details, hoursText)))
+        persist(state.copy(usageLogs = state.usageLogs + UsageLogRecord(equipmentName, details, hoursText, logId = UUID.randomUUID().toString())))
+
+    /** Worker borrows equipment from the mobile app: stamps who and when, and flips the item to in-use. */
+    fun borrowEquipment(equipmentName: String, workerName: String) {
+        val name = equipmentName.trim()
+        val worker = workerName.trim()
+        if (name.isEmpty() || worker.isEmpty()) return
+        val log = UsageLogRecord(
+            equipmentName = name,
+            details = "Borrowed by $worker",
+            hoursText = "In use",
+            logId = UUID.randomUUID().toString(),
+            borrowedBy = worker,
+            borrowedAt = java.time.Instant.now().toString(),
+            returnedAt = null
+        )
+        val eqIdx = state.equipment.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) }
+        val equipment = if (eqIdx >= 0) {
+            state.equipment.mapIndexed { i, e -> if (i == eqIdx) e.copy(status = "in-use") else e }
+        } else state.equipment
+        persist(state.copy(usageLogs = state.usageLogs + log, equipment = equipment))
+    }
+
+    /** Worker returns equipment: stamps the return time, computes hours used, and frees up the item. */
+    fun returnEquipment(logId: String) {
+        val idx = state.usageLogs.indexOfFirst { it.logId == logId && it.returnedAt == null }
+        if (idx < 0) return
+        val log = state.usageLogs[idx]
+        val now = java.time.Instant.now()
+        val borrowedInstant = log.borrowedAt?.let { raw -> runCatching { java.time.Instant.parse(raw) }.getOrNull() }
+        val hoursText = if (borrowedInstant != null) {
+            val hours = java.time.Duration.between(borrowedInstant, now).toMinutes() / 60.0
+            "%.1fh".format(hours)
+        } else {
+            "0h"
+        }
+        val updated = log.copy(returnedAt = now.toString(), hoursText = hoursText)
+        val eqIdx = state.equipment.indexOfFirst { it.name.trim().equals(log.equipmentName.trim(), ignoreCase = true) }
+        val equipment = if (eqIdx >= 0 && state.equipment[eqIdx].status.equals("in-use", ignoreCase = true)) {
+            state.equipment.mapIndexed { i, e -> if (i == eqIdx) e.copy(status = "available") else e }
+        } else state.equipment
+        persist(state.copy(usageLogs = replaceAt(state.usageLogs, idx, updated), equipment = equipment))
+    }
 
     fun addMaintenance(
         equipmentName: String,
@@ -2530,8 +2611,19 @@ class AppStore(context: Context) {
         persist(state.copy(equipment = replaceAt(state.equipment, index, EquipmentRecord(name, category, status, assignedTo, currentValue))))
     fun deleteEquipment(index: Int) = persist(state.copy(equipment = removeAt(state.equipment, index)))
 
-    fun updateUsageLog(index: Int, equipmentName: String, details: String, hoursText: String) =
-        persist(state.copy(usageLogs = replaceAt(state.usageLogs, index, UsageLogRecord(equipmentName, details, hoursText))))
+    fun updateUsageLog(index: Int, equipmentName: String, details: String, hoursText: String) {
+        val existing = state.usageLogs.getOrNull(index)
+        val updated = UsageLogRecord(
+            equipmentName = equipmentName,
+            details = details,
+            hoursText = hoursText,
+            logId = existing?.logId,
+            borrowedBy = existing?.borrowedBy,
+            borrowedAt = existing?.borrowedAt,
+            returnedAt = existing?.returnedAt
+        )
+        persist(state.copy(usageLogs = replaceAt(state.usageLogs, index, updated)))
+    }
     fun deleteUsageLog(index: Int) = persist(state.copy(usageLogs = removeAt(state.usageLogs, index)))
 
     fun updateMaintenance(index: Int, equipmentName: String, details: String, costText: String, date: String = "") =
