@@ -3,7 +3,6 @@ package com.melodypenero.coffeefarm.auth
 import android.content.Context
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -40,14 +39,13 @@ object AuthManager {
     private const val SessionRoleKey = "session_role"
     private const val SessionMustChangePassKey = "session_must_change_pass"
 
+    // Only login emails live in the app. Passwords must never be compiled in (an APK can be unpacked);
+    // every account, including these, is created in Firebase Authentication with its own password.
     private const val AdminEmail = "farmacojido@gmail.com"
-    private const val AdminPassword = "Farm012345"
     /** Legacy demo staff (local-style email). */
     private const val StaffEmail = "acojidostaff@coffeefarm.local"
-    private const val StaffPassword = "acojid012345"
     /** Field worker account (Gmail): same app as admin; role is always [UserRole.FARM_STAFF]. */
     private const val WorkerStaffEmail = "workerstaffacojido@gmail.com"
-    private const val WorkerStaffPassword = "Parm012345"
     private const val AdminDisplayName = "AcojidoAdmin"
     private const val StaffDisplayName = "AcojidoStaff"
     private const val WorkerDisplayName = "Worker"
@@ -102,13 +100,6 @@ object AuthManager {
             val local = email.substringBefore("@", email).ifBlank { "User" }
             local.replaceFirstChar { c -> c.titlecase() }
         }
-    }
-
-    private fun isBootstrapAccount(email: String, password: String): Boolean = when (email.lowercase()) {
-        AdminEmail.lowercase() -> password == AdminPassword
-        StaffEmail.lowercase() -> password == StaffPassword
-        WorkerStaffEmail.lowercase() -> password == WorkerStaffPassword
-        else -> false
     }
 
     /** Remove cached role prefs when Firebase has no signed-in user (stale after reinstall). */
@@ -266,13 +257,12 @@ object AuthManager {
             saveSession(context, session)
             Result.success(session)
         } catch (e: FirebaseAuthInvalidUserException) {
-            tryBootstrapRegister(context, auth, email, pass, display, role)
-        } catch (e: FirebaseAuthException) {
-            if (e.errorCode == "ERROR_USER_NOT_FOUND" && isBootstrapAccount(email, pass)) {
-                tryBootstrapRegister(context, auth, email, pass, display, role)
-            } else {
-                Result.failure(e)
-            }
+            Result.failure(
+                IllegalArgumentException(
+                    "This account is not in Firebase Authentication yet. " +
+                        "Ask the admin to add it (workers are created from the website's employee form)."
+                )
+            )
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -376,45 +366,6 @@ object AuthManager {
         (snap.getString("status") ?: "pending").lowercase()
     }
 
-    private suspend fun tryBootstrapRegister(
-        context: Context,
-        auth: FirebaseAuth,
-        email: String,
-        pass: String,
-        display: String,
-        role: UserRole
-    ): Result<AuthSession> {
-        if (!isBootstrapAccount(email, pass)) return Result.failure(
-            IllegalArgumentException(
-                "This account is not in Firebase yet, or the password is wrong. " +
-                    "For admin: $AdminEmail. For field worker: $WorkerStaffEmail (user `worker` / `workerstaff`). " +
-                    "Add the user in Firebase Console → Authentication, or use the app bootstrap password for those accounts."
-            )
-        )
-        return runCatching {
-            val created = auth.createUserWithEmailAndPassword(email, pass).await().user!!
-            val initial = mapOf(
-                "email" to email,
-                "displayName" to display,
-                "role" to role.name,
-                "createdAt" to FieldValue.serverTimestamp()
-            )
-            FirebaseFirestore.getInstance()
-                .collection(FirebaseCollections.USERS)
-                .document(created.uid)
-                .set(initial, SetOptions.merge())
-                .await()
-            afterSuccessfulAuthWriteProfileAndHistory(created.uid, email, display, role)
-            val mustChange = checkMustChangePassword(created.uid)
-            val session = AuthSession(created.uid, email, display, role, mustChangePassword = mustChange)
-            saveSession(context, session)
-            session
-        }.fold(
-            onSuccess = { Result.success(it) },
-            onFailure = { err -> Result.failure(err) }
-        )
-    }
-
     /**
      * Best-effort bookkeeping after a successful sign-in: last sign-in time and a history entry.
      *
@@ -424,7 +375,7 @@ object AuthManager {
      *   to silently demote them to Farm Staff before the rules existed.
      * - `displayName` is the real name the admin typed for the worker (e.g. "Rico Rider"); overwriting it
      *   with a name derived from the login email ("Rico.rider.w123") corrupted it on every sign-in.
-     * Both are written once, when the profile is created (see [tryBootstrapRegister]).
+     * Both are written once, when the admin creates the account (the website's worker form or the Admin SDK).
      */
     private suspend fun afterSuccessfulAuthWriteProfileAndHistory(
         uid: String,
