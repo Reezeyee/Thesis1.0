@@ -851,15 +851,12 @@ export function EquipmentManagement() {
         <div>
           <div className="flex items-center gap-2.5 flex-wrap gap-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
-              Equipment & Fleet Management
+              Equipment & Supply Management
             </h1>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 whitespace-nowrap">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live Fleet Status
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live Supply Status
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            Monitor farm machinery, track fleet maintenance schedules, review condition reports, and manage supplies.
-          </p>
         </div>
       </motion.div>
 
