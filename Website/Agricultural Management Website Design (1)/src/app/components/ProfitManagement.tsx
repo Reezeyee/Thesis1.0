@@ -1,7 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../firebase/config';
-import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
 import { saleLineTotal, hourlyRateForWorkerRole, totalKgSold } from '../lib/farmFinance';
 import { formatCurrency } from '../lib/currencyFormat';
@@ -89,18 +86,6 @@ export const EXPENSE_CATEGORY_OPTIONS = [
   'Termite Control',
   'Construction',
   'Gas for Grasscutter',
-  'General Housekeeping',
-] as const;
-
-/**
- * Packaging the farm actually sells roasted coffee and coffee beans in, with the owner's fixed
- * price per unit -- used to prefill "Add sale"'s price field (still editable, e.g. for a
- * discounted or bulk deal). "Kilogram" covers anything sold loose/by weight instead.
- */
-export const SALE_UNIT_OPTIONS = [
-  { value: 'bag', label: 'Bag', presetPrice: 80 },
-  { value: 'sack', label: 'Sack', presetPrice: 2500 },
-  { value: 'kg', label: 'Kilogram (loose)', presetPrice: null },
 ] as const;
 
 export type BuyerCategory = 'channel' | 'cafe' | 'custom';
@@ -213,44 +198,6 @@ export function ProfitManagement() {
     amount: '',
     date: dateLabel(),
   });
-  const [addSaleOpen, setAddSaleOpen] = useState(false);
-  const [saleForm, setSaleForm] = useState({
-    buyer: '',
-    buyerUid: '',
-    product: '',
-    unit: 'bag' as (typeof SALE_UNIT_OPTIONS)[number]['value'],
-    quantityKg: '',
-    pricePerKg: '80',
-    date: dateLabel(),
-  });
-  const [buyerAccounts, setBuyerAccounts] = useState<{ uid: string; displayName: string; email: string }[]>([]);
-
-  // Registered Buyer accounts (self-registered on the storefront), so a manually-recorded sale
-  // can be linked to one and count toward that buyer's totals on the admin Buyer Locations Map.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const snap = await getDocs(query(collection(db, COLLECTIONS.USERS), where('role', '==', 'BUYER')));
-        if (cancelled) return;
-        setBuyerAccounts(
-          snap.docs.map((d) => {
-            const data = d.data() as Record<string, unknown>;
-            return {
-              uid: d.id,
-              displayName: (data.displayName as string) ?? 'Unnamed buyer',
-              email: (data.email as string) ?? '',
-            };
-          }),
-        );
-      } catch {
-        // Non-fatal: admin can still record a sale with a typed buyer name, just not linked to an account.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
   const [payFlowTarget, setPayFlowTarget] = useState<PayrollPayTarget | null>(null);
   const [payFlowOpen, setPayFlowOpen] = useState(false);
 
@@ -469,47 +416,6 @@ export function ProfitManagement() {
     setAddExpenseOpen(false);
   };
 
-  const saleQuantityKg = Number.parseFloat(saleForm.quantityKg);
-  const salePricePerKg = Number.parseFloat(saleForm.pricePerKg);
-  const saleTotal =
-    Number.isFinite(saleQuantityKg) && saleQuantityKg > 0 && Number.isFinite(salePricePerKg) && salePricePerKg > 0
-      ? Math.round(saleQuantityKg * salePricePerKg)
-      : 0;
-
-  /** Manual sale entry, for walk-in/direct sales made outside the Buyer storefront order flow
-   * (e.g. from a paper sales invoice) -- the only other way a SaleRecord gets created today is
-   * BuyerOrdersManagement.fulfillOrder(). */
-  const addSale = async () => {
-    if (!saleForm.buyer.trim() || !saleForm.product.trim() || saleTotal <= 0) {
-      showSaveError('Enter a buyer, product, and a quantity/price that add up to a total greater than zero.');
-      return;
-    }
-    const linkedAccount = saleForm.buyerUid ? buyerAccounts.find((b) => b.uid === saleForm.buyerUid) : undefined;
-    const ok = await runSave('Sale', () =>
-      updateState((prev) => ({
-        ...prev,
-        sales: [
-          ...prev.sales,
-          {
-            buyer: saleForm.buyer.trim(),
-            details: saleForm.product.trim(),
-            date: saleForm.date.trim() || new Date().toLocaleDateString(),
-            total: saleTotal,
-            type: 'Manual Sale',
-            saleId: crypto.randomUUID(),
-            quantityKg: saleQuantityKg,
-            pricePerKg: salePricePerKg,
-            unit: saleForm.unit,
-            ...(linkedAccount ? { buyerUid: linkedAccount.uid, buyerEmail: linkedAccount.email } : {}),
-          },
-        ],
-      })),
-    );
-    if (!ok) return;
-    setSaleForm((f) => ({ ...f, buyer: '', buyerUid: '', product: '', quantityKg: '', pricePerKg: '80', unit: 'bag' }));
-    setAddSaleOpen(false);
-  };
-
   if (loading) {
     return (
       <div className="space-y-6">
@@ -538,15 +444,6 @@ export function ProfitManagement() {
         <div className="flex flex-wrap gap-2 shrink-0">
           <Button
             type="button"
-            onClick={() => setAddSaleOpen(true)}
-            variant="outline"
-            className="border-border/80 shrink-0"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add sale
-          </Button>
-          <Button
-            type="button"
             onClick={() => setAddExpenseOpen(true)}
             className="bg-[#2d5016] hover:bg-[#234010] text-white shrink-0"
           >
@@ -555,138 +452,6 @@ export function ProfitManagement() {
           </Button>
         </div>
       </div>
-
-      <Dialog open={addSaleOpen} onOpenChange={setAddSaleOpen}>
-        <DialogContent className="max-w-lg border-border/80 bg-card text-card-foreground">
-          <DialogHeader>
-            <DialogTitle>Record sale</DialogTitle>
-            <DialogDescription>
-              Log a walk-in or direct sale (e.g. from a paper sales invoice) that didn't go through a Buyer storefront order.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="sale-buyer-account">Link to buyer account (optional)</Label>
-              <select
-                id="sale-buyer-account"
-                value={saleForm.buyerUid}
-                onChange={(e) => {
-                  const uid = e.target.value;
-                  const account = buyerAccounts.find((b) => b.uid === uid);
-                  setSaleForm((f) => ({ ...f, buyerUid: uid, buyer: account ? account.displayName : f.buyer }));
-                }}
-                className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm"
-              >
-                <option value="">Walk-in / no registered account</option>
-                {buyerAccounts.map((b) => (
-                  <option key={b.uid} value={b.uid}>
-                    {b.displayName} ({b.email})
-                  </option>
-                ))}
-              </select>
-              <p className="text-[11px] text-muted-foreground">
-                Linking counts this sale toward that buyer's totals on the admin Buyer Locations Map.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sale-buyer">Buyer / customer name</Label>
-              <Input
-                id="sale-buyer"
-                value={saleForm.buyer}
-                onChange={(e) => setSaleForm((f) => ({ ...f, buyer: e.target.value, buyerUid: '' }))}
-                placeholder="e.g., Juan Dela Cruz Roastery"
-                className="bg-background/80 border-border/80"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sale-product">Product sold</Label>
-              <Input
-                id="sale-product"
-                value={saleForm.product}
-                onChange={(e) => setSaleForm((f) => ({ ...f, product: e.target.value }))}
-                placeholder="e.g., Roasted Coffee or Coffee Beans"
-                className="bg-background/80 border-border/80"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sale-unit">Packaging</Label>
-              <select
-                id="sale-unit"
-                value={saleForm.unit}
-                onChange={(e) => {
-                  const unit = e.target.value as (typeof SALE_UNIT_OPTIONS)[number]['value'];
-                  const preset = SALE_UNIT_OPTIONS.find((u) => u.value === unit)?.presetPrice;
-                  setSaleForm((f) => ({ ...f, unit, pricePerKg: preset !== null && preset !== undefined ? String(preset) : f.pricePerKg }));
-                }}
-                className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-sm"
-              >
-                {SALE_UNIT_OPTIONS.map((u) => (
-                  <option key={u.value} value={u.value}>
-                    {u.label}
-                    {u.presetPrice !== null ? ` (₱${u.presetPrice.toLocaleString()} each)` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="sale-qty">
-                  {saleForm.unit === 'kg' ? 'Quantity (kg)' : `Number of ${saleForm.unit === 'bag' ? 'bags' : 'sacks'}`}
-                </Label>
-                <Input
-                  id="sale-qty"
-                  type="text"
-                  inputMode="decimal"
-                  value={saleForm.quantityKg}
-                  onChange={(e) => setSaleForm((f) => ({ ...f, quantityKg: e.target.value }))}
-                  placeholder="0"
-                  className="bg-background/80 border-border/80"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sale-price">
-                  {saleForm.unit === 'kg' ? 'Price per kg (₱)' : `Price per ${saleForm.unit} (₱)`}
-                </Label>
-                <Input
-                  id="sale-price"
-                  type="text"
-                  inputMode="decimal"
-                  value={saleForm.pricePerKg}
-                  onChange={(e) => setSaleForm((f) => ({ ...f, pricePerKg: e.target.value }))}
-                  placeholder="0"
-                  className="bg-background/80 border-border/80"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sale-date">Date (label)</Label>
-              <Input
-                id="sale-date"
-                value={saleForm.date}
-                onChange={(e) => setSaleForm((f) => ({ ...f, date: e.target.value }))}
-                placeholder={dateLabel()}
-                className="bg-background/80 border-border/80"
-              />
-            </div>
-            <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-              Total: {formatCurrency(saleTotal)}
-            </p>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setAddSaleOpen(false)} className="border-border/80">
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void addSale()}
-              disabled={saving || !saleForm.buyer.trim() || !saleForm.product.trim() || saleTotal <= 0}
-              className="bg-[#2d5016] hover:bg-[#234010] text-white"
-            >
-              Save sale
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <PayrollPayFlowDialog
         target={payFlowTarget}
