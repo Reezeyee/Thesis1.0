@@ -116,7 +116,7 @@ export function Sidebar({
         {
           id: 'buyerOrders',
           icon: ShoppingBag,
-          label: 'Buyer Storefront',
+          label: 'Buyers',
           badge: null,
           hint: 'Listings & orders',
         },

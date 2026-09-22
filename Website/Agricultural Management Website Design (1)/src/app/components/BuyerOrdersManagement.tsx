@@ -358,7 +358,7 @@ export function BuyerOrdersManagement() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold font-heading mb-1">Buyer Storefront</h1>
+        <h1 className="text-2xl font-bold font-heading mb-1">Buyers</h1>
         <p className="text-xs text-muted-foreground">Manage what's for sale and fulfill orders Buyers place.</p>
       </div>
 

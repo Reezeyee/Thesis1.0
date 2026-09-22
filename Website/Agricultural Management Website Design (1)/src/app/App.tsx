@@ -38,7 +38,7 @@ const moduleLabels: Record<AppModuleId, string> = {
   maintenance: 'Maintenance & Maps',
   sms: 'SMS Center',
   settings: 'Website Settings',
-  buyerOrders: 'Buyer Storefront',
+  buyerOrders: 'Buyers',
   ownerMessages: 'Owner Messages',
 };
 
