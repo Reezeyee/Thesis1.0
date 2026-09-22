@@ -101,6 +101,13 @@ export function Sidebar({
           hint: 'Batches & scans',
         },
         {
+          id: 'nearby',
+          icon: Navigation,
+          label: 'Nearby Buyers',
+          badge: null,
+          hint: 'Distance from the farm',
+        },
+        {
           id: 'profit',
           icon: DollarSign,
           label: 'Profit & Sales',
@@ -120,13 +127,6 @@ export function Sidebar({
           label: 'Buyers',
           badge: null,
           hint: 'Listings & orders',
-        },
-        {
-          id: 'nearby',
-          icon: Navigation,
-          label: 'Nearby Buyers',
-          badge: null,
-          hint: 'Distance from the farm',
         },
       ],
     },
