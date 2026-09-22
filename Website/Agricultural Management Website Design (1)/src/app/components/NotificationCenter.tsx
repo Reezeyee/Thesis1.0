@@ -253,16 +253,22 @@ export function usePendingReports() {
       }
     });
 
-    // 3. Consumable supply reports
+    // 3. Consumable supply reports (includes worker withdrawals -- see withdrawConsumableSupply
+    // in AppStore.kt, which logs an unreviewed report with notes starting "Withdrew ...")
     (state.consumableReports ?? []).forEach((r, idx) => {
       if (!r.reviewed) {
         const rawId = r.reportId || '';
         const id = rawId || `supply-${idx}-${r.reportedAt}`;
+        const isWithdrawal = (r.notes || '').toLowerCase().startsWith('withdrew ');
         list.push({
           id,
           type: 'supply',
-          title: `${r.supplyName || 'Supply'} Report`,
-          subtitle: r.isRunOut ? 'Status: Out of Stock' : 'Status: Stock Update',
+          title: isWithdrawal ? `${r.supplyName || 'Supply'} Withdrawn` : `${r.supplyName || 'Supply'} Report`,
+          subtitle: isWithdrawal
+            ? `Taken by ${r.reportedBy || 'Worker'}${r.isRunOut ? ' · Now out of stock' : ''}`
+            : r.isRunOut
+              ? 'Status: Out of Stock'
+              : 'Status: Stock Update',
           details: r.notes || 'Consumable supply report submitted by worker',
           reportedBy: r.reportedBy || 'Worker',
           reportedAt: r.reportedAt || 'Just now',

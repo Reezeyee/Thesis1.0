@@ -469,6 +469,14 @@ data class ConsumableSupplyRecord(
     val costPerUnit: Double? = null
 )
 
+/** Mirrors the website's `computeSupplyStatus`/`computeLowStockThreshold` in appState.ts. */
+fun computeConsumableSupplyStatus(stock: Int, referenceStock: Int?, lowStockThreshold: Int?): String {
+    if (stock <= 0) return "Out of Stock"
+    val threshold = lowStockThreshold?.takeIf { it >= 0 }
+        ?: kotlin.math.ceil((if (referenceStock != null && referenceStock > 0) referenceStock else maxOf(stock, 30)) * 0.3).toInt()
+    return if (stock <= threshold) "Low Stock" else "In Stock"
+}
+
 /** Worker-submitted consumable availability report; admins review it on the website. */
 data class ConsumableSupplyReportRecord(
     val reportId: String = "",
@@ -1797,6 +1805,48 @@ class AppStore(context: Context) {
             reviewed = false
         )
         persist(state.copy(consumableReports = state.consumableReports + report))
+    }
+
+    /**
+     * Worker takes stock out of the warehouse (e.g. hauling manure to the field). Deducts
+     * [quantity] from the supply's stock and logs an unreviewed [ConsumableSupplyReportRecord] so
+     * it surfaces as an admin notification -- mirrors the website's `recordActivityUsage`, but
+     * initiated by the worker from the mobile app instead of typed in by the admin.
+     */
+    fun withdrawConsumableSupply(
+        supplyId: String,
+        quantity: Int,
+        withdrawnBy: String,
+        withdrawnByAuthUid: String = "",
+        withdrawnAt: String = ""
+    ) {
+        if (quantity <= 0) return
+        val supply = state.consumableSupplies.firstOrNull { it.supplyId == supplyId } ?: return
+        val deduction = quantity.coerceAtMost(supply.stock)
+        if (deduction <= 0) return
+        val newStock = (supply.stock - deduction).coerceAtLeast(0)
+        val updatedSupply = supply.copy(
+            stock = newStock,
+            status = computeConsumableSupplyStatus(newStock, supply.referenceStock, supply.lowStockThreshold)
+        )
+        val today = withdrawnAt.trim().ifBlank { java.time.LocalDate.now().toString() }
+        val report = ConsumableSupplyReportRecord(
+            reportId = UUID.randomUUID().toString(),
+            supplyId = supply.supplyId,
+            supplyName = supply.name,
+            isRunOut = newStock <= 0,
+            notes = "Withdrew $deduction ${supply.unit}. Remaining: $newStock ${supply.unit}.",
+            reportedAt = today,
+            reportedBy = withdrawnBy.trim().ifBlank { "Unknown worker" },
+            reportedByAuthUid = withdrawnByAuthUid.trim(),
+            reviewed = false
+        )
+        persist(
+            state.copy(
+                consumableSupplies = state.consumableSupplies.map { if (it.supplyId == supply.supplyId) updatedSupply else it },
+                consumableReports = state.consumableReports + report
+            )
+        )
     }
 
     fun addTree(sectionName: String, details: String, stage: String) =

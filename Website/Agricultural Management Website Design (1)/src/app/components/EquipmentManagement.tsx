@@ -1561,7 +1561,7 @@ export function EquipmentManagement() {
                     <div>
                       <h4 className="font-bold text-foreground">Worker supply reports</h4>
                       <p className="text-xs text-muted-foreground">
-                        Mobile reports show whether consumables ran out or still have stock.
+                        Mobile reports log stock withdrawals and whether consumables ran out or still have stock.
                       </p>
                     </div>
                     <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground uppercase whitespace-nowrap">
@@ -1583,6 +1583,7 @@ export function EquipmentManagement() {
                         })
                         .map(({ report }, index) => {
                           const isRunOut = Boolean(report.isRunOut);
+                          const isWithdrawal = (report.notes || '').toLowerCase().startsWith('withdrew ');
                           return (
                             <div
                               key={report.reportId || `${report.supplyName}-${report.reportedAt}-${index}`}
@@ -1600,10 +1601,10 @@ export function EquipmentManagement() {
                                 </div>
                                 <span
                                   className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase shrink-0 ${
-                                    isRunOut ? 'bg-[#d4183d] text-white' : 'bg-[#2d5016] text-white'
+                                    isRunOut ? 'bg-[#d4183d] text-white' : isWithdrawal ? 'bg-[#3d6b9e] text-white' : 'bg-[#2d5016] text-white'
                                   }`}
                                 >
-                                  {isRunOut ? 'Run out' : 'Available'}
+                                  {isRunOut ? 'Run out' : isWithdrawal ? 'Withdrawn' : 'Available'}
                                 </span>
                               </div>
                               {report.notes ? (
