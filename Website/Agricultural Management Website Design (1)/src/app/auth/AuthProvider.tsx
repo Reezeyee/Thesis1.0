@@ -70,6 +70,7 @@ type AuthContextValue = {
     displayName: string,
     location: { lat: number; lng: number; address: string },
     phone: string,
+    buyerType: string,
   ) => Promise<void>;
   /**
    * Standard self-service "forgot password" flow (panel feedback: the web app had no password
@@ -200,12 +201,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName: string,
       location: { lat: number; lng: number; address: string },
       phone: string,
+      buyerType: string,
     ) => {
       setError(null);
       const trimmedEmail = email.trim().toLowerCase();
       const trimmedName = normalizeName(displayName);
       const trimmedPhone = sanitizePhoneInput(phone);
       const trimmedAddress = location.address.trim();
+      const trimmedBuyerType = buyerType.trim();
       if (!trimmedEmail || !password || !trimmedName) {
         setError('Enter your name, email, and a password.');
         throw new Error('Enter your name, email, and a password.');
@@ -234,6 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           locationLat: location.lat,
           locationLng: location.lng,
           locationAddress: trimmedAddress,
+          buyerType: trimmedBuyerType,
         });
         // Buyers are the only self-registered role, so their email is unverified by anyone
         // but them -- send the confirmation link now; BuyerVerifyEmailGate blocks the

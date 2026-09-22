@@ -3,11 +3,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { FixedSelect } from '../components/ui/FixedSelect';
 import { LocationPicker, type PickedLocation } from '../components/LocationPicker';
 import { useAuth } from './AuthProvider';
 import { authErrorMessage } from './authConfig';
 import { isValidPersonName, NAME_ERROR_MESSAGE, sanitizeNameInput } from '../lib/personName';
 import { isValidPhone11, PHONE_ERROR_MESSAGE, PHONE_PLACEHOLDER, sanitizePhoneInput } from '../lib/phone';
+import { BUYER_TYPE_OPTIONS } from '../lib/buyerRecord';
 
 /**
  * Buyer sign-in / sign-up modal, opened from the Admin LoginScreen's "Shopping for coffee?"
@@ -20,6 +22,7 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [buyerType, setBuyerType] = useState<string>(BUYER_TYPE_OPTIONS[0]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,6 +35,7 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
   const reset = () => {
     setName('');
     setPhone('');
+    setBuyerType(BUYER_TYPE_OPTIONS[0]);
     setEmail('');
     setPassword('');
     setConfirmPassword('');
@@ -83,7 +87,7 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
     setLocalError(null);
     try {
       if (mode === 'signup' && locationIsValid(location)) {
-        await signUpAsBuyer(email, password, name, location, phone);
+        await signUpAsBuyer(email, password, name, location, phone, buyerType);
       } else {
         await signIn(email, password, 'buyer');
       }
@@ -143,6 +147,16 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
                 {phone !== '' && !isValidPhone11(phone) ? PHONE_ERROR_MESSAGE : 'Numbers only, 11 digits starting with 09.'}
               </p>
             </div>
+          ) : null}
+          {mode === 'signup' ? (
+            <FixedSelect
+              id="buyer-type"
+              label="What best describes you?"
+              value={buyerType}
+              options={BUYER_TYPE_OPTIONS}
+              onChange={setBuyerType}
+              selectClassName="flex h-10 w-full rounded-xl border border-input bg-transparent px-3 py-1 text-xs"
+            />
           ) : null}
           {mode === 'signup' ? (
             <LocationPicker value={location} onChange={setLocation} id="buyer-signup-location" />
