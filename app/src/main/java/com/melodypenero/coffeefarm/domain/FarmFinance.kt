@@ -80,14 +80,8 @@ object FarmFinance {
     /** True for the Maintenance role. Maintenance workers get the repair-jobs screens in the app. */
     fun isMaintenanceRole(roleRate: String): Boolean = roleRate.trim().lowercase().contains("maintenance")
 
-    /** True for the Delivery Rider role (also matches the older wording "driver"). Riders get the delivery screens in the app. */
-    fun isDeliveryRole(roleRate: String): Boolean {
-        val key = roleRate.trim().lowercase()
-        return key.contains("delivery") || key.contains("rider") || key.contains("driver")
-    }
-
     /** Roles an admin can assign to a worker (fixed list, no free-text "Other"). Keep in sync with the website's WORKER_ROLES. */
-    val WORKER_ROLES = listOf("Picker", "Maintenance", "Farm Manager", "Farm Assist", "Delivery Rider")
+    val WORKER_ROLES = listOf("Picker", "Maintenance", "Farm Manager", "Farm Assist")
 
     /**
      * Official ₱/hour by worker role (Farm Ops role picker). A role with no fixed rate maps to 0 (enter manually in payroll).
@@ -99,7 +93,6 @@ object FarmFinance {
             key.contains("farm assist") -> 150.0
             key.contains("maintenance") -> 180.0
             key.contains("farm manager") -> 250.0
-            isDeliveryRole(roleRate) -> 120.0
             else -> 0.0
         }
     }

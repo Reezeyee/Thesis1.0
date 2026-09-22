@@ -109,7 +109,7 @@ class RepairJobsTest {
         assertTrue(FarmFinance.isMaintenanceRole("Maintenance"))
         assertTrue(FarmFinance.isMaintenanceRole("  maintenance crew "))
         assertFalse(FarmFinance.isMaintenanceRole("Picker"))
-        assertFalse(FarmFinance.isMaintenanceRole("Delivery Rider"))
+        assertFalse(FarmFinance.isMaintenanceRole("Farm Manager"))
         assertFalse(FarmFinance.isMaintenanceRole("Farm Assist"))
     }
 
@@ -117,13 +117,13 @@ class RepairJobsTest {
     fun maintenanceRecognition_byUidOrEmail_onlyForActiveMaintenanceWorkers() {
         val m = WorkerRecord(name = "Miguel", roleRate = "Maintenance", authUid = "uid-m", accountEmail = "miguel@acojidofarm.local")
         val picker = WorkerRecord(name = "Pia", roleRate = "Picker", authUid = "uid-p", accountEmail = "pia@acojidofarm.local")
-        val rider = WorkerRecord(name = "Rico", roleRate = "Delivery Rider", authUid = "uid-r", accountEmail = "rico@acojidofarm.local")
+        val manager = WorkerRecord(name = "Rico", roleRate = "Farm Manager", authUid = "uid-r", accountEmail = "rico@acojidofarm.local")
         val off = WorkerRecord(name = "Old", roleRate = "Maintenance", authUid = "uid-o", accountEmail = "old@acojidofarm.local", details = "{\"status\":\"inactive\"}")
-        val all = listOf(picker, rider, m, off)
+        val all = listOf(picker, manager, m, off)
         assertEquals("Miguel", findMaintenanceWorker("uid-m", "x@y.com", all)?.name)
         assertEquals("Miguel", findMaintenanceWorker("other", "MIGUEL@acojidofarm.local", all)?.name)
         assertNull(findMaintenanceWorker("uid-p", "pia@acojidofarm.local", all))   // picker
-        assertNull(findMaintenanceWorker("uid-r", "rico@acojidofarm.local", all))  // rider is not maintenance
+        assertNull(findMaintenanceWorker("uid-r", "rico@acojidofarm.local", all))  // farm manager is not maintenance
         assertNull(findMaintenanceWorker("uid-o", "old@acojidofarm.local", all))   // inactive
         assertNull(findMaintenanceWorker("", "", listOf(WorkerRecord(name = "NoLogin", roleRate = "Maintenance"))))
     }

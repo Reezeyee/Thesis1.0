@@ -11,7 +11,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -32,8 +31,6 @@ sealed class AppDestination(
     data object Irrigation : AppDestination("irrigation", "Irrigation", Icons.Default.WaterDrop)
     /** Worker-only: clock in/out. HR and payroll are managed on the website. */
     data object StaffAttendance : AppDestination("staff_attendance", "My Attendance", Icons.Default.Schedule)
-    /** Delivery Rider home: the buyer orders assigned to this rider, with map, address, and buyer contact. */
-    data object RiderDeliveries : AppDestination("rider_deliveries", "My Deliveries", Icons.Default.LocalShipping)
     /** Maintenance home: the equipment / sprinkler repair jobs the admin assigned to this worker. */
     data object MaintenanceJobs : AppDestination("maintenance_jobs", "Repair Jobs", Icons.Default.Build)
     data object Sms : AppDestination("sms", "SMS Communication", Icons.Default.Forum)
@@ -66,14 +63,6 @@ val administratorMobileDestinations = listOf(
     AppDestination.Equipment,
     AppDestination.Supplies,
     AppDestination.Irrigation,
-    AppDestination.Sms,
-    AppDestination.Settings
-)
-
-/** Delivery Rider drawer: their deliveries first, then attendance and messages. No farm field tools. */
-val riderMobileDestinations = listOf(
-    AppDestination.RiderDeliveries,
-    AppDestination.StaffAttendance,
     AppDestination.Sms,
     AppDestination.Settings
 )

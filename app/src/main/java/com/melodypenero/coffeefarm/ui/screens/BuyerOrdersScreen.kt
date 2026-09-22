@@ -7,11 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocalShipping
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,7 +38,7 @@ import com.melodypenero.coffeefarm.ui.components.FarmSectionTitle
 import com.melodypenero.coffeefarm.ui.components.farmPalette
 import java.util.Locale
 
-/** A signed-in Buyer's own order history: what they ordered, its status, and rider progress once assigned. */
+/** A signed-in Buyer's own order history: what they ordered and its pickup status. */
 @Composable
 fun BuyerOrdersScreen(session: AuthSession) {
     var orders by remember { mutableStateOf<List<BuyerOrder>>(emptyList()) }
@@ -106,13 +103,13 @@ private fun OrderCard(order: BuyerOrder) {
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                if (order.isPickup) Icons.Default.Store else Icons.Default.LocalShipping,
+                Icons.Default.Store,
                 contentDescription = null,
                 tint = palette.accent,
                 modifier = Modifier.padding(end = 6.dp)
             )
             Text(
-                if (order.isPickup) "Pick up at the farm" else (order.deliveryAddress ?: "Delivery"),
+                if (order.status == "ready") "Product is ready to pick up" else "Pick up at the farm",
                 style = MaterialTheme.typography.bodyMedium,
                 color = palette.textPrimary
             )
@@ -124,32 +121,21 @@ private fun OrderCard(order: BuyerOrder) {
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
-                if (order.paymentMethod == "e_wallet") "E-wallet" else if (order.isPickup) "Cash at pickup" else "Cash on Delivery",
+                if (order.paymentMethod == "e_wallet") "E-wallet" else "Cash at pickup",
                 style = MaterialTheme.typography.labelMedium,
                 color = palette.textSecondary
             )
             Text(peso(order.totalAmount), color = palette.accent, fontWeight = FontWeight.Bold)
-        }
-
-        if (!order.isPickup && !order.riderName.isNullOrBlank()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Phone, contentDescription = null, tint = palette.accent, modifier = Modifier.size(16.dp).padding(end = 6.dp))
-                Text(
-                    "Rider: ${order.riderName}${if (!order.riderPhone.isNullOrBlank()) " · ${order.riderPhone}" else ""}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.textSecondary
-                )
-            }
         }
     }
 }
 
 @Composable
 private fun StatusChip(order: BuyerOrder) {
-    val (label, color) = when {
-        order.status == "cancelled" -> "Cancelled" to Color(0xFFD9534F)
-        order.status == "fulfilled" -> "Fulfilled" to Color(0xFF84B626)
-        order.deliveryStatus == "out_for_delivery" -> "On the way" to Color(0xFFE0A030)
+    val (label, color) = when (order.status) {
+        "cancelled" -> "Cancelled" to Color(0xFFD9534F)
+        "fulfilled" -> "Picked Up" to Color(0xFF84B626)
+        "ready" -> "Ready for Pickup" to Color(0xFFE0A030)
         else -> "Pending" to farmPalette().textSecondary
     }
     Text(

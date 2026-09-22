@@ -16,9 +16,9 @@ import java.time.Instant
 /**
  * A Buyer's own `buyer_orders`: place a new order and watch the ones they've placed. Mirrors the
  * website's `BuyerStorefront.placeOrder` write shape exactly -- firestore.rules requires the order's
- * `buyerUid` to be the caller's own uid, `status` to start `'pending'`, and no rider/delivery-progress
- * fields on create; the stock hold written alongside it must carry only `items`/`createdAt` and the
- * exact same `items` as the order, or the whole batch is rejected.
+ * `buyerUid` to be the caller's own uid and `status` to start `'pending'`; the stock hold written
+ * alongside it must carry only `items`/`createdAt` and the exact same `items` as the order, or the
+ * whole batch is rejected. Every order is picked up at the farm by the buyer -- there is no delivery.
  */
 object BuyerOrdersRepository {
     private val db get() = FirebaseFirestore.getInstance()
@@ -44,15 +44,8 @@ object BuyerOrdersRepository {
         buyerName: String,
         buyerEmail: String,
         buyerPhone: String,
-        fulfillmentMethod: String,
-        deliveryAddress: String?,
-        deliveryProvince: String?,
-        deliveryLat: Double?,
-        deliveryLng: Double?,
         paymentMethod: String,
         items: List<BuyerOrderItem>,
-        subtotal: Double,
-        deliveryFee: Double,
         totalAmount: Double
     ) {
         val itemMaps = items.map { item ->
@@ -72,18 +65,12 @@ object BuyerOrdersRepository {
             "buyerName" to buyerName,
             "buyerEmail" to buyerEmail,
             "buyerPhone" to buyerPhone,
-            "fulfillmentMethod" to fulfillmentMethod,
-            "deliveryAddress" to if (fulfillmentMethod == "delivery") deliveryAddress else null,
-            "deliveryProvince" to if (fulfillmentMethod == "delivery") deliveryProvince else null,
-            "deliveryLat" to if (fulfillmentMethod == "delivery") deliveryLat else null,
-            "deliveryLng" to if (fulfillmentMethod == "delivery") deliveryLng else null,
             "paymentMethod" to paymentMethod,
             "items" to itemMaps,
-            "subtotal" to subtotal,
-            "deliveryFee" to deliveryFee,
             "totalAmount" to totalAmount,
             "status" to "pending",
             "createdAt" to now,
+            "readyAt" to null,
             "fulfilledAt" to null,
             "_serverCreatedAt" to FieldValue.serverTimestamp()
         )

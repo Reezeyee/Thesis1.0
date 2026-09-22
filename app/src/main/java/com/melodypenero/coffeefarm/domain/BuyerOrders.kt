@@ -9,30 +9,23 @@ data class BuyerOrderItem(
     val subtotal: Double
 )
 
-/** A signed-in Buyer's own view of one of their `buyer_orders` documents. */
+/**
+ * A signed-in Buyer's own view of one of their `buyer_orders` documents. Every order is picked up
+ * at the farm by the buyer -- there is no delivery.
+ */
 data class BuyerOrder(
     val orderId: String,
     val items: List<BuyerOrderItem>,
-    val subtotal: Double,
-    val deliveryFee: Double,
     val totalAmount: Double,
-    /** Admin-side status: pending / fulfilled / cancelled. */
+    /** pending -> ready (buyer is told "Product is ready to pick up") -> fulfilled, or cancelled. */
     val status: String,
-    val fulfillmentMethod: String,
-    val deliveryAddress: String?,
-    val deliveryProvince: String?,
     val paymentMethod: String,
     val createdAt: String,
-    val fulfilledAt: String?,
-    val riderName: String?,
-    val riderPhone: String?,
-    /** Rider-reported delivery progress: assigned / out_for_delivery / delivered (null for pickup orders). */
-    val deliveryStatus: String?,
-    val hasDeliveryProof: Boolean
+    val readyAt: String?,
+    val fulfilledAt: String?
 ) {
-    val isPickup: Boolean get() = fulfillmentMethod == "pickup"
-    val isCashOnDelivery: Boolean get() = paymentMethod == "cash"
-    val isActive: Boolean get() = status == "pending"
+    val isCashAtPickup: Boolean get() = paymentMethod == "cash"
+    val isActive: Boolean get() = status == "pending" || status == "ready"
 }
 
 private fun Any?.asDouble(): Double? = (this as? Number)?.toDouble()
@@ -53,20 +46,12 @@ fun parseBuyerOrder(orderId: String, data: Map<String, Any?>): BuyerOrder {
     return BuyerOrder(
         orderId = orderId,
         items = items,
-        subtotal = data["subtotal"].asDouble() ?: items.sumOf { it.subtotal },
-        deliveryFee = data["deliveryFee"].asDouble() ?: 0.0,
-        totalAmount = data["totalAmount"].asDouble() ?: 0.0,
+        totalAmount = data["totalAmount"].asDouble() ?: items.sumOf { it.subtotal },
         status = data["status"]?.toString().orEmpty().ifBlank { "pending" },
-        fulfillmentMethod = data["fulfillmentMethod"]?.toString().orEmpty().ifBlank { "delivery" },
-        deliveryAddress = data["deliveryAddress"]?.toString(),
-        deliveryProvince = data["deliveryProvince"]?.toString(),
         paymentMethod = data["paymentMethod"]?.toString().orEmpty().ifBlank { "cash" },
         createdAt = data["createdAt"]?.toString().orEmpty(),
-        fulfilledAt = data["fulfilledAt"]?.toString(),
-        riderName = data["riderName"]?.toString(),
-        riderPhone = data["riderPhone"]?.toString(),
-        deliveryStatus = data["deliveryStatus"]?.toString(),
-        hasDeliveryProof = data["hasDeliveryProof"] == true
+        readyAt = data["readyAt"]?.toString(),
+        fulfilledAt = data["fulfilledAt"]?.toString()
     )
 }
 

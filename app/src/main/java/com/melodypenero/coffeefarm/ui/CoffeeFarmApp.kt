@@ -59,13 +59,10 @@ import com.melodypenero.coffeefarm.ui.navigation.administratorMobileDestinations
 import com.melodypenero.coffeefarm.ui.navigation.buyerMobileDestinations
 import com.melodypenero.coffeefarm.ui.navigation.farmStaffMobileDestinations
 import com.melodypenero.coffeefarm.ui.navigation.maintenanceMobileDestinations
-import com.melodypenero.coffeefarm.ui.navigation.riderMobileDestinations
 import com.melodypenero.coffeefarm.ui.screens.BuyerOrdersScreen
 import com.melodypenero.coffeefarm.ui.screens.BuyerShopScreen
 import com.melodypenero.coffeefarm.ui.screens.MaintenanceJobsScreen
 import com.melodypenero.coffeefarm.domain.findMaintenanceWorker
-import com.melodypenero.coffeefarm.ui.screens.RiderDeliveriesScreen
-import com.melodypenero.coffeefarm.domain.findRiderWorker
 import com.melodypenero.coffeefarm.ui.screens.ChangePasswordScreen
 import com.melodypenero.coffeefarm.ui.screens.CoffeeCherryScreen
 import com.melodypenero.coffeefarm.ui.screens.EquipmentScreen
@@ -146,19 +143,15 @@ fun CoffeeFarmApp() {
         )
         return
     }
-    // A Farm Staff login whose worker record has the Delivery Rider role gets the rider screens instead
-    // of the field tools. Read from the store so it updates once the worker list has synced.
+    // A Farm Staff login whose worker record has the Maintenance role gets the maintenance screens
+    // instead of the field tools. Read from the store so it updates once the worker list has synced.
     val workers = store.appState.value.workers
-    val isRider = remember(currentSession.userId, currentSession.email, currentSession.role, workers) {
-        currentSession.role == UserRole.FARM_STAFF &&
-            findRiderWorker(currentSession.userId, currentSession.email, workers) != null
-    }
     val isMaintenance = remember(currentSession.userId, currentSession.email, currentSession.role, workers) {
         currentSession.role == UserRole.FARM_STAFF &&
             findMaintenanceWorker(currentSession.userId, currentSession.email, workers) != null
     }
-    // Rider/Maintenance are only known once the worker list has synced. Until then a Farm Staff
-    // login would be treated as a plain field worker and land on the field dashboard, then get
+    // Maintenance is only known once the worker list has synced. Until then a Farm Staff login
+    // would be treated as a plain field worker and land on the field dashboard, then get
     // redirected away once the list arrives -- so hold a spinner instead of flashing the wrong
     // home screen. The timeout keeps a genuine field worker (or an offline device) from waiting
     // forever.
@@ -175,8 +168,8 @@ fun CoffeeFarmApp() {
         FullScreenLoading()
         return
     }
-    val allowedDestinations = remember(currentSession.role, isRider, isMaintenance) {
-        destinationsForRole(currentSession.role, isRider, isMaintenance)
+    val allowedDestinations = remember(currentSession.role, isMaintenance) {
+        destinationsForRole(currentSession.role, isMaintenance)
     }
     val homeRoute = allowedDestinations.first().route
 
@@ -207,7 +200,7 @@ fun CoffeeFarmApp() {
     }
     val palette = farmPalette()
 
-    LaunchedEffect(currentRoute, currentSession.role, isRider, isMaintenance) {
+    LaunchedEffect(currentRoute, currentSession.role, isMaintenance) {
         if (currentRoute != null && allowedDestinations.none { it.route == currentRoute }) {
             navController.navigate(homeRoute) {
                 popUpTo(navController.graph.startDestinationId) {
@@ -247,7 +240,7 @@ fun CoffeeFarmApp() {
                             modifier = Modifier.padding(top = 2.dp)
                         )
                         Text(
-                            text = "${currentSession.displayName} · ${if (isRider) "Delivery Rider" else if (isMaintenance) "Maintenance" else roleLabel(currentSession.role)}",
+                            text = "${currentSession.displayName} · ${if (isMaintenance) "Maintenance" else roleLabel(currentSession.role)}",
                             color = palette.textSecondary,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 8.dp)
@@ -348,9 +341,6 @@ fun CoffeeFarmApp() {
                                 onNavigateToModule = navigateToDestination
                             )
                         }
-                        composable(AppDestination.RiderDeliveries.route) {
-                            RiderDeliveriesScreen(session = currentSession)
-                        }
                         composable(AppDestination.MaintenanceJobs.route) {
                             MaintenanceJobsScreen(session = currentSession)
                         }
@@ -420,13 +410,9 @@ private fun FullScreenLoading() {
     }
 }
 
-private fun destinationsForRole(role: UserRole, isRider: Boolean, isMaintenance: Boolean): List<AppDestination> = when (role) {
+private fun destinationsForRole(role: UserRole, isMaintenance: Boolean): List<AppDestination> = when (role) {
     UserRole.ADMINISTRATOR -> administratorMobileDestinations
-    UserRole.FARM_STAFF -> when {
-        isRider -> riderMobileDestinations
-        isMaintenance -> maintenanceMobileDestinations
-        else -> farmStaffMobileDestinations
-    }
+    UserRole.FARM_STAFF -> if (isMaintenance) maintenanceMobileDestinations else farmStaffMobileDestinations
     UserRole.BUYER -> buyerMobileDestinations
 }
 

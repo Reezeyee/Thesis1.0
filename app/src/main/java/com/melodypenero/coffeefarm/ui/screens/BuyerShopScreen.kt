@@ -1,33 +1,22 @@
 package com.melodypenero.coffeefarm.ui.screens
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.location.LocationManager
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -44,15 +33,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import com.melodypenero.coffeefarm.auth.AuthSession
 import com.melodypenero.coffeefarm.data.orders.BuyerCatalogRepository
 import com.melodypenero.coffeefarm.data.orders.BuyerOrdersRepository
 import com.melodypenero.coffeefarm.domain.BuyerOrderItem
-import com.melodypenero.coffeefarm.domain.LUZON_PROVINCES
 import com.melodypenero.coffeefarm.domain.ProductListing
 import com.melodypenero.coffeefarm.domain.availableAfterHolds
-import com.melodypenero.coffeefarm.domain.deliveryFeeFor
 import com.melodypenero.coffeefarm.ui.components.FarmCard
 import com.melodypenero.coffeefarm.ui.components.FarmEmptyState
 import com.melodypenero.coffeefarm.ui.components.FarmInfoBanner
@@ -65,7 +51,7 @@ import java.util.Locale
 
 /**
  * Buyer home: the same Admin-managed catalog the website's storefront shows, a cart, and checkout
- * (delivery or pickup, cash or e-wallet). Orders go straight to `buyer_orders` -- see
+ * (pickup at the farm, cash or e-wallet). Orders go straight to `buyer_orders` -- see
  * [BuyerOrdersRepository] -- never through the shared farm state, matching how the website's
  * storefront places orders.
  */
@@ -227,64 +213,20 @@ private fun CheckoutDialog(
     onDismiss: () -> Unit,
     onPlaced: () -> Unit
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val palette = farmPalette()
 
-    var fulfillmentMethod by remember { mutableStateOf("delivery") }
-    var address by remember { mutableStateOf("") }
-    var province by remember { mutableStateOf("") }
-    var provinceMenuOpen by remember { mutableStateOf(false) }
     var paymentMethod by remember { mutableStateOf("cash") }
     var phone by remember { mutableStateOf("") }
-    var deliveryLat by remember { mutableStateOf<Double?>(null) }
-    var deliveryLng by remember { mutableStateOf<Double?>(null) }
     var placing by remember { mutableStateOf(false) }
     var placeError by remember { mutableStateOf<String?>(null) }
 
-    val locationManager = remember(context) { context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager }
-    fun hasLocationPermission() =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-
-    fun captureLocation() {
-        val lm = locationManager ?: return
-        if (!hasLocationPermission()) return
-        val best = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .mapNotNull { provider -> try { @Suppress("MissingPermission") lm.getLastKnownLocation(provider) } catch (_: Exception) { null } }
-            .maxByOrNull { it.time }
-        if (best != null) {
-            deliveryLat = best.latitude
-            deliveryLng = best.longitude
-        }
-    }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { granted ->
-        if (granted[Manifest.permission.ACCESS_FINE_LOCATION] == true || granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
-            captureLocation()
-        } else {
-            Toast.makeText(context, "Location permission is needed to share your delivery pin.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    val deliveryFeeAmount = if (fulfillmentMethod == "delivery") deliveryFeeFor(province) else 0.0
-    val cartTotal = Math.round((cartSubtotal + deliveryFeeAmount) * 100) / 100.0
+    val cartTotal = cartSubtotal
 
     fun placeOrder() {
         val trimmedPhone = sanitizePhoneInput(phone)
-        val trimmedAddress = address.trim()
         if (!isValidPhone11(trimmedPhone)) {
             placeError = PHONE_ERROR_MESSAGE
-            return
-        }
-        if (fulfillmentMethod == "delivery" && trimmedAddress.isBlank()) {
-            placeError = "Enter the address where the order should be delivered."
-            return
-        }
-        if (fulfillmentMethod == "delivery" && province.isBlank()) {
-            placeError = "Choose your province so we can work out the delivery fee."
             return
         }
         placing = true
@@ -296,15 +238,8 @@ private fun CheckoutDialog(
                     buyerName = session.displayName.ifBlank { session.email },
                     buyerEmail = session.email,
                     buyerPhone = trimmedPhone,
-                    fulfillmentMethod = fulfillmentMethod,
-                    deliveryAddress = if (fulfillmentMethod == "delivery") trimmedAddress else null,
-                    deliveryProvince = if (fulfillmentMethod == "delivery") province else null,
-                    deliveryLat = if (fulfillmentMethod == "delivery") deliveryLat else null,
-                    deliveryLng = if (fulfillmentMethod == "delivery") deliveryLng else null,
                     paymentMethod = paymentMethod,
                     items = cartItems,
-                    subtotal = cartSubtotal,
-                    deliveryFee = deliveryFeeAmount,
                     totalAmount = cartTotal
                 )
             }
@@ -322,13 +257,7 @@ private fun CheckoutDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Total: ${peso(cartTotal)}", color = palette.accent, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
 
-                Text("Fulfillment", color = palette.textPrimary, fontWeight = FontWeight.SemiBold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = fulfillmentMethod == "delivery", onClick = { fulfillmentMethod = "delivery" })
-                    Text("Delivery", color = palette.textPrimary, modifier = Modifier.padding(end = 16.dp))
-                    RadioButton(selected = fulfillmentMethod == "pickup", onClick = { fulfillmentMethod = "pickup" })
-                    Text("Pick up at the farm", color = palette.textPrimary)
-                }
+                Text("Pick up at the farm — we'll notify you when it's ready.", color = palette.textSecondary, style = MaterialTheme.typography.bodySmall)
 
                 OutlinedTextField(
                     value = phone,
@@ -338,42 +267,10 @@ private fun CheckoutDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                if (fulfillmentMethod == "delivery") {
-                    OutlinedTextField(
-                        value = address,
-                        onValueChange = { address = it },
-                        label = { Text("Delivery address") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Box {
-                        OutlinedButton(onClick = { provinceMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(province.ifBlank { "Choose province" }, color = palette.textPrimary)
-                        }
-                        DropdownMenu(expanded = provinceMenuOpen, onDismissRequest = { provinceMenuOpen = false }) {
-                            LUZON_PROVINCES.forEach { p ->
-                                DropdownMenuItem(text = { Text(p) }, onClick = { province = p; provinceMenuOpen = false })
-                            }
-                        }
-                    }
-                    if (province.isNotBlank()) {
-                        Text("Delivery fee: ${peso(deliveryFeeAmount)}", color = palette.textSecondary, style = MaterialTheme.typography.bodySmall)
-                    }
-                    OutlinedButton(onClick = {
-                        if (hasLocationPermission()) captureLocation()
-                        else locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                    }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = palette.accent, modifier = Modifier.size(18.dp))
-                        Text(
-                            if (deliveryLat != null) " Location pin captured" else " Share my location for the rider",
-                            color = palette.textPrimary
-                        )
-                    }
-                }
-
                 Text("Payment", color = palette.textPrimary, fontWeight = FontWeight.SemiBold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = paymentMethod == "cash", onClick = { paymentMethod = "cash" })
-                    Text(if (fulfillmentMethod == "pickup") "Cash at pickup" else "Cash on Delivery", color = palette.textPrimary, modifier = Modifier.padding(end = 16.dp))
+                    Text("Cash at pickup", color = palette.textPrimary, modifier = Modifier.padding(end = 16.dp))
                     RadioButton(selected = paymentMethod == "e_wallet", onClick = { paymentMethod = "e_wallet" })
                     Text("E-wallet", color = palette.textPrimary)
                 }

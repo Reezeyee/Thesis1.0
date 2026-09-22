@@ -44,7 +44,7 @@ private data class FarmCatalogSnapshot(val productListings: List<RawProductListi
  * A Buyer's read-only view of the product catalog and live stock reservations. Deliberately bypasses
  * [com.melodypenero.coffeefarm.data.store.AppStore]: a Buyer account is never staff-role, so
  * firestore.rules blocks it from the shared-state write path that store participates in -- this
- * repository only ever reads, mirroring [RiderOrdersRepository]'s direct-Firestore approach.
+ * repository only ever reads.
  */
 object BuyerCatalogRepository {
     private val db get() = FirebaseFirestore.getInstance()
