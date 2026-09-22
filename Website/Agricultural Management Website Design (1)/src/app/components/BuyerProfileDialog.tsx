@@ -79,6 +79,17 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
+  // Live validation so the button disables (and the reason shows) before a submit round-trip,
+  // rather than only surfacing Firebase's auth/weak-password / mismatch after the fact.
+  const trimmedNewEmail = newEmail.trim().toLowerCase();
+  const emailFormatInvalid = trimmedNewEmail !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedNewEmail);
+  const emailSameAsCurrent = trimmedNewEmail !== '' && trimmedNewEmail === session?.email.toLowerCase();
+  const emailValid = trimmedNewEmail !== '' && !emailFormatInvalid && !emailSameAsCurrent;
+
+  const newPasswordTooShort = newPassword !== '' && newPassword.length < 6;
+  const passwordsMismatch = confirmPassword !== '' && newPassword !== confirmPassword;
+  const passwordChangeValid = newPassword.length >= 6 && newPassword === confirmPassword && currentPassword !== '';
+
   useEffect(() => {
     if (!open || !user) return;
     setName(session?.displayName ?? '');
@@ -269,8 +280,14 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
               onChange={(e) => setNewEmail(e.target.value)}
               placeholder="New email address"
               autoComplete="email"
-              className="h-9 rounded-lg text-xs"
+              aria-invalid={emailFormatInvalid || emailSameAsCurrent}
+              className={`h-9 rounded-lg text-xs ${emailFormatInvalid || emailSameAsCurrent ? 'border-rose-500' : ''}`}
             />
+            {emailFormatInvalid ? (
+              <p className="text-[11px] text-rose-500 font-medium">Enter a valid email address.</p>
+            ) : emailSameAsCurrent ? (
+              <p className="text-[11px] text-rose-500 font-medium">That's already your current email.</p>
+            ) : null}
             <Input
               type="password"
               value={emailPassword}
@@ -282,7 +299,7 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
             <Button
               type="button"
               size="sm"
-              disabled={emailSaving || !newEmail.trim() || !emailPassword}
+              disabled={emailSaving || !emailValid || !emailPassword}
               onClick={() => void handleSaveEmail()}
               className="h-9 text-xs w-full"
             >
@@ -309,20 +326,28 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="New password"
               autoComplete="new-password"
-              className="h-9 rounded-lg text-xs"
+              aria-invalid={newPasswordTooShort}
+              className={`h-9 rounded-lg text-xs ${newPasswordTooShort ? 'border-rose-500' : ''}`}
             />
+            {newPasswordTooShort ? (
+              <p className="text-[11px] text-rose-500 font-medium">At least 6 characters.</p>
+            ) : null}
             <Input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Confirm new password"
               autoComplete="new-password"
-              className="h-9 rounded-lg text-xs"
+              aria-invalid={passwordsMismatch}
+              className={`h-9 rounded-lg text-xs ${passwordsMismatch ? 'border-rose-500' : ''}`}
             />
+            {passwordsMismatch ? (
+              <p className="text-[11px] text-rose-500 font-medium">Passwords do not match.</p>
+            ) : null}
             <Button
               type="button"
               size="sm"
-              disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword}
+              disabled={passwordSaving || !passwordChangeValid}
               onClick={() => void handleSavePassword()}
               className="h-9 text-xs w-full"
             >

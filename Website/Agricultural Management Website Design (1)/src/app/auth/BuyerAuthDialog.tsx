@@ -22,6 +22,7 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [location, setLocation] = useState<PickedLocation | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -33,10 +34,17 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
     setPhone('');
     setEmail('');
     setPassword('');
+    setConfirmPassword('');
     setLocation(null);
     setLocalError(null);
     setResetMessage(null);
   };
+
+  // Firebase rejects a password under 6 characters (auth/weak-password) -- check it here too so
+  // that shows up as inline guidance while typing instead of only after a failed submit.
+  const passwordTooShort = mode === 'signup' && password !== '' && password.length < 6;
+  const passwordsMismatch = mode === 'signup' && confirmPassword !== '' && password !== confirmPassword;
+  const signupPasswordValid = password.length >= 6 && password === confirmPassword;
 
   // `pinned` = the buyer actually tapped/dragged the map. Typing an address alone leaves the pin at the
   // map's default centre, which would be the wrong location.
@@ -65,6 +73,10 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
     e.preventDefault();
     if (mode === 'signup' && !locationIsValid(location)) {
       setLocalError('Tap the map to drop a pin on your business / pickup location first -- it is required to create a buyer account.');
+      return;
+    }
+    if (mode === 'signup' && !signupPasswordValid) {
+      setLocalError('Enter a password of at least 6 characters, and make sure it matches the confirmation field.');
       return;
     }
     setSubmitting(true);
@@ -168,9 +180,33 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-              className="h-10 rounded-xl text-xs"
+              aria-invalid={passwordTooShort}
+              className={`h-10 rounded-xl text-xs ${passwordTooShort ? 'border-rose-500' : ''}`}
             />
+            {mode === 'signup' ? (
+              <p className={`text-[11px] ${passwordTooShort ? 'text-rose-500 font-medium' : 'text-muted-foreground'}`}>
+                At least 6 characters.
+              </p>
+            ) : null}
           </div>
+          {mode === 'signup' ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="buyer-confirm-password" className="text-xs font-semibold">Confirm password</Label>
+              <Input
+                id="buyer-confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                aria-invalid={passwordsMismatch}
+                className={`h-10 rounded-xl text-xs ${passwordsMismatch ? 'border-rose-500' : ''}`}
+              />
+              {passwordsMismatch ? (
+                <p className="text-[11px] text-rose-500 font-medium">Passwords do not match.</p>
+              ) : null}
+            </div>
+          ) : null}
           {resetMessage ? (
             <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
               {resetMessage}
@@ -184,7 +220,7 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
           <DialogFooter className="flex-col gap-2 sm:flex-col">
             <Button
               type="submit"
-              disabled={submitting || (mode === 'signup' && !locationIsValid(location))}
+              disabled={submitting || (mode === 'signup' && (!locationIsValid(location) || !signupPasswordValid))}
               className="w-full h-10 rounded-xl text-xs font-bold cursor-pointer"
             >
               {submitting
