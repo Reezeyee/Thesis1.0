@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import com.melodypenero.coffeefarm.data.store.ConsumableSupplyRecord
 import com.melodypenero.coffeefarm.data.store.LocalAppStore
 import com.melodypenero.coffeefarm.ui.components.FarmCard
-import com.melodypenero.coffeefarm.ui.components.FarmInfoBanner
 import com.melodypenero.coffeefarm.ui.components.FarmLazyScreen
 import com.melodypenero.coffeefarm.ui.components.FarmPrimaryButton
 import com.melodypenero.coffeefarm.ui.components.FarmSectionTitle
@@ -41,28 +40,13 @@ fun SuppliesScreen(reporterDisplayName: String = "") {
     val linkedWorker = state.workers.firstOrNull { it.authUid.trim() == activeUid }
     val linkedWorkerName = linkedWorker?.name.orEmpty().trim().ifBlank { reporterDisplayName.trim() }
     val workerNames = state.workers.mapNotNull { it.name.trim().takeIf(String::isNotBlank) }.distinct().sorted()
-    val supplyLabels = remember(supplies) {
-        supplies.map { supply ->
-            val stock = "${supply.stock} ${supply.unit}".trim()
-            "${supply.name} · ${supply.category} · $stock"
-        }
-    }
-    val supplyLabelToRecord = remember(supplies, supplyLabels) {
-        supplyLabels.zip(supplies).toMap()
-    }
-    var reportDialogOpen by remember { mutableStateOf(false) }
     var withdrawDialogOpen by remember { mutableStateOf(false) }
 
     FarmLazyScreen(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             FarmSectionTitle(
                 title = "Consumable supplies",
-                subtitle = "Inventory is managed on the website. Workers can withdraw stock or report if supplies run out in the field."
-            )
-        }
-        item {
-            FarmInfoBanner(
-                text = "Report fertilizer, pesticide, vitamins, bags, or other consumables before work is delayed."
+                subtitle = "Inventory is managed on the website. Workers can withdraw stock here."
             )
         }
         item {
@@ -88,43 +72,6 @@ fun SuppliesScreen(reporterDisplayName: String = "") {
                 if (supplies.none { it.stock > 0 }) {
                     Text(
                         text = "No consumable supplies currently in stock.",
-                        color = palette.textSecondary,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-        }
-        item {
-            FarmCard {
-                Text(
-                    text = "Report supply status",
-                    color = palette.textPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = "Choose a supply from the website list and tell the admin if it ran out or still has stock.",
-                    color = palette.textSecondary,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                FarmPrimaryButton(
-                    text = "Create supply report",
-                    onClick = { reportDialogOpen = true },
-                    enabled = supplies.isNotEmpty() && (linkedWorkerName.isNotBlank() || workerNames.isNotEmpty())
-                )
-                if (supplies.isEmpty()) {
-                    Text(
-                        text = "No consumable supplies are available yet. Ask an admin to add supplies on the website first.",
-                        color = palette.textSecondary,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                } else if (linkedWorkerName.isBlank() && workerNames.isEmpty()) {
-                    Text(
-                        text = "No workers found in the farm database. Ask the admin to add worker profiles on the website so reports can be attributed.",
                         color = palette.textSecondary,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 8.dp)
@@ -263,52 +210,6 @@ fun SuppliesScreen(reporterDisplayName: String = "") {
                         withdrawDialogOpen = false
                     }
                 }
-            }
-        )
-    }
-
-    if (reportDialogOpen) {
-        val fields = buildList {
-            if (linkedWorkerName.isBlank()) {
-                add(RecordField("Reported by", options = workerNames))
-            }
-            add(RecordField("Supply", options = supplyLabels))
-            add(RecordField("Status", options = listOf("Run out", "Still available")))
-            add(RecordField("Notes"))
-            add(RecordField("Report date"))
-        }
-        val initialValues = buildList {
-            if (linkedWorkerName.isBlank()) {
-                add(workerNames.firstOrNull().orEmpty())
-            }
-            add(supplyLabels.firstOrNull().orEmpty())
-            add("Run out")
-            add("")
-            add(java.time.LocalDate.now().toString())
-        }
-        SimpleRecordDialog(
-            title = "Consumable supply report",
-            fields = fields,
-            initialValues = initialValues,
-            onDismiss = { reportDialogOpen = false },
-            onSave = { values ->
-                val offset = if (linkedWorkerName.isBlank()) 1 else 0
-                val reporter = if (linkedWorkerName.isBlank()) values.getOrNull(0).orEmpty() else linkedWorkerName
-                val supplyLabel = values.getOrNull(offset).orEmpty()
-                val status = values.getOrNull(offset + 1).orEmpty()
-                val notes = values.getOrNull(offset + 2).orEmpty()
-                val date = values.getOrNull(offset + 3).orEmpty()
-                val supply = supplyLabelToRecord[supplyLabel]
-                store.reportConsumableSupply(
-                    supplyId = supply?.supplyId.orEmpty(),
-                    supplyName = supply?.name.orEmpty().ifBlank { supplyLabel.substringBefore(" ·").trim() },
-                    isRunOut = status.equals("Run out", ignoreCase = true),
-                    notes = notes,
-                    reportedBy = reporter,
-                    reportedByAuthUid = activeUid,
-                    reportedAt = date
-                )
-                reportDialogOpen = false
             }
         )
     }

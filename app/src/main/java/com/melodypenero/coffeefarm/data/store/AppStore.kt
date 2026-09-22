@@ -1815,33 +1815,6 @@ class AppStore(context: Context) {
         )
     )
 
-    /** Worker field report: visible on admin website under consumable supplies. */
-    fun reportConsumableSupply(
-        supplyId: String,
-        supplyName: String,
-        isRunOut: Boolean,
-        notes: String,
-        reportedBy: String,
-        reportedByAuthUid: String = "",
-        reportedAt: String = ""
-    ) {
-        val name = supplyName.trim()
-        if (name.isBlank()) return
-        val today = reportedAt.trim().ifBlank { java.time.LocalDate.now().toString() }
-        val report = ConsumableSupplyReportRecord(
-            reportId = UUID.randomUUID().toString(),
-            supplyId = supplyId.trim(),
-            supplyName = name,
-            isRunOut = isRunOut,
-            notes = notes.trim(),
-            reportedAt = today,
-            reportedBy = reportedBy.trim().ifBlank { "Unknown worker" },
-            reportedByAuthUid = reportedByAuthUid.trim(),
-            reviewed = false
-        )
-        persist(state.copy(consumableReports = state.consumableReports + report))
-    }
-
     /**
      * Worker takes stock out of the warehouse (e.g. hauling manure to the field). Deducts
      * [quantity] from the supply's stock and logs an unreviewed [ConsumableSupplyReportRecord] so
