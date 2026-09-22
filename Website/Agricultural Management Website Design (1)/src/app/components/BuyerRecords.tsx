@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { Search, RefreshCw, Phone, MapPin, Package, Pencil, Users } from 'lucide-react';
+import { Search, RefreshCw, Phone, MapPin, Package, Users } from 'lucide-react';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
@@ -8,7 +8,6 @@ import { formatCurrency } from '../lib/currencyFormat';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { BuyerRecordEditDialog } from './BuyerRecordEditDialog';
 import type { BuyerOrderRecord, SaleRecord } from '../types/appState';
 import type { BuyerRecord } from '../lib/buyerRecord';
 
@@ -41,10 +40,12 @@ function statsFromOrdersAndSales(orders: BuyerOrderRecord[], sales: SaleRecord[]
 }
 
 /**
- * Admin-facing buyer record book (Maintenance -> Buyer Records): every self-registered buyer's
- * name, contact info, address, an admin-assigned buyer type, and a purchase history reference --
- * editable via BuyerRecordEditDialog. Reads the same `users` (role == BUYER) + `buyer_orders`
- * sources as BuyerProfileDialog/NearbyBuyers, so all three stay consistent.
+ * Admin-facing buyer record book (Maintenance -> Buyer Records): read-only view of every
+ * self-registered buyer's name, contact info, address, buyer type, and a purchase history
+ * reference. Admin cannot edit these -- a buyer's account is theirs alone to change (see
+ * BuyerProfileDialog); this is a view, not a management console. Reads the same `users`
+ * (role == BUYER) + `buyer_orders` sources as BuyerProfileDialog/NearbyBuyers, so all three stay
+ * consistent.
  */
 export function BuyerRecords() {
   const { state } = useFarmData();
@@ -53,7 +54,6 @@ export function BuyerRecords() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState<BuyerRecord | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -106,10 +106,6 @@ export function BuyerRecords() {
     return [...rows].sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [buyers, search]);
 
-  const handleSaved = (uid: string, patch: Partial<BuyerRecord>) => {
-    setBuyers((prev) => prev.map((b) => (b.uid === uid ? { ...b, ...patch } : b)));
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -147,26 +143,16 @@ export function BuyerRecords() {
             const stats = statsByBuyer.get(buyer.uid) ?? EMPTY_STATS;
             return (
               <div key={buyer.uid} className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-foreground truncate">{buyer.displayName}</p>
-                      {buyer.buyerType ? (
-                        <Badge variant="secondary" className="text-[10px] font-semibold">{buyer.buyerType}</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] font-semibold text-muted-foreground">Type not set</Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">{buyer.email}</p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-foreground truncate">{buyer.displayName}</p>
+                    {buyer.buyerType ? (
+                      <Badge variant="secondary" className="text-[10px] font-semibold">{buyer.buyerType}</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] font-semibold text-muted-foreground">Type not set</Badge>
+                    )}
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs shrink-0"
-                    onClick={() => setEditing(buyer)}
-                  >
-                    <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
-                  </Button>
+                  <p className="text-xs text-muted-foreground truncate">{buyer.email}</p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground pt-1 border-t border-border/50">
@@ -189,13 +175,6 @@ export function BuyerRecords() {
           })}
         </div>
       )}
-
-      <BuyerRecordEditDialog
-        buyer={editing}
-        open={editing !== null}
-        onOpenChange={(open) => { if (!open) setEditing(null); }}
-        onSaved={handleSaved}
-      />
     </div>
   );
 }
