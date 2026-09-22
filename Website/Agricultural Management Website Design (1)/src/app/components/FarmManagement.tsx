@@ -11,7 +11,6 @@ import {
   Trash2,
   MapPin,
   Phone,
-  Calendar,
   Clock,
   BarChart3,
   Droplets,
@@ -114,7 +113,6 @@ export function FarmManagement() {
   const irrigationDamageReports = state.irrigationDamageReports ?? [];
   const pestControlLogs = state.pestControlLogs;
 
-  const recentTasks = state.tasks.slice(0, 8);
   const [harvestSearchQuery, setHarvestSearchQuery] = useState('');
   const [harvestStatusFilter, setHarvestStatusFilter] = useState<'All' | 'Pending Review' | 'Confirmed' | 'Rejected'>('All');
 
@@ -2201,34 +2199,6 @@ export function FarmManagement() {
         </div>
       </div>
 
-      <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-        <h3 className="font-bold text-base font-heading text-foreground mb-4">Recent Tasks</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {recentTasks.map((task, idx) => (
-            <div key={idx} className="bg-muted/40 rounded-xl p-3 border border-border/60">
-              <div className="flex items-start justify-between mb-1.5">
-                <h4 className="text-xs font-bold font-heading text-foreground">{task.title}</h4>
-                <span
-                  className={`text-[9px] font-extrabold font-mono px-2 py-0.5 rounded-full uppercase ${
-                    task.status === 'completed'
-                      ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
-                      : task.status === 'in-progress'
-                      ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
-                      : 'bg-muted text-muted-foreground border border-border/40'
-                  }`}
-                >
-                  {task.status}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">{task.details}</p>
-              <div className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground mt-2">
-                <Calendar className="w-3 h-3" />
-                <span>{task.status}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
     </motion.div>
   );
 }
