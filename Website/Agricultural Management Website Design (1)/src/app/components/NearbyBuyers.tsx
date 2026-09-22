@@ -8,7 +8,7 @@ import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
 import { Button } from './ui/button';
-import { BATAAN_MAP_HUBS } from '../data/bataanProvinceMap';
+import { BATAAN_MAP_HUBS, BATAAN_BBOX } from '../data/bataanProvinceMap';
 import { distanceKm, formatDistanceKm } from '../lib/geo';
 import { formatCurrency } from '../lib/currencyFormat';
 import type { BuyerOrderRecord, SaleRecord } from '../types/appState';
@@ -16,6 +16,16 @@ import type { BuyerOrderRecord, SaleRecord } from '../types/appState';
 /** The farm's own fixed coordinates (Limay Farm HQ hub), used as the "nearby" reference point for every distance shown on this page. */
 const FARM_HQ = BATAAN_MAP_HUBS[0];
 const FARM_CENTER: [number, number] = [FARM_HQ.lat, FARM_HQ.lng];
+
+/** This page is scoped to Bataan buyers only -- a buyer outside the province's bounding box is excluded regardless of how close its raw distance to the farm looks. */
+function isWithinBataan(lat: number, lng: number): boolean {
+  return (
+    lat >= BATAAN_BBOX.minLat &&
+    lat <= BATAAN_BBOX.maxLat &&
+    lng >= BATAAN_BBOX.minLng &&
+    lng <= BATAAN_BBOX.maxLng
+  );
+}
 
 type BuyerProfile = {
   uid: string;
@@ -161,14 +171,21 @@ export function NearbyBuyers() {
     [orders, state.sales],
   );
 
-  const buyersWithLocation = useMemo(
-    () =>
-      buyers
-        .filter((b) => typeof b.locationLat === 'number' && typeof b.locationLng === 'number')
-        .map((b) => ({ ...b, distanceKm: distanceKm(FARM_HQ.lat, FARM_HQ.lng, b.locationLat!, b.locationLng!) }))
-        .sort((a, b) => a.distanceKm - b.distanceKm),
+  const buyersWithAnyLocation = useMemo(
+    () => buyers.filter((b) => typeof b.locationLat === 'number' && typeof b.locationLng === 'number'),
     [buyers],
   );
+
+  const buyersWithLocation = useMemo(
+    () =>
+      buyersWithAnyLocation
+        .filter((b) => isWithinBataan(b.locationLat!, b.locationLng!))
+        .map((b) => ({ ...b, distanceKm: distanceKm(FARM_HQ.lat, FARM_HQ.lng, b.locationLat!, b.locationLng!) }))
+        .sort((a, b) => a.distanceKm - b.distanceKm),
+    [buyersWithAnyLocation],
+  );
+
+  const outsideBataanCount = buyersWithAnyLocation.length - buyersWithLocation.length;
 
   const points = useMemo<[number, number][]>(
     () => [FARM_CENTER, ...buyersWithLocation.map((b) => [b.locationLat!, b.locationLng!] as [number, number])],
@@ -191,7 +208,11 @@ export function NearbyBuyers() {
         <p className="text-xs text-muted-foreground">
           {loading
             ? 'Loading buyer accounts…'
-            : `${buyersWithLocation.length} of ${buyers.length} registered buyer${buyers.length === 1 ? '' : 's'} have a location set, ranked by distance from ${FARM_HQ.municipality}.`}
+            : `${buyersWithLocation.length} of ${buyers.length} registered buyer${buyers.length === 1 ? '' : 's'} are in Bataan with a location set, ranked by distance from ${FARM_HQ.municipality}.${
+                outsideBataanCount > 0
+                  ? ` (${outsideBataanCount} buyer${outsideBataanCount === 1 ? '' : 's'} outside Bataan hidden.)`
+                  : ''
+              }`}
         </p>
         <Button variant="outline" size="sm" onClick={() => void loadBuyers()} disabled={loading}>
           <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
@@ -266,7 +287,7 @@ export function NearbyBuyers() {
 
       <div className="space-y-2">
         {buyersWithLocation.length === 0 && !loading ? (
-          <p className="text-xs text-muted-foreground">No buyer accounts with a saved location yet.</p>
+          <p className="text-xs text-muted-foreground">No buyer accounts with a Bataan location yet.</p>
         ) : (
           buyersWithLocation.map((buyer, idx) => {
             const stats = statsByBuyer.get(buyer.uid) ?? EMPTY_STATS;
