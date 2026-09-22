@@ -3,6 +3,7 @@ import {
   Activity,
   LayoutDashboard,
   Users,
+  UserCog,
   Wrench,
   Clock,
   Coffee,
@@ -79,10 +80,10 @@ export function Sidebar({
         },
         {
           id: 'attendance',
-          icon: Clock,
-          label: 'Attendance',
+          icon: UserCog,
+          label: 'Users Management',
           badge: null,
-          hint: 'Time, leave & payroll',
+          hint: 'Employees, time, leave & payroll',
         },
         {
           id: 'equipment',

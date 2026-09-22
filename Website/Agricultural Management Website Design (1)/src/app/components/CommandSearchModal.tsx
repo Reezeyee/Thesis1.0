@@ -251,7 +251,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                   className="flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg cursor-pointer"
                 >
                   <Users className="w-4 h-4 text-emerald-500" />
-                  <span className="font-semibold text-foreground font-heading">Farm HR & Worker Management</span>
+                  <span className="font-semibold text-foreground font-heading">Farm HR & Operations</span>
                   <span className="ml-auto text-[10px] text-muted-foreground font-mono">⌘3</span>
                 </CommandItem>
 
@@ -260,7 +260,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                   className="flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg cursor-pointer"
                 >
                   <Clock className="w-4 h-4 text-amber-500" />
-                  <span className="font-semibold text-foreground font-heading">Attendance, Leave & Payroll</span>
+                  <span className="font-semibold text-foreground font-heading">Users Management, Attendance & Payroll</span>
                 </CommandItem>
 
                 <CommandItem

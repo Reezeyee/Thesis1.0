@@ -30,8 +30,8 @@ export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'attendance' | '
 const moduleLabels: Record<AppModuleId, string> = {
   monitoring: 'Telemetry & Sensor Monitor',
   dashboard: 'Dashboard Overview',
-  farm: 'Farm HR & Workers',
-  attendance: 'Attendance',
+  farm: 'Farm HR & Operations',
+  attendance: 'Users Management',
   equipment: 'Equipment Management',
   cherry: 'Coffee Cherry Batches',
   profit: 'Profit & Sales Ledger',

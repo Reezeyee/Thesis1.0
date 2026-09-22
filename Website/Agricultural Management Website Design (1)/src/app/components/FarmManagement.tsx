@@ -1,7 +1,7 @@
 import { RepairAssignControl } from './RepairAssignControl';
 import { repairJobId, sprinklerRepairJob } from '../lib/repairJobs';
 import { useRepairJobs } from '../store/useRepairJobs';
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   User,
@@ -63,24 +63,11 @@ import { Label } from './ui/label';
 import { BATAAN_PROVINCE } from '../data/bataanAddressCatalog';
 import { useFarmData } from '../store/FarmDataProvider';
 import { useAuth } from '../auth/AuthProvider';
-import { createWorkerAuthAccount, type CreatedWorkerAccount } from '../auth/workerAccount';
-import { distinctRoles, hourlyRateForWorkerRole, payrollLineAmount, responsibilitiesForWorkerRole, WORKER_ROLES } from '../lib/farmFinance';
+import { distinctRoles, payrollLineAmount } from '../lib/farmFinance';
 import { formatCurrency } from '../lib/currencyFormat';
 import { runSave, showSaveError } from '../lib/saveFeedback';
 import { logStateApiActivity, logUiAction } from '../lib/apiRouteLogger';
-import {
-  isAtLeast18,
-  isValidPhone11,
-  parseWorkerDetails,
-  sanitizePhoneInput,
-  workerRecordToUi,
-  workerRecordToDraft,
-  draftToWorkerRecord,
-  emptyWorkerDraft,
-  type WorkerUi,
-  type WorkerFormDraft,
-} from '../lib/workerUi';
-import { WorkerFormDialog } from './WorkerFormDialog';
+import { sanitizePhoneInput, workerRecordToUi } from '../lib/workerUi';
 import {
   emptyCoffeeField,
   emptyIrrigationSystem,
@@ -126,40 +113,6 @@ export function FarmManagement() {
   const irrigationSystems = state.irrigationSystems;
   const irrigationDamageReports = state.irrigationDamageReports ?? [];
   const pestControlLogs = state.pestControlLogs;
-  const [workerSearchQuery, setWorkerSearchQuery] = useState('');
-  const [workerRoleFilter, setWorkerRoleFilter] = useState('All');
-  const [workerStatusFilter, setWorkerStatusFilter] = useState('All');
-  const [workerSortOrder, setWorkerSortOrder] = useState<'newest' | 'oldest' | 'name'>('newest');
-
-  const filteredWorkers = useMemo(() => {
-    let list = [...workers];
-    if (workerSearchQuery.trim()) {
-      const q = workerSearchQuery.toLowerCase();
-      list = list.filter(
-        (w) =>
-          w.name.toLowerCase().includes(q) ||
-          w.role.toLowerCase().includes(q) ||
-          w.barangay.toLowerCase().includes(q) ||
-          w.municipality.toLowerCase().includes(q) ||
-          w.phone.includes(q) ||
-          w.workerId.toLowerCase().includes(q),
-      );
-    }
-    if (workerRoleFilter !== 'All') {
-      list = list.filter((w) => w.role.toLowerCase() === workerRoleFilter.toLowerCase());
-    }
-    if (workerStatusFilter !== 'All') {
-      list = list.filter((w) => w.status === workerStatusFilter.toLowerCase());
-    }
-    if (workerSortOrder === 'name') {
-      list.sort((a, b) => a.name.localeCompare(b.name));
-    } else if (workerSortOrder === 'oldest') {
-      list.sort((a, b) => a.index - b.index);
-    } else {
-      list.sort((a, b) => b.index - a.index);
-    }
-    return list;
-  }, [workers, workerSearchQuery, workerRoleFilter, workerStatusFilter, workerSortOrder]);
 
   const recentTasks = state.tasks.slice(0, 8);
   const [harvestSearchQuery, setHarvestSearchQuery] = useState('');
@@ -193,13 +146,6 @@ export function FarmManagement() {
 
     return list;
   }, [state.harvestReadinessReports, harvestStatusFilter, harvestSearchQuery]);
-
-  const [selectedWorkerIndex, setSelectedWorkerIndex] = useState<number | null>(null);
-  const [workerFormOpen, setWorkerFormOpen] = useState(false);
-  const [editingWorkerIndex, setEditingWorkerIndex] = useState<number | null>(null);
-  const [form, setForm] = useState<WorkerFormDraft>(() => emptyWorkerDraft());
-  const [workerFormError, setWorkerFormError] = useState<string | null>(null);
-  const [createdWorkerAccount, setCreatedWorkerAccount] = useState<(CreatedWorkerAccount & { phone?: string }) | null>(null);
 
   const [coffeeDialogOpen, setCoffeeDialogOpen] = useState(false);
   const [coffeeEditIndex, setCoffeeEditIndex] = useState<number | null>(null);
@@ -533,13 +479,6 @@ export function FarmManagement() {
   const isAddingIrrigation = irrigationDialogOpen && irrigationEditIndex === null;
   const isAddingPest = pestDialogOpen && pestEditIndex === null;
 
-  const isEditingWorker = editingWorkerIndex !== null;
-  const editingWorkerAddress =
-    editingWorkerIndex !== null ? state.workers[editingWorkerIndex]?.address : undefined;
-
-  const selectedWorker =
-    selectedWorkerIndex !== null ? workers.find((w) => w.index === selectedWorkerIndex) ?? null : null;
-
   const pendingTasks = state.tasks.filter(
     (t) => t.status === 'pending' || t.status === 'in-progress',
   ).length;
@@ -554,167 +493,6 @@ export function FarmManagement() {
     return Object.values(groups);
   }, [irrigationSystems]);
 
-
-  const openAddDialog = () => {
-    setEditingWorkerIndex(null);
-    setForm(emptyWorkerDraft());
-    setWorkerFormError(null);
-    setWorkerFormOpen(true);
-  };
-
-  const openEditDialog = (worker: WorkerUi) => {
-    const record = state.workers[worker.index];
-    if (!record) return;
-    setEditingWorkerIndex(worker.index);
-    setForm(workerRecordToDraft(record));
-    setWorkerFormError(null);
-    setSelectedWorkerIndex(worker.index);
-    setWorkerFormOpen(true);
-  };
-
-  const closeWorkerForm = () => {
-    setWorkerFormOpen(false);
-    setEditingWorkerIndex(null);
-    setForm(emptyWorkerDraft());
-    setWorkerFormError(null);
-  };
-
-  const saveWorker = async () => {
-    setWorkerFormError(null);
-    const existingWorker =
-      editingWorkerIndex !== null ? state.workers[editingWorkerIndex] : undefined;
-    const existingId = existingWorker?.workerId;
-
-    if (!form.firstName.trim() || !form.lastName.trim()) {
-      setWorkerFormError('Please enter both first name and last name.');
-      return;
-    }
-    if (!isAtLeast18(form.birthday)) {
-      setWorkerFormError('Please enter a birthday showing the employee is at least 18 years old.');
-      return;
-    }
-    if (!isValidPhone11(form.phone)) {
-      setWorkerFormError('Phone number must be strictly 11 digits starting with 09 (Sample: 09171234567).');
-      return;
-    }
-    if (!isValidPhone11(form.emergencyPhone)) {
-      setWorkerFormError('Emergency phone number must be strictly 11 digits starting with 09 (Sample: 09181234567).');
-      return;
-    }
-    if (!form.municipality.trim() || !form.barangay.trim()) {
-      setWorkerFormError('Please select both city/municipality and barangay.');
-      return;
-    }
-    if (!form.addressLine1.trim()) {
-      setWorkerFormError('Please enter Address Line 1.');
-      return;
-    }
-    if (editingWorkerIndex === null && !form.imageUrl.trim()) {
-      setWorkerFormError('A profile photo is required to complete employee registration.');
-      return;
-    }
-
-    let record = draftToWorkerRecord(form, existingId, existingWorker?.authUid);
-    if (editingWorkerIndex !== null && existingWorker) {
-      const existingMeta = parseWorkerDetails(existingWorker.details);
-      const newMeta = parseWorkerDetails(record.details);
-      record = {
-        ...record,
-        accountEmail: existingWorker.accountEmail,
-        accountPassword: existingWorker.accountPassword,
-        authUid: existingWorker.authUid,
-        details: JSON.stringify({
-          ...existingMeta,
-          ...newMeta,
-          accountEmail: existingWorker.accountEmail,
-          accountPassword: existingWorker.accountPassword,
-          authUid: existingWorker.authUid,
-        }),
-      };
-    }
-
-    let generatedAccount: CreatedWorkerAccount | null = null;
-    if (editingWorkerIndex === null) {
-      try {
-        generatedAccount = await createWorkerAuthAccount({
-          name: record.name,
-          workerId: record.workerId || `EMP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
-          role: record.roleRate,
-        });
-        const meta = parseWorkerDetails(record.details);
-        record = {
-          ...record,
-          accountEmail: generatedAccount.email,
-          accountPassword: generatedAccount.password,
-          authUid: generatedAccount.uid,
-          details: JSON.stringify({
-            ...meta,
-            accountEmail: generatedAccount.email,
-            accountPassword: generatedAccount.password,
-            authUid: generatedAccount.uid,
-          }),
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Could not create the worker login account.';
-        setWorkerFormError(`Could not create worker login. ${message}`);
-        return;
-      }
-    }
-
-    const ok = await runSave('Worker', async () => {
-      if (editingWorkerIndex !== null) {
-        await updateState((prev) => ({
-          ...prev,
-          workers: prev.workers.map((w, i) => (i === editingWorkerIndex ? record : w)),
-        }));
-        setSelectedWorkerIndex(editingWorkerIndex);
-      } else {
-        await updateState((prev) => ({
-          ...prev,
-          workers: [...prev.workers, record],
-        }));
-        setSelectedWorkerIndex(state.workers.length);
-      }
-    });
-
-    if (ok) {
-      setCreatedWorkerAccount(
-        generatedAccount
-          ? {
-              ...generatedAccount,
-              phone: record.phoneNumber || form.phone,
-            }
-          : null,
-      );
-      closeWorkerForm();
-      return;
-    }
-    setWorkerFormError('Could not save worker. Check the banner at the top for Firebase errors.');
-  };
-
-  const removeWorker = async (e: MouseEvent, index: number) => {
-    e.stopPropagation();
-    const worker = state.workers[index];
-    if (!worker) return;
-    if (!window.confirm(`Are you sure you want to make ${worker.name} inactive?`)) return;
-    await runSave('Employee status', () =>
-      updateState((prev) => ({
-        ...prev,
-        workers: prev.workers.map((record, i) => {
-          if (i !== index) return record;
-          const meta = parseWorkerDetails(record.details);
-          return {
-            ...record,
-            details: JSON.stringify({
-              ...meta,
-              status: 'inactive',
-            }),
-          };
-        }),
-      })),
-    );
-    setSelectedWorkerIndex(index);
-  };
 
   const reviewHarvestReadinessReport = async (reportId: string, action: 'Confirmed' | 'Rejected') => {
     logUiAction(`Admin clicked "${action === 'Confirmed' ? 'Confirm' : 'Reject'}" for harvest readiness report ${reportId}`);
@@ -1093,74 +871,10 @@ export function FarmManagement() {
             </span>
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            Register farm personnel, manage field tasks, verify geofenced attendance, and inspect plot sectors.
+            Manage field tasks, coffee field sectors, irrigation, pest &amp; disease control, and harvest readiness. Employee accounts are managed under Users Management.
           </p>
         </div>
       </motion.div>
-
-      <WorkerFormDialog
-        open={workerFormOpen}
-        onOpenChange={(open) => {
-          if (!open) closeWorkerForm();
-          else setWorkerFormOpen(true);
-        }}
-        isEditing={isEditingWorker}
-        form={form}
-        setForm={setForm}
-        onSave={saveWorker}
-        saving={saving}
-        formError={workerFormError}
-      />
-
-      <Dialog open={Boolean(createdWorkerAccount)} onOpenChange={(open) => { if (!open) setCreatedWorkerAccount(null); }}>
-        <DialogContent className="sm:max-w-md bg-card text-card-foreground border-border/80">
-          <DialogHeader>
-            <DialogTitle>Worker account created</DialogTitle>
-            <DialogDescription>
-              Give these login details to the employee. The worker can use this email in the mobile app
-              for Time In/Time Out, equipment logs, and coffee cherry scanning.
-            </DialogDescription>
-          </DialogHeader>
-          {createdWorkerAccount ? (
-            <div className="space-y-3 py-2">
-              <div className="rounded-lg bg-muted/40 p-3">
-                <p className="text-xs text-muted-foreground mb-1">Email</p>
-                <p className="break-all text-sm font-medium">{createdWorkerAccount.email}</p>
-              </div>
-              <div className="rounded-lg bg-muted/40 p-3">
-                <p className="text-xs text-muted-foreground mb-1">Temporary password</p>
-                <p className="break-all font-mono text-sm font-medium">{createdWorkerAccount.password}</p>
-              </div>
-              {createdWorkerAccount.phone && (
-                <div className="rounded-lg bg-emerald-500/10 border border-[#2d5016]/20 p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="text-left">
-                    <p className="text-xs text-[#2d5016] font-semibold">Associated Mobile Phone</p>
-                    <p className="text-sm font-bold text-foreground">{createdWorkerAccount.phone}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      alert(`SMS Sent Successfully!\n\nTo: ${createdWorkerAccount.phone}\nMessage: "Your Acojido Farm login details:\nEmail: ${createdWorkerAccount.email}\nPassword: ${createdWorkerAccount.password}"`);
-                    }}
-                    className="bg-[#2d5016] hover:bg-[#234010] text-white text-xs px-3 py-1.5"
-                  >
-                    Send Details via SMS
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              onClick={() => setCreatedWorkerAccount(null)}
-              className="bg-[#2d5016] hover:bg-[#234010] text-white w-full sm:w-auto"
-            >
-              Done
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={coffeeDialogOpen} onOpenChange={(o) => { if (!o) closeCoffeeDialog(); else setCoffeeDialogOpen(true); }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto bg-card text-card-foreground border-border/80">
@@ -2489,255 +2203,17 @@ export function FarmManagement() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex h-[660px] flex-col bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-              <div>
-                <h3 className="font-bold text-base font-heading text-foreground">Employee Directory</h3>
-                <p className="text-xs text-muted-foreground">
-                  Showing {filteredWorkers.length} of {workers.length} registered personnel
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={openAddDialog}
-                className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground text-xs font-bold rounded-xl hover:bg-accent/90 transition-all shadow-2xs shrink-0 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Add employee
-              </button>
-            </div>
-
-            {/* Search and Filters Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-4">
-              <div className="sm:col-span-6 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Search name, role, barangay, phone..."
-                  value={workerSearchQuery}
-                  onChange={(e) => setWorkerSearchQuery(e.target.value)}
-                  className="pl-9 h-9 text-xs bg-background/80"
-                />
-              </div>
-              <div className="sm:col-span-3">
-                <select
-                  value={workerRoleFilter}
-                  onChange={(e) => setWorkerRoleFilter(e.target.value)}
-                  className="w-full h-9 px-2.5 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
-                >
-                  <option value="All">All Roles</option>
-                  {WORKER_ROLES.map((role) => (
-                    <option key={role} value={role}>{role}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-3">
-                <select
-                  value={workerSortOrder}
-                  onChange={(e) => setWorkerSortOrder(e.target.value as 'newest' | 'oldest' | 'name')}
-                  className="w-full h-9 px-2.5 text-xs bg-background/80 border border-border/80 rounded-lg text-foreground"
-                >
-                  <option value="newest">Newest First</option>
-                  <option value="oldest">Oldest First</option>
-                  <option value="name">Name (A–Z)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-scroll pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent md:grid-cols-2">
-              {filteredWorkers.length === 0 ? (
-                <div className="col-span-full text-center py-12">
-                  <p className="text-xs text-muted-foreground font-mono">
-                    {workerSearchQuery || workerRoleFilter !== 'All'
-                      ? 'No employees match the specified filters.'
-                      : 'No employees registered yet. Click "Add employee" to begin.'}
-                  </p>
-                </div>
-              ) : (
-                filteredWorkers.map((worker) => (
-                  <div
-                    key={worker.index}
-                    onClick={() => setSelectedWorkerIndex(worker.index)}
-                    className={`bg-muted/40 rounded-xl p-4 border cursor-pointer transition-all hover:border-accent/40 ${
-                      selectedWorkerIndex === worker.index
-                        ? 'border-[#2d5016]/50 ring-2 ring-[#2d5016]/20'
-                        : 'border-border/60 hover:border-border/80'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <img
-                        src={worker.image}
-                        alt={worker.name}
-                        className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl object-cover border border-border shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <h4 className="mb-1 truncate font-bold text-foreground">{worker.name}</h4>
-                        <p className="text-sm text-[#2d5016] font-semibold mb-0.5">{worker.role}</p>
-                        <p className="text-xs font-mono font-semibold text-muted-foreground mb-2">
-                          {hourlyRateForWorkerRole(worker.role) > 0
-                            ? `${formatCurrency(hourlyRateForWorkerRole(worker.role))}/hr`
-                            : 'No fixed rate'}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <MapPin className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{[worker.address, worker.barangay].filter(Boolean).join(', ')}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                          <Phone className="w-3 h-3" />
-                          <span>{worker.phone}</span>
-                        </div>
-                        {worker.accountEmail ? (
-                          <p className="mt-1 truncate text-xs text-muted-foreground">{worker.accountEmail}</p>
-                        ) : null}
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <span className="max-w-full truncate rounded-full bg-background/80 px-2 py-1 text-[11px] text-muted-foreground font-mono whitespace-nowrap">
-                            ID {worker.workerId}
-                          </span>
-                          <span
-                            className={`rounded-full px-2 py-1 text-[11px] font-bold ${
-                              worker.status === 'active'
-                                ? 'bg-[#2d5016] text-white'
-                                : 'bg-[#b0bec5] text-[#263238]'
-                            }`}
-                          >
-                            {worker.status}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditDialog(worker); }}
-                          aria-label={`Edit ${worker.name}`}
-                          className="w-8 h-8 rounded-lg bg-background/80 hover:bg-[#4a2c2a] hover:text-white transition-colors flex items-center justify-center cursor-pointer shadow-xs"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Make ${worker.name} inactive`}
-                          title="Make inactive"
-                          disabled={worker.status === 'inactive'}
-                          className="w-8 h-8 rounded-lg bg-background/80 hover:bg-[#8b6f47] hover:text-white transition-colors flex items-center justify-center disabled:opacity-40 disabled:hover:bg-background/80 disabled:hover:text-inherit cursor-pointer shadow-xs"
-                          onClick={(e) => removeWorker(e, worker.index)}
-                        >
-                          <UserX className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+          <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm text-center">
+            <User className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+            <h3 className="font-bold text-base font-heading text-foreground mb-1">Employee accounts moved</h3>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto">
+              Adding, editing, and deactivating employee accounts is now handled in the Users Management module.
+              The workforce count above still reflects everyone registered there.
+            </p>
           </div>
         </div>
 
         <div className="space-y-4">
-          {selectedWorker ? (
-            <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
-              <div className="flex items-center justify-between gap-2 mb-4 flex-wrap gap-y-2">
-                <h3 className="font-bold text-base font-heading text-foreground">Employee Profile</h3>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-border/80 hover:bg-accent/10"
-                  onClick={() => openEditDialog(selectedWorker)}
-                >
-                  <Edit2 className="w-4 h-4 mr-1" />
-                  Edit
-                </Button>
-              </div>
-              <div className="text-center mb-4">
-                <img
-                  src={selectedWorker.image}
-                  alt={selectedWorker.name}
-                  className="w-20 h-20 rounded-xl object-cover mx-auto mb-2 border border-border/60"
-                />
-                <h4 className="font-bold text-base font-heading text-foreground">{selectedWorker.name}</h4>
-                <p className="text-xs font-mono font-bold text-emerald-500">{selectedWorker.role}</p>
-              </div>
-              <div className="space-y-2.5">
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Role & pay rate</p>
-                  <p className="text-xs font-bold text-foreground">{selectedWorker.role}</p>
-                  <p className="text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    {hourlyRateForWorkerRole(selectedWorker.role) > 0
-                      ? `${formatCurrency(hourlyRateForWorkerRole(selectedWorker.role))} / hour`
-                      : 'No fixed hourly rate for this role'}
-                  </p>
-                  {responsibilitiesForWorkerRole(selectedWorker.role).length > 0 ? (
-                    <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground list-disc pl-4">
-                      {responsibilitiesForWorkerRole(selectedWorker.role).map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Worker ID</p>
-                  <p className="text-xs font-bold font-mono text-foreground">{selectedWorker.workerId}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">Auto-generated system identifier.</p>
-                </div>
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Login email</p>
-                  <p className="text-xs font-bold text-foreground break-all">{selectedWorker.accountEmail || '—'}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Used by worker to sign in on mobile app.</p>
-                </div>
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Temporary password</p>
-                  <p className="font-mono text-xs font-bold text-foreground break-all">{selectedWorker.accountPassword || '—'}</p>
-                </div>
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Birthday / age</p>
-                  <p className="text-xs font-bold text-foreground">
-                    {selectedWorker.birthday || '—'}{' '}
-                    {selectedWorker.age != null ? `(${selectedWorker.age} years old)` : ''}
-                  </p>
-                </div>
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Sex</p>
-                  <p className="text-xs font-bold text-foreground">{selectedWorker.sex}</p>
-                </div>
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Address</p>
-                  <p className="text-xs font-bold text-foreground">{selectedWorker.address}</p>
-                  <div className="mt-2 space-y-1 text-xs text-muted-foreground font-mono">
-                    <p>Barangay: <span className="text-foreground font-bold">{selectedWorker.barangay}</span></p>
-                    <p>City / Town: <span className="text-foreground font-bold">{selectedWorker.municipality}</span></p>
-                    <p>Province: <span className="text-foreground font-bold">{selectedWorker.province}</span></p>
-                  </div>
-                </div>
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Contact & Emergency</p>
-                  <p className="text-xs font-bold text-foreground">{selectedWorker.phone}</p>
-                  <div className="mt-2 pt-2 border-t border-border/40 text-xs">
-                    <p className="text-[10px] text-muted-foreground font-mono">Emergency: {selectedWorker.emergencyContactName}</p>
-                    <p className="text-xs font-semibold text-foreground">
-                      {selectedWorker.emergencyContactRelationship} · {selectedWorker.emergencyContactPhone}
-                    </p>
-                  </div>
-                </div>
-                <div className="bg-muted/40 rounded-xl p-3 border border-border/60">
-                  <p className="text-[10px] text-muted-foreground uppercase font-mono font-semibold">Status</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        selectedWorker.status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground'
-                      }`}
-                    />
-                    <p className="text-xs font-bold font-mono text-foreground capitalize">{selectedWorker.status}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm text-center">
-              <User className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground font-mono">Select an employee to view profile</p>
-            </div>
-          )}
-
           <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
             <h3 className="font-bold text-base font-heading text-foreground mb-4">Recent Tasks</h3>
             <div className="space-y-3">
