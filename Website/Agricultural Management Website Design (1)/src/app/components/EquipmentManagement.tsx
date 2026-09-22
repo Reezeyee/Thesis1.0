@@ -955,11 +955,10 @@ export function EquipmentManagement() {
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    value={editForm.quantity ?? 1}
+                    value={editForm.quantity ?? ''}
                     onChange={(e) => {
                       const digitsOnly = e.target.value.replace(/[^0-9]/g, '');
-                      const parsed = digitsOnly ? Number(digitsOnly) : 1;
-                      setEditForm({ ...editForm, quantity: Math.max(1, parsed) });
+                      setEditForm({ ...editForm, quantity: digitsOnly ? Number(digitsOnly) : undefined });
                     }}
                     placeholder="1"
                   />
