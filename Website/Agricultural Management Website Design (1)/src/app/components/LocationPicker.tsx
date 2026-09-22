@@ -21,6 +21,23 @@ const DEFAULT_CENTER: [number, number] = [
   (BATAAN_BBOX.minLng + BATAAN_BBOX.maxLng) / 2,
 ];
 
+/** A little slack around the strict bbox so a pin right at the province edge doesn't get rejected by floating-point/rounding alone. */
+const BOUNDS_PADDING = 0.02;
+const MAP_MAX_BOUNDS: L.LatLngBoundsExpression = [
+  [BATAAN_BBOX.minLat - BOUNDS_PADDING, BATAAN_BBOX.minLng - BOUNDS_PADDING],
+  [BATAAN_BBOX.maxLat + BOUNDS_PADDING, BATAAN_BBOX.maxLng + BOUNDS_PADDING],
+];
+
+/** Buyers must be located in Bataan -- the whole province this farm and its buyer network operate in. */
+export function isWithinBataan(lat: number, lng: number): boolean {
+  return (
+    lat >= BATAAN_BBOX.minLat - BOUNDS_PADDING &&
+    lat <= BATAAN_BBOX.maxLat + BOUNDS_PADDING &&
+    lng >= BATAAN_BBOX.minLng - BOUNDS_PADDING &&
+    lng <= BATAAN_BBOX.maxLng + BOUNDS_PADDING
+  );
+}
+
 /** Free OpenStreetMap Nominatim reverse geocode -- no API key required. */
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
@@ -61,9 +78,15 @@ export function LocationPicker({
   label?: string;
 }) {
   const [resolving, setResolving] = useState(false);
+  const [outOfBoundsError, setOutOfBoundsError] = useState<string | null>(null);
 
   const setPin = useCallback(
     async (lat: number, lng: number) => {
+      if (!isWithinBataan(lat, lng)) {
+        setOutOfBoundsError('That spot is outside Bataan. Pick a location inside the province.');
+        return;
+      }
+      setOutOfBoundsError(null);
       setResolving(true);
       const address = await reverseGeocode(lat, lng);
       onChange({ lat, lng, address, pinned: true });
@@ -87,7 +110,15 @@ export function LocationPicker({
         className="h-10 rounded-xl text-xs"
       />
       <div className="relative h-[240px] w-full overflow-hidden rounded-xl border border-border/60 [&_.leaflet-container]:h-full [&_.leaflet-container]:w-full [&_.leaflet-container]:cursor-crosshair">
-        <MapContainer center={center} zoom={value ? 15 : 10} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
+        <MapContainer
+          center={center}
+          zoom={value ? 15 : 10}
+          minZoom={9}
+          maxBounds={MAP_MAX_BOUNDS}
+          maxBoundsViscosity={1.0}
+          scrollWheelZoom
+          style={{ height: '100%', width: '100%' }}
+        >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -108,9 +139,13 @@ export function LocationPicker({
           ) : null}
         </MapContainer>
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        {resolving ? 'Looking up address…' : 'Tap the map to drop a pin, or drag it to adjust. Edit the address text above if needed.'}
-      </p>
+      {outOfBoundsError ? (
+        <p className="text-[11px] text-rose-500 font-medium">{outOfBoundsError}</p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">
+          {resolving ? 'Looking up address…' : 'Tap the map to drop a pin, or drag it to adjust. Edit the address text above if needed. Must be within Bataan.'}
+        </p>
+      )}
     </div>
   );
 }
