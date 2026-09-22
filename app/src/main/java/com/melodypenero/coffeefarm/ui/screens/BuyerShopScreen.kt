@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -216,7 +215,6 @@ private fun CheckoutDialog(
     val scope = rememberCoroutineScope()
     val palette = farmPalette()
 
-    var paymentMethod by remember { mutableStateOf("cash") }
     var phone by remember { mutableStateOf("") }
     var placing by remember { mutableStateOf(false) }
     var placeError by remember { mutableStateOf<String?>(null) }
@@ -238,7 +236,7 @@ private fun CheckoutDialog(
                     buyerName = session.displayName.ifBlank { session.email },
                     buyerEmail = session.email,
                     buyerPhone = trimmedPhone,
-                    paymentMethod = paymentMethod,
+                    paymentMethod = "cash",
                     items = cartItems,
                     totalAmount = cartTotal
                 )
@@ -268,12 +266,7 @@ private fun CheckoutDialog(
                 )
 
                 Text("Payment", color = palette.textPrimary, fontWeight = FontWeight.SemiBold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = paymentMethod == "cash", onClick = { paymentMethod = "cash" })
-                    Text("Cash at pickup", color = palette.textPrimary, modifier = Modifier.padding(end = 16.dp))
-                    RadioButton(selected = paymentMethod == "e_wallet", onClick = { paymentMethod = "e_wallet" })
-                    Text("E-wallet", color = palette.textPrimary)
-                }
+                Text("Cash at pickup -- pay when you pick it up at the farm.", color = palette.textSecondary, style = MaterialTheme.typography.bodySmall)
 
                 if (placeError != null) {
                     Text(placeError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

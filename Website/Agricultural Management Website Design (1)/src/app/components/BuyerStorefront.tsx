@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShoppingCart, LogOut, Coffee, Package, Clock, CheckCircle2, XCircle, Store, Loader2, Banknote, Wallet, UserCircle } from 'lucide-react';
+import { ShoppingCart, LogOut, Coffee, Package, Clock, CheckCircle2, XCircle, Store, Loader2, UserCircle } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
@@ -41,7 +41,6 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
   const [thankYouOpen, setThankYouOpen] = useState(false);
   const closeThankYou = useCallback(() => setThankYouOpen(false), []);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<BuyerPaymentMethod>('cash');
   const [phone, setPhone] = useState('');
   // Phone already saved on the buyer's profile, so checkout only writes it back when it changed
   // (accounts made before the phone field existed have none).
@@ -193,7 +192,7 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
         buyerName: session.displayName || session.email,
         buyerEmail: session.email,
         buyerPhone: trimmedPhone,
-        paymentMethod,
+        paymentMethod: 'cash',
         items: cartItems,
         totalAmount: cartTotal,
         status: 'pending',
@@ -378,39 +377,11 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
                     </p>
                   </div>
 
-                  <div className="space-y-1.5 pt-1">
-                    <Label className="text-xs font-semibold">How will you pay?</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {([
-                        {
-                          value: 'cash' as const,
-                          label: paymentLabel('cash'),
-                          hint: 'Pay when you pick it up',
-                          Icon: Banknote,
-                        },
-                        { value: 'e_wallet' as const, label: 'E-wallet', hint: 'Pay online (GCash, Maya…)', Icon: Wallet },
-                      ]).map(({ value, label, hint, Icon }) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setPaymentMethod(value)}
-                          aria-pressed={paymentMethod === value}
-                          className={`rounded-xl border p-2.5 text-left cursor-pointer transition-colors ${
-                            paymentMethod === value
-                              ? 'border-primary bg-primary/10'
-                              : 'border-border/70 hover:bg-muted/40'
-                          }`}
-                        >
-                          <span className="flex items-center gap-1.5 text-xs font-bold"><Icon className="w-4 h-4" /> {label}</span>
-                          <span className="block text-[11px] text-muted-foreground">{hint}</span>
-                        </button>
-                      ))}
-                    </div>
-                    {paymentMethod === 'e_wallet' ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        The farm will contact you with its e-wallet details so you can pay for this order.
-                      </p>
-                    ) : null}
+                  <div className="space-y-1 pt-1">
+                    <Label className="text-xs font-semibold">Payment</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      {paymentLabel('cash')} -- pay when you pick it up at the farm.
+                    </p>
                   </div>
                 </div>
 
