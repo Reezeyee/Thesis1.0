@@ -144,7 +144,7 @@ export function distinctRoles(workers: AppState['workers']): number {
 }
 
 /** Roles an admin can assign to a worker (fixed list, no free-text "Other"). Keep in sync with the Android app's role list. */
-export const WORKER_ROLES = ['Picker', 'Maintenance', 'Farm Manager', 'Farm Assist'] as const;
+export const WORKER_ROLES = ['Picker', 'Maintenance', 'Farm Assist'] as const;
 
 /** True for the Maintenance role (repairs equipment and sprinklers). Maintenance workers get the repair-jobs screens in the app. */
 export function isMaintenanceRole(roleRate: string): boolean {
@@ -156,7 +156,6 @@ export function hourlyRateForWorkerRole(roleRate: string): number {
   if (key === 'picker' || key.includes('harvester')) return 50;
   if (key.includes('farm assist')) return 150;
   if (key.includes('maintenance')) return 180;
-  if (key.includes('farm manager')) return 250;
   return 0;
 }
 
@@ -166,11 +165,6 @@ export const ROLE_RESPONSIBILITIES: Record<string, string[]> = {
   Maintenance: [
     'Upkeep and repair of farm equipment and the irrigation sprinklers',
     'Fixing the broken equipment and sprinkler jobs the admin assigns, and reporting when each one is done',
-  ],
-  'Farm Manager': [
-    'Oversees the upkeep of the coffee farm',
-    'Recommends strategies to improve the coffee harvest',
-    'Plans marketing activities to sell the farm\'s coffee',
   ],
   'Farm Assist': [
     'Grasscutting and cleaning of the farm premises',

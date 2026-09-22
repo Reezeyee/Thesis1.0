@@ -84,7 +84,7 @@ object FarmFinance {
     fun isMaintenanceRole(roleRate: String): Boolean = roleRate.trim().lowercase().contains("maintenance")
 
     /** Roles an admin can assign to a worker (fixed list, no free-text "Other"). Keep in sync with the website's WORKER_ROLES. */
-    val WORKER_ROLES = listOf("Picker", "Maintenance", "Farm Manager", "Farm Assist")
+    val WORKER_ROLES = listOf("Picker", "Maintenance", "Farm Assist")
 
     /**
      * Official ₱/hour by worker role (Farm Ops role picker). A role with no fixed rate maps to 0 (enter manually in payroll).
@@ -95,7 +95,6 @@ object FarmFinance {
             key == "picker" || key.contains("harvester") -> 50.0
             key.contains("farm assist") -> 150.0
             key.contains("maintenance") -> 180.0
-            key.contains("farm manager") -> 250.0
             else -> 0.0
         }
     }
