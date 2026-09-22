@@ -223,7 +223,7 @@ export function AttendanceManagement() {
   const { session } = useAuth();
   const managerName = session?.displayName || 'Farm Manager';
 
-  // Employee accounts (create/edit/deactivate) -- moved here from Farm HR so account
+  // Employee accounts (create/edit/deactivate) -- moved here from Farm Management so account
   // creation and management live in this module, per the consultation feedback that
   // Users Management should own employee accounts.
   const workers = state.workers.map((w, index) => workerRecordToUi(w, index));

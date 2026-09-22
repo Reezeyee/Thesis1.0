@@ -74,7 +74,7 @@ export function Sidebar({
         {
           id: 'farm',
           icon: Users,
-          label: 'Farm HR',
+          label: 'Farm Management',
           badge: null,
           hint: 'Workers & HR',
         },
