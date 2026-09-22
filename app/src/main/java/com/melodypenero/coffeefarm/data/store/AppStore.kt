@@ -38,7 +38,6 @@ data class AppState(
     val treeRipenessScans: List<TreeRipenessScanRecord> = emptyList(),
     val harvestSchedules: List<HarvestScheduleRecord> = emptyList(),
     val harvestReadinessReports: List<HarvestReadinessReportRecord> = emptyList(),
-    val flowering: List<FloweringRecord> = emptyList(),
     val cherryHarvests: List<CherryHarvestRecord> = emptyList(),
     val batches: List<BatchRecord> = emptyList(),
     val cherryGrades: List<CherryGradeRecord> = emptyList(),
@@ -240,12 +239,6 @@ data class HarvestReadinessReportRecord(
     val reviewedBy: String = ""
 )
 
-data class FloweringRecord(
-    @SerializedName(value = "sectionName", alternate = ["farmBlockName"])
-    val sectionName: String,
-    val details: String,
-    val intensity: String
-)
 data class CherryHarvestRecord(
     val batchId: String,
     val pickerWorkerName: String? = null,
@@ -526,6 +519,13 @@ class AppStore(context: Context) {
     private var lastAutoSyncElapsedMs = 0L
     private var applyingCloudState = false
     private var initializationAttempted = false
+    /**
+     * supplyId -> stock this device just wrote via [withdrawConsumableSupply], not yet confirmed
+     * synced. Read (and cleared) by [mergeConsumableSuppliesWithRemote] so a withdrawal survives
+     * exactly one merge against a stale remote snapshot without permanently pinning that supply's
+     * stock, which would otherwise clobber a later, unrelated admin restock on the website.
+     */
+    private val pendingLocalSupplyStock = mutableMapOf<String, Int>()
     /** Use `val status by store.cloudSyncStatusState` in @Composable so the dashboard updates live. */
     val cloudSyncStatusState = mutableStateOf(CloudSyncStatus.LOCAL_ONLY)
     val cloudSyncStatus get() = cloudSyncStatusState.value
@@ -1121,6 +1121,36 @@ class AppStore(context: Context) {
     }
 
     /**
+     * Cloud copy wins by default (the website's Supply Stock tab restocks and adjusts supplies
+     * too), except a withdrawal this device just recorded via [withdrawConsumableSupply] that a
+     * stale remote snapshot doesn't have yet -- without this, [mergeByKey]'s "remote wins on a
+     * matching key" rule silently dropped every withdrawal, because `putIfAbsent` never touches a
+     * supplyId that already exists remotely. Mirrors [mergeUsageLogsWithRemote]'s handling of a
+     * freshly-tapped Return.
+     */
+    private fun mergeConsumableSuppliesWithRemote(
+        local: List<ConsumableSupplyRecord>,
+        remote: List<ConsumableSupplyRecord>
+    ): List<ConsumableSupplyRecord> {
+        val merged = LinkedHashMap<String, ConsumableSupplyRecord>()
+        remote.forEach { item -> merged[consumableSupplyKey(item)] = item }
+        local.forEach { item ->
+            val key = consumableSupplyKey(item)
+            val cloud = merged[key]
+            val pendingStock = pendingLocalSupplyStock[item.supplyId]
+            merged[key] = when {
+                cloud == null -> item
+                pendingStock != null && item.stock == pendingStock -> {
+                    pendingLocalSupplyStock.remove(item.supplyId)
+                    cloud.copy(stock = item.stock, status = item.status)
+                }
+                else -> cloud
+            }
+        }
+        return merged.values.toList()
+    }
+
+    /**
      * Normalizes a composite-key fragment (trim, lowercase, collapse internal whitespace) so two
      * records that describe the same real-world thing but were typed/saved with slightly different
      * spacing or casing (common with old records saved before a stable id existed) still land on the
@@ -1232,7 +1262,6 @@ class AppStore(context: Context) {
             treeRipenessScans = mergeTreeRipenessScansWithRemote(local.treeRipenessScans, remoteState.treeRipenessScans),
             harvestSchedules = preferLongerListValue(local.harvestSchedules, remoteState.harvestSchedules),
             harvestReadinessReports = mergeByKey(local.harvestReadinessReports, remoteState.harvestReadinessReports, ::harvestReadinessReportKey),
-            flowering = preferLongerListValue(local.flowering, remoteState.flowering),
             cherryHarvests = mergeByKey(local.cherryHarvests, remoteState.cherryHarvests, ::harvestKey),
             batches = mergeByKey(local.batches, remoteState.batches, ::batchKey),
             equipment = mergeByKey(local.equipment, remoteState.equipment, ::equipmentKey),
@@ -1246,7 +1275,7 @@ class AppStore(context: Context) {
             irrigationSystems = mergeByKey(local.irrigationSystems, remoteState.irrigationSystems, ::irrigationKey),
             irrigationDamageReports = mergeByKey(local.irrigationDamageReports, remoteState.irrigationDamageReports, ::irrigationDamageReportKey),
             pestControlLogs = mergeByKey(local.pestControlLogs, remoteState.pestControlLogs, ::pestControlKey),
-            consumableSupplies = mergeByKey(local.consumableSupplies, remoteState.consumableSupplies, ::consumableSupplyKey),
+            consumableSupplies = mergeConsumableSuppliesWithRemote(local.consumableSupplies, remoteState.consumableSupplies),
             consumableReports = mergeByKey(local.consumableReports, remoteState.consumableReports, ::consumableReportKey),
             smsMessages = mergeByKey(local.smsMessages, remoteState.smsMessages, ::smsMessageKey)
         ))
@@ -1259,7 +1288,7 @@ class AppStore(context: Context) {
     /** Count of all list rows; used to avoid clobbering local data with an empty or stale cloud snapshot. */
     private fun AppState.totalItemCount(): Int =
         workers.size + attendance.size + timesheetCorrections.size + leaveRequests.size + tasks.size + sections.size + trees.size +
-            harvestSchedules.size + harvestReadinessReports.size + flowering.size + cherryHarvests.size + batches.size + cherryGrades.size +
+            harvestSchedules.size + harvestReadinessReports.size + cherryHarvests.size + batches.size + cherryGrades.size +
             treeRipenessScans.size +
             equipment.size + usageLogs.size + maintenanceLogs.size + equipmentReports.size + sales.size + expenses.size + payroll.size +
             coffeeFields.size + irrigationSystems.size + irrigationDamageReports.size + pestControlLogs.size + consumableSupplies.size +
@@ -1277,7 +1306,6 @@ class AppStore(context: Context) {
         sections = state.sections,
         trees = state.trees,
         harvestSchedules = state.harvestSchedules,
-        flowering = state.flowering,
         cherryHarvests = state.cherryHarvests,
         batches = state.batches,
         equipment = state.equipment,
@@ -1318,7 +1346,6 @@ class AppStore(context: Context) {
         sections = sharedPart.sections,
         trees = sharedPart.trees,
         harvestSchedules = sharedPart.harvestSchedules,
-        flowering = sharedPart.flowering,
         cherryHarvests = sharedPart.cherryHarvests,
         batches = sharedPart.batches,
         equipment = sharedPart.equipment,
@@ -1829,6 +1856,7 @@ class AppStore(context: Context) {
             stock = newStock,
             status = computeConsumableSupplyStatus(newStock, supply.referenceStock, supply.lowStockThreshold)
         )
+        pendingLocalSupplyStock[supply.supplyId] = newStock
         val today = withdrawnAt.trim().ifBlank { java.time.LocalDate.now().toString() }
         val report = ConsumableSupplyReportRecord(
             reportId = UUID.randomUUID().toString(),
@@ -1884,9 +1912,6 @@ class AppStore(context: Context) {
             )
         )
     )
-
-    fun addFlowering(sectionName: String, details: String, intensity: String) =
-        persist(state.copy(flowering = state.flowering + FloweringRecord(sectionName, details, intensity)))
 
     fun addCherryHarvest(
         batchId: String,
@@ -2604,10 +2629,6 @@ class AppStore(context: Context) {
         )
     }
 
-    fun updateFlowering(index: Int, sectionName: String, details: String, intensity: String) =
-        persist(state.copy(flowering = replaceAt(state.flowering, index, FloweringRecord(sectionName, details, intensity))))
-    fun deleteFlowering(index: Int) = persist(state.copy(flowering = removeAt(state.flowering, index)))
-
     fun updateCherryHarvest(
         index: Int,
         batchId: String,
@@ -3137,7 +3158,6 @@ class AppStore(context: Context) {
         mirrorList(FirebaseCollections.FARM_SECTIONS, gson.toJson(next.sections), next.sections.size)
         mirrorList(FirebaseCollections.TREES, gson.toJson(next.trees), next.trees.size)
         mirrorList(FirebaseCollections.HARVEST_SCHEDULES, gson.toJson(next.harvestSchedules), next.harvestSchedules.size)
-        mirrorList(FirebaseCollections.FLOWERING, gson.toJson(next.flowering), next.flowering.size)
         mirrorList(FirebaseCollections.HARVEST_RECORDS, gson.toJson(next.cherryHarvests), next.cherryHarvests.size)
         mirrorList(FirebaseCollections.BATCHES, gson.toJson(next.batches), next.batches.size)
         mirrorList(FirebaseCollections.EQUIPMENT, gson.toJson(next.equipment), next.equipment.size)

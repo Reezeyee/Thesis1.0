@@ -20,6 +20,7 @@ import {
   Sparkles,
   ShoppingBag,
   MessageCircle,
+  Navigation,
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import { Badge } from './ui/badge';
@@ -111,7 +112,7 @@ export function Sidebar({
           icon: Hammer,
           label: 'Maintenance',
           badge: null,
-          hint: 'Field logs & map',
+          hint: 'Field logs',
         },
         {
           id: 'buyerOrders',
@@ -119,6 +120,13 @@ export function Sidebar({
           label: 'Buyers',
           badge: null,
           hint: 'Listings & orders',
+        },
+        {
+          id: 'nearby',
+          icon: Navigation,
+          label: 'Nearby Buyers',
+          badge: null,
+          hint: 'Distance from the farm',
         },
       ],
     },
