@@ -1,5 +1,6 @@
 import { useFarmData } from '../store/FarmDataProvider';
-import { Hammer } from 'lucide-react';
+import { BookUser } from 'lucide-react';
+import { BuyerRecords } from './BuyerRecords';
 
 export function MaintenanceManagement() {
   const { loading } = useFarmData();
@@ -22,15 +23,19 @@ export function MaintenanceManagement() {
         <p className="text-xs sm:text-sm text-muted-foreground mt-1">Field logs and maintenance tracking.</p>
       </div>
 
-      <div className="bg-card/95 border border-border/80 rounded-xl p-10 shadow-sm flex flex-col items-center justify-center text-center gap-2">
-        <div className="w-12 h-12 rounded-lg bg-[#4a2c2a]/15 flex items-center justify-center">
-          <Hammer className="w-6 h-6 text-foreground" />
+      <div className="bg-card/95 border border-border/80 rounded-xl p-6 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-lg bg-[#4a2c2a]/15 flex items-center justify-center">
+            <BookUser className="w-5 h-5 text-foreground" />
+          </div>
+          <div>
+            <h3>Buyer Records</h3>
+            <p className="text-sm text-muted-foreground">
+              Name, contact info, address, buyer type, and purchase history for every registered buyer.
+            </p>
+          </div>
         </div>
-        <p className="text-sm font-semibold text-foreground">Nothing here yet</p>
-        <p className="text-xs text-muted-foreground max-w-sm">
-          Maintenance content is being set up. (The buyer locations map that used to live here has moved to the
-          Nearby Buyers module.)
-        </p>
+        <BuyerRecords />
       </div>
     </div>
   );
