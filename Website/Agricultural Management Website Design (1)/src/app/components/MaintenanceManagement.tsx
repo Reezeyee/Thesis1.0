@@ -21,9 +21,9 @@ export function MaintenanceManagement() {
     <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="pb-2 border-b border-border/60">
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading text-foreground">
-          Maintenance & Operations
+          Maintenance
         </h1>
-        <p className="text-xs sm:text-sm text-muted-foreground mt-1">Field logs and maintenance tracking.</p>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">Maintenance tracking.</p>
       </div>
 
       <div className="flex bg-muted/40 p-1 rounded-xl w-fit">
