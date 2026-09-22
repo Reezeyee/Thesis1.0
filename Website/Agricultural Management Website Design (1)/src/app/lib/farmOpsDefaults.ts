@@ -14,7 +14,7 @@ export function newFarmEntityId(): string {
 export function emptyCoffeeField(): CoffeeFieldRecord {
   return {
     fieldId: newFarmEntityId(),
-    name: '',
+    name: 'Section A',
     area: '',
     trees: 0,
     status: 'healthy',
