@@ -8,7 +8,7 @@ import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
 import { Button } from './ui/button';
-import { BATAAN_MAP_HUBS, BATAAN_BBOX } from '../data/bataanProvinceMap';
+import { BATAAN_MAP_HUBS, isWithinBataan } from '../data/bataanProvinceMap';
 import { distanceKm, formatDistanceKm } from '../lib/geo';
 import { formatCurrency } from '../lib/currencyFormat';
 import type { BuyerOrderRecord, SaleRecord } from '../types/appState';
@@ -17,15 +17,6 @@ import type { BuyerOrderRecord, SaleRecord } from '../types/appState';
 const FARM_HQ = BATAAN_MAP_HUBS[0];
 const FARM_CENTER: [number, number] = [FARM_HQ.lat, FARM_HQ.lng];
 
-/** This page is scoped to Bataan buyers only -- a buyer outside the province's bounding box is excluded regardless of how close its raw distance to the farm looks. */
-function isWithinBataan(lat: number, lng: number): boolean {
-  return (
-    lat >= BATAAN_BBOX.minLat &&
-    lat <= BATAAN_BBOX.maxLat &&
-    lng >= BATAAN_BBOX.minLng &&
-    lng <= BATAAN_BBOX.maxLng
-  );
-}
 
 type BuyerProfile = {
   uid: string;

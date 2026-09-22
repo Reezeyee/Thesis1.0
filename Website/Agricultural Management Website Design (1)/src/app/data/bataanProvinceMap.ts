@@ -25,6 +25,49 @@ export function bataanLngLatToSvg(lng: number, lat: number): { x: number; y: num
   };
 }
 
+/** Vertices of BATAAN_PROVINCE_OUTLINE_PATH, parsed once from its "M x,y L x,y ... Z" string into [x, y] pairs in the same 0-100 SVG space. */
+const BATAAN_RAW_OUTLINE: [number, number][] = BATAAN_PROVINCE_OUTLINE_PATH
+  .replace(/[MLZ]/g, '')
+  .trim()
+  .split(/\s+/)
+  .map((pair) => {
+    const [x, y] = pair.split(',').map(Number);
+    return [x, y] as [number, number];
+  });
+
+/**
+ * The raw 14-vertex outline is simplified for schematic SVG display and cuts corners tightly
+ * enough that real addresses on the coast -- including the farm's own Limay HQ (see
+ * BATAAN_MAP_HUBS[0]) and Mariveles -- fall just outside it. Scaling the polygon 10% outward from
+ * its centroid before testing keeps every real Bataan municipality inside while still rejecting
+ * neighboring Zambales/Pampanga and the open bay/sea around the peninsula (verified against both
+ * sets of reference points; see the point-in-polygon test in isWithinBataan).
+ */
+const OUTLINE_BUFFER_FACTOR = 1.1;
+const BATAAN_OUTLINE_POLYGON: [number, number][] = (() => {
+  const cx = BATAAN_RAW_OUTLINE.reduce((sum, [x]) => sum + x, 0) / BATAAN_RAW_OUTLINE.length;
+  const cy = BATAAN_RAW_OUTLINE.reduce((sum, [, y]) => sum + y, 0) / BATAAN_RAW_OUTLINE.length;
+  return BATAAN_RAW_OUTLINE.map(([x, y]) => [cx + (x - cx) * OUTLINE_BUFFER_FACTOR, cy + (y - cy) * OUTLINE_BUFFER_FACTOR]);
+})();
+
+/**
+ * True ray-casting point-in-polygon test against Bataan's (buffered, simplified) outline, not
+ * just its bounding box -- the province is peninsula-shaped, so BATAAN_BBOX alone also covers
+ * slices of Zambales/Pampanga and open water that are not Bataan. Used to gate where a buyer can
+ * drop their sign-up location pin (see LocationPicker) and to filter Nearby Buyers.
+ */
+export function isWithinBataan(lat: number, lng: number): boolean {
+  const { x, y } = bataanLngLatToSvg(lng, lat);
+  let inside = false;
+  for (let i = 0, j = BATAAN_OUTLINE_POLYGON.length - 1; i < BATAAN_OUTLINE_POLYGON.length; j = i++) {
+    const [xi, yi] = BATAAN_OUTLINE_POLYGON[i];
+    const [xj, yj] = BATAAN_OUTLINE_POLYGON[j];
+    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
 export interface BataanMapHub {
   name: string;
   municipality: string;

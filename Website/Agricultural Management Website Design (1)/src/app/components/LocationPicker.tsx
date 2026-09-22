@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { BATAAN_BBOX } from '../data/bataanProvinceMap';
+import { BATAAN_BBOX, isWithinBataan } from '../data/bataanProvinceMap';
 
 /** `pinned` is true only once the location came from an actual map pin (tap/drag), not from typing an address alone. */
 export type PickedLocation = { lat: number; lng: number; address: string; pinned?: boolean };
@@ -21,22 +21,12 @@ const DEFAULT_CENTER: [number, number] = [
   (BATAAN_BBOX.minLng + BATAAN_BBOX.maxLng) / 2,
 ];
 
-/** A little slack around the strict bbox so a pin right at the province edge doesn't get rejected by floating-point/rounding alone. */
+/** A little slack around the bbox so the map can still be panned right up to the province edge before maxBounds stops it; the actual pin-acceptance check is isWithinBataan's polygon test, not this rectangle. */
 const BOUNDS_PADDING = 0.02;
 const MAP_MAX_BOUNDS: L.LatLngBoundsExpression = [
   [BATAAN_BBOX.minLat - BOUNDS_PADDING, BATAAN_BBOX.minLng - BOUNDS_PADDING],
   [BATAAN_BBOX.maxLat + BOUNDS_PADDING, BATAAN_BBOX.maxLng + BOUNDS_PADDING],
 ];
-
-/** Buyers must be located in Bataan -- the whole province this farm and its buyer network operate in. */
-export function isWithinBataan(lat: number, lng: number): boolean {
-  return (
-    lat >= BATAAN_BBOX.minLat - BOUNDS_PADDING &&
-    lat <= BATAAN_BBOX.maxLat + BOUNDS_PADDING &&
-    lng >= BATAAN_BBOX.minLng - BOUNDS_PADDING &&
-    lng <= BATAAN_BBOX.maxLng + BOUNDS_PADDING
-  );
-}
 
 /** Free OpenStreetMap Nominatim reverse geocode -- no API key required. */
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
