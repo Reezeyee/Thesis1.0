@@ -550,6 +550,13 @@ export function FarmManagement() {
       return;
     }
     const record = { ...coffeeForm, name: coffeeForm.name.trim() };
+    const isDuplicate = coffeeFields.some(
+      (f, i) => i !== coffeeEditIndex && f.name.trim().toLowerCase() === record.name.toLowerCase(),
+    );
+    if (isDuplicate) {
+      showSaveError(`"${record.name}" already exists. Choose a different section name.`);
+      return;
+    }
     const ok = await runSave('Coffee field', () =>
       updateState((prev) => ({
         ...prev,
