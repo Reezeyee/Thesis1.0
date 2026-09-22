@@ -9,8 +9,10 @@ import {
   buildExpensePieSlices,
   buyersFromSales,
   currentPayPeriodLabel,
+  isPayday,
   isWorkerPaidForPeriod,
   netProfitAccrualAware,
+  paydayDateLabel,
   payrollHistoryFromRecords,
   payrollRecordForWorker,
   payrollRosterFromWorkers,
@@ -121,7 +123,7 @@ interface Transaction {
 }
 
 const PAYROLL_PAYDAY_NOTE =
-  'Wages follow farm roles (hourly rates aligned with the Android app). Mark each worker Paid when disbursed; payroll lines sync to Firebase and appear in Transaction history.';
+  'Wages follow farm roles (hourly rates aligned with the Android app). Paid once a month, on/after the 28th; Mark each worker Paid when disbursed -- payroll lines sync to Firebase and appear in Transaction history.';
 
 function dateLabel(d = new Date()): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -201,6 +203,9 @@ export function ProfitManagement() {
   const [payFlowTarget, setPayFlowTarget] = useState<PayrollPayTarget | null>(null);
   const [payFlowOpen, setPayFlowOpen] = useState(false);
 
+  /** Payroll is disbursed once a month, only on/after the 28th -- see isPayday. Before that, Pay stays locked even if wages are accrued and owed. */
+  const payrollUnlocked = isPayday();
+
   const currentDue = useMemo(() => {
     if (payrollRoster.length === 0) return null;
     const hasUnpaid = payrollRoster.some(
@@ -209,7 +214,7 @@ export function ProfitManagement() {
     if (!hasUnpaid) return null;
     return {
       coverPeriodLabel: currentPeriod,
-      paycheckDateLabel: dateLabel(),
+      paycheckDateLabel: paydayDateLabel(),
     };
   }, [payrollRoster, state.payroll, currentPeriod]);
 
@@ -230,7 +235,7 @@ export function ProfitManagement() {
   };
 
   const openPayFlow = (workerId: number) => {
-    if (!currentDue) return;
+    if (!currentDue || !payrollUnlocked) return;
     const row = payrollRoster.find((w) => w.id === workerId);
     if (!row || isWorkerPaidForPeriod(state.payroll, row.name, currentPeriod)) return;
     setPayFlowTarget({
@@ -245,7 +250,7 @@ export function ProfitManagement() {
   };
 
   const completePayWithMethod = async (method: PayrollPaymentMethod) => {
-    if (!currentDue || !payFlowTarget) return null;
+    if (!currentDue || !payFlowTarget || !payrollUnlocked) return null;
     const row = payrollRoster.find((w) => w.id === payFlowTarget.workerId);
     if (!row || isWorkerPaidForPeriod(state.payroll, row.name, currentPeriod)) return null;
     const worker = state.workers.find((w) => w.name === row.name);
@@ -594,7 +599,7 @@ export function ProfitManagement() {
               </div>
               {currentDue ? (
                 <span className="text-xs px-3 py-1 rounded-full bg-amber-50 text-amber-950 border border-amber-200/90">
-                  Due · {currentDue.coverPeriodLabel} → paycheck {currentDue.paycheckDateLabel}
+                  {payrollUnlocked ? 'Due' : 'Locked'} · {currentDue.coverPeriodLabel} → paycheck {currentDue.paycheckDateLabel}
                   {paidThisRunCount > 0 ? (
                     <span className="font-medium"> · {paidThisRunCount}/{payrollRoster.length} paid</span>
                   ) : null}
@@ -679,14 +684,20 @@ export function ProfitManagement() {
                     <div className="flex flex-wrap items-end justify-between gap-2 pt-2 border-t border-border/60 mt-auto">
                       <p className="text-lg tabular-nums font-semibold text-foreground">{formatCurrency(row.monthlyGross)}</p>
                       {currentDue && !paid && row.status !== 'inactive' ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => openPayFlow(row.id)}
-                          className="bg-[#2d5016] hover:bg-[#234010] text-white shrink-0"
-                        >
-                          Pay now
-                        </Button>
+                        payrollUnlocked ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => openPayFlow(row.id)}
+                            className="bg-[#2d5016] hover:bg-[#234010] text-white shrink-0"
+                          >
+                            Pay now
+                          </Button>
+                        ) : (
+                          <Button type="button" size="sm" disabled className="shrink-0">
+                            Locked until {currentDue.paycheckDateLabel}
+                          </Button>
+                        )
                       ) : null}
                     </div>
                     {paid ? (
@@ -707,7 +718,11 @@ export function ProfitManagement() {
                     ) : row.status === 'inactive' ? (
                       <p className="text-xs text-muted-foreground">Inactive employee — no current payment required.</p>
                     ) : currentDue ? (
-                      <p className="text-xs text-muted-foreground">Awaiting payment for {currentDue.coverPeriodLabel}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {payrollUnlocked
+                          ? `Awaiting payment for ${currentDue.coverPeriodLabel}`
+                          : `Payday is ${currentDue.paycheckDateLabel} -- payroll opens on the 28th`}
+                      </p>
                     ) : (
                       <p className="text-xs text-muted-foreground">No open paycheck run — next cycle picks up automatically.</p>
                     )}

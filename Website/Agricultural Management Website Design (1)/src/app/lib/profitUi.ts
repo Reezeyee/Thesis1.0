@@ -345,6 +345,20 @@ export function currentPayPeriodLabel(): string {
   return new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
+/** Payroll is disbursed once a month, on/after the 28th -- never earlier. Gates the Pay button in ProfitManagement. */
+export function isPayday(now: Date = new Date()): boolean {
+  return now.getDate() >= 28;
+}
+
+/** This period's fixed payday: the 28th of the current calendar month (e.g. "Sep 28, 2026"), not "today" -- see isPayday. */
+export function paydayDateLabel(now: Date = new Date()): string {
+  return new Date(now.getFullYear(), now.getMonth(), 28).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export function isWorkerPaidForPeriod(payroll: PayrollRecord[], workerName: string, period: string): boolean {
   return payroll.some((p) => p.workerName === workerName && p.period === period && p.paid);
 }
