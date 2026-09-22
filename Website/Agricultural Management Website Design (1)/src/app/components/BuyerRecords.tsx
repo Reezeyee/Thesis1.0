@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { Search, RefreshCw, Phone, MapPin, Package, Users } from 'lucide-react';
+import { collection, getDocs, query, Timestamp, where } from 'firebase/firestore';
+import { Search, RefreshCw, Phone, MapPin, Package, Users, ChevronRight } from 'lucide-react';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
@@ -8,6 +8,7 @@ import { formatCurrency } from '../lib/currencyFormat';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { BuyerRecordDetailDialog } from './BuyerRecordDetailDialog';
 import type { BuyerOrderRecord, SaleRecord } from '../types/appState';
 import type { BuyerRecord } from '../lib/buyerRecord';
 
@@ -54,6 +55,7 @@ export function BuyerRecords() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<BuyerRecord | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -75,6 +77,8 @@ export function BuyerRecords() {
             locationLng: typeof data.locationLng === 'number' ? data.locationLng : undefined,
             locationAddress: (data.locationAddress as string) ?? '',
             buyerType: (data.buyerType as string) ?? '',
+            photoBase64: (data.photoBase64 as string | null | undefined) ?? null,
+            createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : null,
           };
         }),
       );
@@ -142,17 +146,25 @@ export function BuyerRecords() {
           {filtered.map((buyer) => {
             const stats = statsByBuyer.get(buyer.uid) ?? EMPTY_STATS;
             return (
-              <div key={buyer.uid} className="rounded-xl border border-border/60 bg-card/60 p-4 space-y-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold text-foreground truncate">{buyer.displayName}</p>
-                    {buyer.buyerType ? (
-                      <Badge variant="secondary" className="text-[10px] font-semibold">{buyer.buyerType}</Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px] font-semibold text-muted-foreground">Type not set</Badge>
-                    )}
+              <button
+                key={buyer.uid}
+                type="button"
+                onClick={() => setSelected(buyer)}
+                className="w-full text-left rounded-xl border border-border/60 bg-card/60 p-4 space-y-2 hover:border-border hover:bg-card transition-colors cursor-pointer"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-foreground truncate">{buyer.displayName}</p>
+                      {buyer.buyerType ? (
+                        <Badge variant="secondary" className="text-[10px] font-semibold">{buyer.buyerType}</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] font-semibold text-muted-foreground">Type not set</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{buyer.email}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">{buyer.email}</p>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground pt-1 border-t border-border/50">
@@ -170,11 +182,19 @@ export function BuyerRecords() {
                     {buyer.locationAddress ? buyer.locationAddress : <span className="italic">No address on record</span>}
                   </p>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
       )}
+
+      <BuyerRecordDetailDialog
+        buyer={selected}
+        orders={orders}
+        sales={state.sales ?? []}
+        open={selected !== null}
+        onOpenChange={(open) => { if (!open) setSelected(null); }}
+      />
     </div>
   );
 }

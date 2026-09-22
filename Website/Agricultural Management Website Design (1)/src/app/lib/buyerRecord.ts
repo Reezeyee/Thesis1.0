@@ -1,4 +1,4 @@
-/** Admin-defined classification shown on each buyer record (Maintenance -> Buyer Records) and editable via BuyerRecordEditDialog. */
+/** A buyer's own choice, made at sign-up (see BuyerAuthDialog), shown read-only on each buyer record in Maintenance -> Buyer Records. */
 export const BUYER_TYPE_OPTIONS = [
   'Individual',
   'Café / Restaurant',
@@ -18,4 +18,7 @@ export type BuyerRecord = {
   locationLng?: number;
   locationAddress?: string;
   buyerType?: string;
+  photoBase64?: string | null;
+  /** ISO-ish string from Firestore's serverTimestamp, already converted (see BuyerRecords.load). */
+  createdAt?: string | null;
 };
