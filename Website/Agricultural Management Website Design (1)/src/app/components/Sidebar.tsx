@@ -18,7 +18,6 @@ import {
   ShieldAlert,
   X,
   Sparkles,
-  ShoppingBag,
   MessageCircle,
   Navigation,
 } from 'lucide-react';
@@ -73,13 +72,6 @@ export function Sidebar({
       groupLabel: 'Management',
       items: [
         {
-          id: 'farm',
-          icon: Users,
-          label: 'Farm Management',
-          badge: null,
-          hint: 'Workers & HR',
-        },
-        {
           id: 'attendance',
           icon: UserCog,
           label: 'Users Management',
@@ -87,18 +79,25 @@ export function Sidebar({
           hint: 'Employees, time, leave & payroll',
         },
         {
-          id: 'equipment',
-          icon: Wrench,
-          label: 'Equipment',
-          badge: null,
-          hint: 'Fleet & assets',
-        },
-        {
           id: 'cherry',
           icon: Coffee,
           label: 'Coffee Cherries',
           badge: 'CNN',
           hint: 'Batches & scans',
+        },
+        {
+          id: 'farm',
+          icon: Users,
+          label: 'Farm Management',
+          badge: null,
+          hint: 'Workers & HR',
+        },
+        {
+          id: 'equipment',
+          icon: Wrench,
+          label: 'Equipment',
+          badge: null,
+          hint: 'Fleet & assets',
         },
         {
           id: 'nearby',
@@ -119,14 +118,7 @@ export function Sidebar({
           icon: Hammer,
           label: 'Maintenance',
           badge: null,
-          hint: 'Field logs',
-        },
-        {
-          id: 'buyerOrders',
-          icon: ShoppingBag,
-          label: 'Buyers',
-          badge: null,
-          hint: 'Listings & orders',
+          hint: 'Field logs, buyer records & orders',
         },
       ],
     },

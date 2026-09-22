@@ -19,13 +19,12 @@ import { FarmDataProvider, useFarmData } from './store/FarmDataProvider';
 import { GlobalNotificationBanner, NotificationDrawer, PasswordResetMessageSync, usePendingReports } from './components/NotificationCenter';
 import { ModuleErrorBoundary } from './components/ModuleErrorBoundary';
 import { OwnerDashboard } from './components/OwnerDashboard';
-import { BuyerOrdersManagement } from './components/BuyerOrdersManagement';
 import { NearbyBuyers } from './components/NearbyBuyers';
 import { BuyerStorefront } from './components/BuyerStorefront';
 import { BuyerVerifyEmailGate } from './components/BuyerVerifyEmailGate';
 import { OwnerAdminMessaging } from './components/OwnerAdminMessaging';
 
-export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'attendance' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings' | 'buyerOrders' | 'nearby' | 'ownerMessages';
+export type AppModuleId = 'monitoring' | 'dashboard' | 'farm' | 'attendance' | 'equipment' | 'cherry' | 'profit' | 'maintenance' | 'sms' | 'settings' | 'nearby' | 'ownerMessages';
 
 
 const moduleLabels: Record<AppModuleId, string> = {
@@ -39,7 +38,6 @@ const moduleLabels: Record<AppModuleId, string> = {
   maintenance: 'Maintenance',
   sms: 'SMS Center',
   settings: 'Website Settings',
-  buyerOrders: 'Buyers',
   nearby: 'Nearby Buyers',
   ownerMessages: 'Owner Messages',
 };
@@ -126,8 +124,6 @@ function AdminAppShell() {
         return <MaintenanceManagement />;
       case 'sms':
         return <SmsManagement />;
-      case 'buyerOrders':
-        return <BuyerOrdersManagement />;
       case 'nearby':
         return <NearbyBuyers />;
       case 'ownerMessages':
