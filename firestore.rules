@@ -61,65 +61,20 @@ service cloud.firestore {
       );
     }
 
-    // Buyer orders: a Buyer may only create an order under their own uid (status must start
-    // 'pending', never self-marked fulfilled/cancelled) and read their own orders. Rider and
-    // delivery-progress fields are set by Admin only, so a Buyer cannot pre-assign an order to
-    // some rider's phone. Admin may list every order and update/cancel/fulfill one.
-    // The assigned Delivery Rider (matched by uid, set by Admin when assigning) may read only
-    // their own orders and update nothing except the delivery-progress fields.
-    function isAssignedRider() {
-      return request.auth != null &&
-        resource.data.get('riderUid', '') == request.auth.uid;
-    }
-
+    // Buyer orders: every order is picked up at the farm by the buyer (no delivery). A Buyer may
+    // only create an order under their own uid (status must start 'pending', never self-marked
+    // ready/fulfilled/cancelled) and read their own orders. Admin may list every order and
+    // approve ('ready' -- notifies the buyer to pick it up), fulfill, or cancel one.
     match /buyer_orders/{orderId} {
       allow create: if request.auth != null &&
         request.resource.data.buyerUid == request.auth.uid &&
-        request.resource.data.status == 'pending' &&
-        !request.resource.data.keys().hasAny([
-          'riderUid', 'riderWorkerId', 'riderName', 'riderPhone', 'riderAssignedAt',
-          'deliveryStatus', 'deliveryUpdatedAt', 'deliveredAt', 'hasDeliveryProof'
-        ]);
+        request.resource.data.status == 'pending';
 
       allow read: if request.auth != null && (
-        resource.data.buyerUid == request.auth.uid || isAdmin() || isAssignedRider()
+        resource.data.buyerUid == request.auth.uid || isAdmin()
       );
 
-      allow update: if isAdmin() || (
-        isAssignedRider() &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['deliveryStatus', 'deliveryUpdatedAt', 'deliveredAt', 'hasDeliveryProof']) &&
-        request.resource.data.deliveryStatus in ['out_for_delivery', 'delivered'] &&
-        // The proof flag can only be true if the photo really exists (written in the same batch to
-        // delivery_proofs/{orderId}), and an order can only be marked delivered WITH that flag -- so
-        // "delivered" always comes with a photo.
-        (request.resource.data.get('hasDeliveryProof', false) == false ||
-          existsAfter(/databases/$(database)/documents/delivery_proofs/$(orderId))) &&
-        (request.resource.data.deliveryStatus != 'delivered' ||
-          request.resource.data.get('hasDeliveryProof', false) == true)
-      );
-
-      allow delete: if isAdmin();
-    }
-
-    // Proof of delivery: the rider's photo of the delivered order, kept in its own document (id = order id) so the
-    // large image never rides along with every order list. Only the rider assigned to that order can create or
-    // replace it, and only as a small JPEG data URL. It can be read by that rider, by the buyer whose order it is,
-    // and by Admin -- nobody else. Only Admin can delete it.
-    match /delivery_proofs/{orderId} {
-      allow read: if request.auth != null && (
-        isAdmin() ||
-        get(/databases/$(database)/documents/buyer_orders/$(orderId)).data.buyerUid == request.auth.uid ||
-        get(/databases/$(database)/documents/buyer_orders/$(orderId)).data.get('riderUid', '') == request.auth.uid
-      );
-
-      allow create, update: if request.auth != null &&
-        get(/databases/$(database)/documents/buyer_orders/$(orderId)).data.get('riderUid', '') == request.auth.uid &&
-        request.resource.data.keys().hasOnly(['photo', 'takenAt', 'riderUid']) &&
-        request.resource.data.riderUid == request.auth.uid &&
-        request.resource.data.photo is string &&
-        request.resource.data.photo.size() <= 700000 &&
-        request.resource.data.photo.matches('^data:image/jpeg;base64,.*');
+      allow update: if isAdmin();
 
       allow delete: if isAdmin();
     }

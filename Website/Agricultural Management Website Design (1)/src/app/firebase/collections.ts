@@ -41,8 +41,6 @@ export const COLLECTIONS = {
   BUYER_ORDERS: 'buyer_orders',
   /** One doc per pending buyer order (same id) holding its items, so ordered stock shows as reserved right away. */
   STOCK_HOLDS: 'stock_holds',
-  /** The rider's proof-of-delivery photo, one doc per order (same id), readable by Admin, that order's buyer and its rider. */
-  DELIVERY_PROOFS: 'delivery_proofs',
   /** Admin assigns a broken-equipment / sprinkler-damage report to one Maintenance worker as a job; the worker updates its progress. */
   REPAIR_JOBS: 'repair_jobs',
   /** Direct Admin <-> Owner message thread. Its own collection for the same reason as

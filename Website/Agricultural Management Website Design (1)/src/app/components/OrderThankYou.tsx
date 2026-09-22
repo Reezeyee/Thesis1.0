@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Coffee } from 'lucide-react';
-import type { BuyerFulfillmentMethod } from '../types/appState';
 
 /** How long the popup stays before fading away on its own. */
 const VISIBLE_MS = 3200;
@@ -29,12 +28,10 @@ function fireConfetti() {
 export function OrderThankYou({
   open,
   buyerName,
-  method,
   onClose,
 }: {
   open: boolean;
   buyerName: string;
-  method: BuyerFulfillmentMethod;
   onClose: () => void;
 }) {
   const reduceMotion = useReducedMotion();
@@ -52,9 +49,7 @@ export function OrderThankYou({
   }, [open, onClose, reduceMotion]);
 
   const firstName = buyerName.trim().split(/\s+/)[0] || 'friend';
-  const message = method === 'delivery'
-    ? "We're preparing your coffee and will arrange delivery soon."
-    : "We're getting your coffee ready. Pick it up at the farm when we contact you.";
+  const message = "We're getting your coffee ready. Pick it up at the farm once we notify you it's ready.";
 
   return (
     <AnimatePresence>

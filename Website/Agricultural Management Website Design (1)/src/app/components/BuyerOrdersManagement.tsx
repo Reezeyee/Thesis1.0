@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
-import { Package, ShoppingBag, Plus, Trash2, Edit2, CheckCircle2, XCircle, Clock, Sprout, Truck, Store, MapPin, Phone, Banknote, Wallet, Bike } from 'lucide-react';
+import { Package, ShoppingBag, Plus, Trash2, Edit2, CheckCircle2, XCircle, Clock, Sprout, Store, Phone, Banknote, Wallet } from 'lucide-react';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
 import { useFarmData } from '../store/FarmDataProvider';
@@ -8,74 +8,31 @@ import { useStockHolds } from '../store/useStockHolds';
 import type { BuyerOrderRecord, ExpenseRecord, ProductListingRecord, SaleRecord } from '../types/appState';
 import { computeSupplyStatus } from '../types/appState';
 import { formatCurrency } from '../lib/currencyFormat';
-import { paymentLabel } from '../lib/orderCheckout';
-import { isDeliveryRole } from '../lib/farmFinance';
-import { isWorkerActive } from '../lib/workerUi';
 import { runSave, showSaveError } from '../lib/saveFeedback';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { FixedSelect } from './ui/FixedSelect';
-import { DeliveryProofPhoto } from './DeliveryProofPhoto';
 
 const LISTING_CATEGORIES = ['Green Beans', 'Roasted Beans', 'Ripe Cherries', 'Dried Cherries'] as const;
 const LISTING_UNITS = ['kg', 'sacks', 'bags', 'lbs'] as const;
 
-/** How the buyer wants the order: delivery (with the address they typed and a maps link) or pickup at the farm, plus payment and phone. */
+/** "Cash at pickup", paid when the buyer collects the order at the farm. */
+function paymentLabel(payment: NonNullable<BuyerOrderRecord['paymentMethod']>): string {
+  return payment === 'e_wallet' ? 'E-wallet' : 'Cash at pickup';
+}
+
+/** Every order is picked up at the farm by the buyer -- shows payment method and phone. */
 function FulfillmentDetails({ order }: { order: BuyerOrderRecord }) {
-  const method = order.fulfillmentMethod;
-  if (!method && !order.buyerPhone && !order.paymentMethod) return null;
+  if (!order.buyerPhone && !order.paymentMethod) return null;
   return (
     <div className="rounded-lg bg-muted/40 border border-border/50 px-3 py-2 space-y-1">
-      {method === 'delivery' ? (
-        <>
-          <p className="text-xs font-bold flex items-center gap-1.5"><Truck className="w-3.5 h-3.5" /> Delivery{order.deliveryProvince ? ` · ${order.deliveryProvince}` : ''}</p>
-          <p className="text-xs flex items-start gap-1.5">
-            <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            <span>
-              {order.deliveryAddress || 'No address given'}
-              {order.deliveryAddress ? (
-                <>
-                  {' '}
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.deliveryAddress)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline text-primary"
-                  >
-                    Open in Maps
-                  </a>
-                </>
-              ) : null}
-            </span>
-          </p>
-        </>
-      ) : method === 'pickup' ? (
-        <p className="text-xs font-bold flex items-center gap-1.5"><Store className="w-3.5 h-3.5" /> Pick up at the farm (buyer collects it)</p>
-      ) : null}
-      {method === 'delivery' && order.riderName ? (
-        <p className="text-xs font-semibold flex items-center gap-1.5">
-          <Bike className="w-3.5 h-3.5" /> Rider: {order.riderName}
-          {order.riderPhone ? <a href={`tel:${order.riderPhone}`} className="font-normal underline">{order.riderPhone}</a> : null}
-        </p>
-      ) : null}
-      {method === 'delivery' && order.riderName && order.deliveryStatus ? (
-        <p className={`text-xs font-semibold ${order.deliveryStatus === 'delivered' ? 'text-emerald-600 dark:text-emerald-400' : order.deliveryStatus === 'out_for_delivery' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
-          {order.deliveryStatus === 'delivered'
-            ? `Rider marked delivered${order.deliveredAt ? ` · ${new Date(order.deliveredAt).toLocaleString()}` : ''} — mark the order fulfilled to update stock`
-            : order.deliveryStatus === 'out_for_delivery'
-            ? 'Out for delivery'
-            : 'Waiting for the rider to start'}
-        </p>
-      ) : null}
-      {order.hasDeliveryProof ? (
-        <DeliveryProofPhoto orderId={order.orderId} takenAtLabel={order.deliveredAt ? new Date(order.deliveredAt).toLocaleString() : undefined} />
-      ) : null}
+      <p className="text-xs font-bold flex items-center gap-1.5"><Store className="w-3.5 h-3.5" /> Pick up at the farm (buyer collects it)</p>
       {order.paymentMethod ? (
         <p className="text-xs font-semibold flex items-center gap-1.5">
           {order.paymentMethod === 'e_wallet' ? <Wallet className="w-3.5 h-3.5" /> : <Banknote className="w-3.5 h-3.5" />}
-          Payment: {paymentLabel(order.paymentMethod, method)}
+          Payment: {paymentLabel(order.paymentMethod)}
           {order.paymentMethod === 'e_wallet' ? <span className="font-normal text-muted-foreground"> — send them your e-wallet details</span> : null}
         </p>
       ) : null}
@@ -146,33 +103,20 @@ export function BuyerOrdersManagement() {
   }, []);
 
   const pendingOrders = useMemo(() => orders.filter((o) => o.status === 'pending'), [orders]);
-  const pastOrders = useMemo(() => orders.filter((o) => o.status !== 'pending'), [orders]);
+  const readyOrders = useMemo(() => orders.filter((o) => o.status === 'ready'), [orders]);
+  const pastOrders = useMemo(() => orders.filter((o) => o.status === 'fulfilled' || o.status === 'cancelled'), [orders]);
 
-  // Active workers whose role is Delivery Rider -- the people an admin can assign a delivery order to.
-  const riders = useMemo(
-    () =>
-      (state.workers ?? [])
-        .filter((w) => isDeliveryRole(w.roleRate) && isWorkerActive(w))
-        .map((w) => ({ key: w.workerId?.trim() || w.name, name: w.name, phone: w.phoneNumber ?? '', uid: w.authUid?.trim() ?? '' })),
-    [state.workers],
-  );
-
-  const assignRider = async (order: BuyerOrderRecord, riderKey: string) => {
+  /** Admin approves the order: the buyer is told "Product is ready to pick up". */
+  const approveOrder = async (order: BuyerOrderRecord) => {
     setActionError(null);
-    const rider = riders.find((r) => r.key === riderKey);
     try {
-      await updateDoc(doc(db, COLLECTIONS.BUYER_ORDERS, order.orderId), rider
-        ? {
-            riderWorkerId: rider.key, riderName: rider.name, riderPhone: rider.phone, riderUid: rider.uid,
-            riderAssignedAt: new Date().toISOString(), deliveryStatus: 'assigned', deliveryUpdatedAt: null, deliveredAt: null,
-          }
-        : {
-            riderWorkerId: null, riderName: null, riderPhone: null, riderUid: null,
-            riderAssignedAt: null, deliveryStatus: null, deliveryUpdatedAt: null, deliveredAt: null,
-          });
+      await updateDoc(doc(db, COLLECTIONS.BUYER_ORDERS, order.orderId), {
+        status: 'ready',
+        readyAt: new Date().toISOString(),
+      });
       void loadOrders();
     } catch {
-      setActionError('Could not assign the rider. Please try again.');
+      setActionError('Could not approve this order. Please try again.');
     }
   };
 
@@ -272,8 +216,6 @@ export function BuyerOrdersManagement() {
 
   const fulfillOrder = async (order: BuyerOrderRecord) => {
     setActionError(null);
-    if (order.fulfillmentMethod === 'delivery' && !order.riderName
-      && !window.confirm('No Delivery Rider is assigned to this delivery order. Mark it fulfilled anyway?')) return;
     // 1. Decrement inventory for each line item (skip listings that no longer exist).
     const ok = await runSave('Buyer order', () =>
       updateState((prev) => {
@@ -285,7 +227,7 @@ export function BuyerOrdersManagement() {
         });
         const sale: SaleRecord = {
           buyer: order.buyerName,
-          details: `Buyer storefront order: ${order.items.map((it) => `${it.name} x${it.quantity}${it.unit}`).join(', ')}${order.deliveryFee ? ` (incl. ${formatCurrency(order.deliveryFee)} delivery fee)` : ''}`,
+          details: `Buyer storefront order: ${order.items.map((it) => `${it.name} x${it.quantity}${it.unit}`).join(', ')}`,
           date: new Date().toISOString().slice(0, 10),
           total: order.totalAmount,
           type: 'Buyer Storefront Order',
@@ -345,6 +287,13 @@ export function BuyerOrdersManagement() {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 uppercase">
           <XCircle className="w-3 h-3" /> Cancelled
+        </span>
+      );
+    }
+    if (status === 'ready') {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400 uppercase">
+          <Store className="w-3 h-3" /> Ready for Pickup
         </span>
       );
     }
@@ -500,42 +449,48 @@ export function BuyerOrdersManagement() {
                     {statusBadge(o.status)}
                   </div>
                   <FulfillmentDetails order={o} />
-                  {o.fulfillmentMethod === 'delivery' ? (
-                    <div className="space-y-1">
-                      <Label htmlFor={`rider-${o.orderId}`} className="text-[11px] font-semibold">Delivery Rider</Label>
-                      <select
-                        id={`rider-${o.orderId}`}
-                        value={o.riderWorkerId ?? ''}
-                        onChange={(e) => void assignRider(o, e.target.value)}
-                        className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-xs"
-                      >
-                        <option value="">{riders.length === 0 ? 'No Delivery Riders yet' : 'Assign a rider…'}</option>
-                        {riders.map((r) => (
-                          <option key={r.key} value={r.key} disabled={!r.uid}>
-                            {r.name}{r.phone ? ` — ${r.phone}` : ''}{r.uid ? '' : ' (no app login yet)'}
-                          </option>
-                        ))}
-                        {/* Keep showing a rider who was assigned but is no longer in the active rider list. */}
-                        {o.riderWorkerId && !riders.some((r) => r.key === o.riderWorkerId) ? (
-                          <option value={o.riderWorkerId}>{o.riderName ?? o.riderWorkerId}</option>
-                        ) : null}
-                      </select>
-                      {riders.length === 0 ? (
-                        <p className="text-[11px] text-muted-foreground">Add a worker with the role "Delivery Rider" in Farm Management to assign deliveries.</p>
-                      ) : null}
-                    </div>
-                  ) : null}
                   {o.items.map((it, i) => (
                     <p key={i} className="text-xs text-muted-foreground">{it.name} × {it.quantity} {it.unit} — {formatCurrency(it.subtotal)}</p>
                   ))}
-                  {o.deliveryFee ? (
-                    <p className="text-xs text-muted-foreground">
-                      Delivery fee{o.deliveryProvince ? ` (${o.deliveryProvince})` : ''} — {formatCurrency(o.deliveryFee)}
-                    </p>
-                  ) : null}
                   <p className="text-sm font-bold">{formatCurrency(o.totalAmount)}</p>
                   <div className="flex gap-2 pt-1">
-                    <Button onClick={() => void fulfillOrder(o)} className="h-9 rounded-lg text-xs font-semibold cursor-pointer">Mark Fulfilled</Button>
+                    <Button onClick={() => void approveOrder(o)} className="h-9 rounded-lg text-xs font-semibold cursor-pointer">Approve — Ready for Pickup</Button>
+                    <Button variant="outline" onClick={() => void cancelOrder(o)} className="h-9 rounded-lg text-xs cursor-pointer">Cancel</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-bold mb-3 flex items-center gap-2">
+          <Store className="w-4 h-4" /> Ready for Pickup {readyOrders.length > 0 ? `(${readyOrders.length})` : ''}
+        </h2>
+        {ordersLoading ? (
+          <p className="text-xs text-muted-foreground">Loading orders…</p>
+        ) : readyOrders.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No orders waiting for pickup right now.</p>
+        ) : (
+          <div className="space-y-3">
+            {readyOrders.map((o) => (
+              <Card key={o.orderId} id={`order-${o.orderId}`}>
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold">{o.buyerName}</p>
+                      <p className="text-xs text-muted-foreground">{o.buyerEmail}</p>
+                    </div>
+                    {statusBadge(o.status)}
+                  </div>
+                  <FulfillmentDetails order={o} />
+                  {o.items.map((it, i) => (
+                    <p key={i} className="text-xs text-muted-foreground">{it.name} × {it.quantity} {it.unit} — {formatCurrency(it.subtotal)}</p>
+                  ))}
+                  <p className="text-sm font-bold">{formatCurrency(o.totalAmount)}</p>
+                  <div className="flex gap-2 pt-1">
+                    <Button onClick={() => void fulfillOrder(o)} className="h-9 rounded-lg text-xs font-semibold cursor-pointer">Mark Picked Up</Button>
                     <Button variant="outline" onClick={() => void cancelOrder(o)} className="h-9 rounded-lg text-xs cursor-pointer">Cancel</Button>
                   </div>
                 </CardContent>
@@ -552,15 +507,9 @@ export function BuyerOrdersManagement() {
             {pastOrders.map((o) => (
               <div key={o.orderId} className="text-xs bg-muted/30 rounded-lg px-3 py-2 space-y-1">
                 <div className="flex items-center justify-between">
-                  <span>
-                    {o.buyerName} — {formatCurrency(o.totalAmount)}
-                    {o.fulfillmentMethod ? ` · ${o.fulfillmentMethod === 'delivery' ? 'Delivery' : 'Pick up'}` : ''}
-                  </span>
+                  <span>{o.buyerName} — {formatCurrency(o.totalAmount)} · Pick up</span>
                   {statusBadge(o.status)}
                 </div>
-                {o.hasDeliveryProof ? (
-                  <DeliveryProofPhoto orderId={o.orderId} takenAtLabel={o.deliveredAt ? new Date(o.deliveredAt).toLocaleString() : undefined} />
-                ) : null}
               </div>
             ))}
           </div>

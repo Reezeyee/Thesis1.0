@@ -13,7 +13,7 @@ import { repairAwaitsAdmin, type RepairJobRecord, type RepairKind } from '../lib
 
 export interface PendingReportItem {
   id: string;
-  type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest' | 'harvest_log' | 'password_reset' | 'delivery' | 'repair_done';
+  type: 'irrigation' | 'equipment' | 'supply' | 'pest' | 'harvest' | 'harvest_log' | 'password_reset' | 'repair_done';
   title: string;
   subtitle: string;
   details: string;
@@ -91,7 +91,6 @@ interface NotificationCenterProps {
 export function usePendingReports() {
   const { state } = useFarmData();
   const [passwordResetItems, setPasswordResetItems] = useState<PendingReportItem[]>([]);
-  const [deliveredItems, setDeliveredItems] = useState<PendingReportItem[]>([]);
   const [fixedJobs, setFixedJobs] = useState<{ id: string; job: RepairJobRecord }[]>([]);
 
   // Repair jobs a Maintenance worker has marked fixed. Whether the admin still has to act on one depends on the
@@ -107,41 +106,6 @@ export function usePendingReports() {
     );
   }, []);
 
-  // Orders a rider has marked delivered that the admin hasn't closed yet (status still 'pending'): the admin is
-  // notified right away, sees the proof photo on the order, and marks it fulfilled (which also updates stock).
-  // Once fulfilled or cancelled the order drops out of this list by itself.
-  useEffect(() => {
-    return onSnapshot(
-      query(collection(db, COLLECTIONS.BUYER_ORDERS), where('deliveryStatus', '==', 'delivered'), where('status', '==', 'pending')),
-      (snapshot) => {
-        const items: PendingReportItem[] = snapshot.docs
-          .map((d): PendingReportItem => {
-            const data = d.data();
-            const when = new Date(String(data.deliveredAt ?? data.deliveryUpdatedAt ?? ''));
-            const valid = !Number.isNaN(when.getTime());
-            const buyer = String(data.buyerName || 'Buyer');
-            const rider = String(data.riderName || 'The rider');
-            return {
-              id: `delivered-${d.id}`,
-              type: 'delivery' as const,
-              title: `Delivered: ${buyer}`,
-              subtitle: `${rider} marked the order delivered${data.hasDeliveryProof ? ' (photo attached)' : ''}`,
-              details: `${rider} delivered ${buyer}'s order (₱${Number(data.totalAmount ?? 0).toLocaleString()}). Check the delivery photo, then mark the order fulfilled to update stock.`,
-              reportedBy: rider,
-              reportedAt: valid ? when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }) : 'Just now',
-              timestamp: valid ? when.getTime() : Date.now(),
-              rawReportId: d.id,
-            };
-          })
-          .sort((a, b) => b.timestamp - a.timestamp);
-        setDeliveredItems(items);
-      },
-      (err) => {
-        console.warn('Delivered-orders listener error:', err);
-        setDeliveredItems([]);
-      },
-    );
-  }, []);
 
   // Real-time Firestore subscription to Password Reset Requests from worker mobile scanners
   useEffect(() => {
@@ -190,7 +154,7 @@ export function usePendingReports() {
   }, []);
 
   const pendingList = useMemo(() => {
-    const list: PendingReportItem[] = [...passwordResetItems, ...deliveredItems];
+    const list: PendingReportItem[] = [...passwordResetItems];
 
     // 0. Repairs finished by Maintenance, waiting for the admin to confirm
     fixedJobs.forEach(({ id, job }) => {
@@ -359,7 +323,6 @@ export function usePendingReports() {
     return list.sort((a, b) => b.timestamp - a.timestamp);
   }, [
     passwordResetItems,
-    deliveredItems,
     fixedJobs,
     state.irrigationDamageReports,
     state.equipmentReports,
@@ -516,9 +479,6 @@ export function GlobalNotificationBanner({
     } else if (item.type === 'password_reset') {
       targetModule = 'settings';
       targetElementId = 'password-reset-requests-section';
-    } else if (item.type === 'delivery') {
-      targetModule = 'buyerOrders';
-      targetElementId = `order-${item.rawReportId}`;
     } else if (item.type === 'repair_done') {
       targetModule = item.repairKind === 'equipment' ? 'equipment' : 'farm';
       targetElementId = item.repairKind === 'equipment' ? `equipment-${item.rawReportId}` : `report-${item.rawReportId}`;
@@ -535,8 +495,7 @@ export function GlobalNotificationBanner({
 
   const handleResolveReport = async (item: PendingReportItem) => {
     dismissNotification(item.id);
-    // A delivered-order notice has nothing to resolve in the farm data: the admin closes the order itself.
-    if (item.type === 'delivery' || item.type === 'repair_done') return;
+    if (item.type === 'repair_done') return;
     if (item.type === 'password_reset' && item.rawReportId) {
       try {
         await updateDoc(doc(db, COLLECTIONS.PASSWORD_RESET_REQUESTS, item.rawReportId), {
@@ -595,8 +554,8 @@ export function GlobalNotificationBanner({
               onClick={() => handleNavigateToReport(latestPendingReport)}
             >
               <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#d4183d]/15 text-[#d4183d] shadow-sm group-hover:scale-105 transition-transform">
-                <span className={`absolute inline-flex h-full w-full rounded-full animate-ping ${(latestPendingReport.type === 'delivery' || latestPendingReport.type === 'repair_done') ? 'bg-[#0f766e]/30' : 'bg-[#d4183d]/30'}`} />
-                {(latestPendingReport.type === 'delivery' || latestPendingReport.type === 'repair_done') ? (
+                <span className={`absolute inline-flex h-full w-full rounded-full animate-ping ${latestPendingReport.type === 'repair_done' ? 'bg-[#0f766e]/30' : 'bg-[#d4183d]/30'}`} />
+                {latestPendingReport.type === 'repair_done' ? (
                   <CheckCircle2 className="h-5 w-5 relative z-10 text-[#0f766e]" />
                 ) : (
                   <AlertTriangle className="h-5 w-5 relative z-10 text-[#d4183d]" />
@@ -605,7 +564,7 @@ export function GlobalNotificationBanner({
               <div>
                 <div className="flex items-center gap-2 flex-wrap gap-y-1">
                   <h4 className="text-xs font-black text-foreground uppercase tracking-wider group-hover:text-[#d4183d] transition-colors">
-                    {latestPendingReport.type === 'delivery' ? 'Order Delivered!' : latestPendingReport.type === 'repair_done' ? 'Repair Done!' : 'Worker Problem Reported!'}
+                    {latestPendingReport.type === 'repair_done' ? 'Repair Done!' : 'Worker Problem Reported!'}
                   </h4>
                   <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#d4183d] text-white uppercase animate-pulse">
                     NEW
@@ -752,9 +711,6 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
     } else if (item.type === 'password_reset') {
       targetModule = 'settings';
       targetElementId = 'password-reset-requests-section';
-    } else if (item.type === 'delivery') {
-      targetModule = 'buyerOrders';
-      targetElementId = `order-${item.rawReportId}`;
     } else if (item.type === 'repair_done') {
       targetModule = item.repairKind === 'equipment' ? 'equipment' : 'farm';
       targetElementId = item.repairKind === 'equipment' ? `equipment-${item.rawReportId}` : `report-${item.rawReportId}`;
@@ -770,7 +726,7 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
   };
 
   const handleResolve = async (item: PendingReportItem) => {
-    if (item.type === 'delivery' || item.type === 'repair_done') {
+    if (item.type === 'repair_done') {
       dismissNotification(item.id);
       return;
     }
@@ -888,7 +844,7 @@ export function NotificationDrawer({ isOpen, onClose, onNavigateModule }: Notifi
                     ? 'bg-[#b01230] text-white'
                     : item.type === 'password_reset'
                     ? 'bg-[#6b21a8] text-white'
-                    : item.type === 'delivery' || item.type === 'repair_done'
+                    : item.type === 'repair_done'
                     ? 'bg-[#0f766e] text-white'
                     : 'bg-[#2d5016] text-white';
 

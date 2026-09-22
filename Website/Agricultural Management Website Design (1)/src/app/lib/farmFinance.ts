@@ -135,17 +135,11 @@ export function distinctRoles(workers: AppState['workers']): number {
 }
 
 /** Roles an admin can assign to a worker (fixed list, no free-text "Other"). Keep in sync with the Android app's role list. */
-export const WORKER_ROLES = ['Picker', 'Maintenance', 'Farm Manager', 'Farm Assist', 'Delivery Rider'] as const;
+export const WORKER_ROLES = ['Picker', 'Maintenance', 'Farm Manager', 'Farm Assist'] as const;
 
 /** True for the Maintenance role (repairs equipment and sprinklers). Maintenance workers get the repair-jobs screens in the app. */
 export function isMaintenanceRole(roleRate: string): boolean {
   return roleRate.trim().toLowerCase().includes('maintenance');
-}
-
-/** True for the Delivery Rider role (also matches the older wording "driver"). Used for both the pay rate and the rider picker on buyer orders. */
-export function isDeliveryRole(roleRate: string): boolean {
-  const key = roleRate.trim().toLowerCase();
-  return key.includes('delivery') || key.includes('rider') || key.includes('driver');
 }
 
 export function hourlyRateForWorkerRole(roleRate: string): number {
@@ -154,7 +148,6 @@ export function hourlyRateForWorkerRole(roleRate: string): number {
   if (key.includes('farm assist')) return 150;
   if (key.includes('maintenance')) return 180;
   if (key.includes('farm manager')) return 250;
-  if (isDeliveryRole(roleRate)) return 120;
   return 0;
 }
 
@@ -169,12 +162,6 @@ export const ROLE_RESPONSIBILITIES: Record<string, string[]> = {
     'Oversees the upkeep of the coffee farm',
     'Recommends strategies to improve the coffee harvest',
     'Plans marketing activities to sell the farm\'s coffee',
-  ],
-  'Delivery Rider': [
-    'Delivers buyers\' orders from the farm to the address on the order',
-    'Collects payment on cash-on-delivery orders and hands it over to the farm',
-    'Confirms with the buyer by phone and reports each delivery as done',
-    'Keeps the delivery vehicle in good condition',
   ],
   'Farm Assist': [
     'Grasscutting and cleaning of the farm premises',

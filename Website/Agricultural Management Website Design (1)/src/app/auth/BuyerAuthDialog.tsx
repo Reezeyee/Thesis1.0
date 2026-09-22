@@ -39,7 +39,7 @@ export function BuyerAuthDialog({ open, onOpenChange }: { open: boolean; onOpenC
   };
 
   // `pinned` = the buyer actually tapped/dragged the map. Typing an address alone leaves the pin at the
-  // map's default centre, which would put the buyer (and later the delivery rider) in the wrong place.
+  // map's default centre, which would be the wrong location.
   const locationIsValid = (loc: PickedLocation | null): loc is PickedLocation =>
     !!loc && loc.pinned === true && loc.address.trim().length > 0 && (loc.lat !== 0 || loc.lng !== 0);
 

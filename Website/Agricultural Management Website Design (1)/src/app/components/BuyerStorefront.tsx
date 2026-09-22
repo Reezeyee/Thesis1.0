@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShoppingCart, LogOut, Coffee, Package, Clock, CheckCircle2, XCircle, Truck, Store, Loader2, Banknote, Wallet } from 'lucide-react';
+import { ShoppingCart, LogOut, Coffee, Package, Clock, CheckCircle2, XCircle, Store, Loader2, Banknote, Wallet } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
@@ -9,16 +9,18 @@ import { fetchReservedNow, useStockHolds } from '../store/useStockHolds';
 import { availableAfterHolds, cartShortfalls } from '../lib/stockMath';
 import type { AuthSession } from '../auth/AuthProvider';
 import { isValidPhone11, PHONE_ERROR_MESSAGE, PHONE_PLACEHOLDER, sanitizePhoneInput } from '../lib/phone';
-import type { BuyerFulfillmentMethod, BuyerOrderItem, BuyerOrderRecord, BuyerPaymentMethod } from '../types/appState';
-import { DELIVERY_ZONES, deliveryFeeFor, detectProvince, paymentLabel } from '../lib/orderCheckout';
+import type { BuyerOrderItem, BuyerOrderRecord, BuyerPaymentMethod } from '../types/appState';
 import { formatCurrency } from '../lib/currencyFormat';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { OrderThankYou } from './OrderThankYou';
-import { DeliveryProofPhoto } from './DeliveryProofPhoto';
-import { LocationPicker, type PickedLocation } from './LocationPicker';
+
+/** "Cash at pickup", paid when the buyer collects the order at the farm. */
+function paymentLabel(payment: BuyerPaymentMethod): string {
+  return payment === 'e_wallet' ? 'E-wallet' : 'Cash at pickup';
+}
 
 /**
  * Buyer-facing storefront: browse Admin-managed product listings, add to cart, place an order.
@@ -35,24 +37,15 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
   const [myOrders, setMyOrders] = useState<BuyerOrderRecord[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   // Set when an order goes through; drives the thank-you popup (see OrderThankYou).
-  // The method is kept after closing so the message doesn't change while the popup fades out.
   const [thankYouOpen, setThankYouOpen] = useState(false);
-  const [thankYouMethod, setThankYouMethod] = useState<BuyerFulfillmentMethod>('delivery');
   const closeThankYou = useCallback(() => setThankYouOpen(false), []);
-  const [fulfillmentMethod, setFulfillmentMethod] = useState<BuyerFulfillmentMethod>('delivery');
-  // Map pin + address for a delivery: the rider's app shows this pin, so it must come from the map.
-  const [deliveryLocation, setDeliveryLocation] = useState<PickedLocation | null>(null);
-  const deliveryAddress = deliveryLocation?.address ?? '';
-  // Luzon province for the delivery fee. Guessed from the address until the buyer picks one by hand.
-  const [deliveryProvince, setDeliveryProvince] = useState('');
-  const [provinceChosenByBuyer, setProvinceChosenByBuyer] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<BuyerPaymentMethod>('cash');
   const [phone, setPhone] = useState('');
   // Phone already saved on the buyer's profile, so checkout only writes it back when it changed
   // (accounts made before the phone field existed have none).
   const [savedPhone, setSavedPhone] = useState('');
 
-  // Prefill delivery address + phone from the profile the buyer filled in at sign-up.
+  // Prefill phone from the profile the buyer filled in at sign-up.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -60,26 +53,15 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
         const snap = await getDoc(doc(db, COLLECTIONS.USERS, session.userId));
         const data = snap.data();
         if (cancelled || !data) return;
-        // Start from the pin the buyer set at sign-up (older accounts without coordinates must drop a new pin).
-        const lat = Number(data.locationLat);
-        const lng = Number(data.locationLng);
-        const addr = String(data.locationAddress ?? '');
-        if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0) && addr) {
-          setDeliveryLocation((prev) => prev ?? { lat, lng, address: addr, pinned: true });
-        }
         const p = sanitizePhoneInput(String(data.phone ?? ''));
         setPhone((prev) => prev || p);
         setSavedPhone(p);
       } catch {
-        // Non-fatal -- the buyer can just type both fields at checkout.
+        // Non-fatal -- the buyer can just type the phone at checkout.
       }
     })();
     return () => { cancelled = true; };
   }, [session.userId]);
-
-  useEffect(() => {
-    if (!provinceChosenByBuyer) setDeliveryProvince(detectProvince(deliveryAddress));
-  }, [deliveryAddress, provinceChosenByBuyer]);
 
   // Out-of-stock listings still show (greyed out, "Out of Stock" badge) instead of silently
   // disappearing, so a buyer can tell "sold out, check back" apart from "never existed". In-stock
@@ -169,28 +151,13 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
       .filter((x): x is BuyerOrderItem => x !== null);
   }, [cart, listings]);
 
-  const cartSubtotal = cartItems.reduce((sum, it) => sum + it.subtotal, 0);
-  const deliveryFee = fulfillmentMethod === 'delivery' ? deliveryFeeFor(deliveryProvince) : 0;
-  const cartTotal = Math.round((cartSubtotal + deliveryFee) * 100) / 100;
+  const cartTotal = Math.round(cartItems.reduce((sum, it) => sum + it.subtotal, 0) * 100) / 100;
 
   const placeOrder = async () => {
     if (cartItems.length === 0) return;
     const trimmedPhone = sanitizePhoneInput(phone);
-    const trimmedAddress = deliveryAddress.trim();
     if (!isValidPhone11(trimmedPhone)) {
       setPlaceError(PHONE_ERROR_MESSAGE);
-      return;
-    }
-    if (fulfillmentMethod === 'delivery' && !trimmedAddress) {
-      setPlaceError('Enter the address where the order should be delivered.');
-      return;
-    }
-    if (fulfillmentMethod === 'delivery' && (!deliveryLocation?.pinned || !trimmedAddress)) {
-      setPlaceError('Drop a pin on the map for your delivery address so the rider can find you.');
-      return;
-    }
-    if (fulfillmentMethod === 'delivery' && !deliveryProvince) {
-      setPlaceError('Choose your province so we can work out the delivery fee.');
       return;
     }
     setPlacing(true);
@@ -224,25 +191,18 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
         buyerName: session.displayName || session.email,
         buyerEmail: session.email,
         buyerPhone: trimmedPhone,
-        fulfillmentMethod,
-        deliveryAddress: fulfillmentMethod === 'delivery' ? trimmedAddress : null,
-        deliveryProvince: fulfillmentMethod === 'delivery' ? deliveryProvince : null,
-        deliveryLat: fulfillmentMethod === 'delivery' ? deliveryLocation?.lat ?? null : null,
-        deliveryLng: fulfillmentMethod === 'delivery' ? deliveryLocation?.lng ?? null : null,
         paymentMethod,
         items: cartItems,
-        subtotal: cartSubtotal,
-        deliveryFee,
         totalAmount: cartTotal,
         status: 'pending',
         createdAt: new Date().toISOString(),
+        readyAt: null,
         fulfilledAt: null,
         _serverCreatedAt: serverTimestamp(),
       });
       batch.set(doc(db, COLLECTIONS.STOCK_HOLDS, orderRef.id), { items: cartItems, createdAt: new Date().toISOString() });
       await batch.commit();
       setCart({});
-      setThankYouMethod(fulfillmentMethod);
       setThankYouOpen(true);
       if (trimmedPhone !== savedPhone) {
         // Remember the phone on the profile (role is untouched, so firestore.rules allows it).
@@ -262,7 +222,7 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
     if (status === 'fulfilled') {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 uppercase">
-          <CheckCircle2 className="w-3 h-3" /> Fulfilled
+          <CheckCircle2 className="w-3 h-3" /> Picked Up
         </span>
       );
     }
@@ -270,6 +230,13 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 uppercase">
           <XCircle className="w-3 h-3" /> Cancelled
+        </span>
+      );
+    }
+    if (status === 'ready') {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400 uppercase">
+          <Store className="w-3 h-3" /> Ready for Pickup
         </span>
       );
     }
@@ -382,58 +349,10 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
                   </div>
                 ))}
                 <div className="pt-3 space-y-2">
-                  <Label className="text-xs font-semibold">How would you like to get your order?</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      { value: 'delivery', label: 'Delivery', hint: 'We bring it to you', Icon: Truck },
-                      { value: 'pickup', label: 'Pick up', hint: 'You come to the farm', Icon: Store },
-                    ] as const).map(({ value, label, hint, Icon }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setFulfillmentMethod(value)}
-                        aria-pressed={fulfillmentMethod === value}
-                        className={`rounded-xl border p-2.5 text-left cursor-pointer transition-colors ${
-                          fulfillmentMethod === value
-                            ? 'border-primary bg-primary/10'
-                            : 'border-border/70 hover:bg-muted/40'
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5 text-xs font-bold"><Icon className="w-4 h-4" /> {label}</span>
-                        <span className="block text-[11px] text-muted-foreground">{hint}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {fulfillmentMethod === 'delivery' ? (
-                    <div className="space-y-1.5">
-                      <LocationPicker
-                        id="delivery-location"
-                        label="Delivery location"
-                        value={deliveryLocation}
-                        onChange={setDeliveryLocation}
-                      />
-                      <Label htmlFor="delivery-province" className="text-xs font-semibold pt-1 block">Province (sets the delivery fee)</Label>
-                      <select
-                        id="delivery-province"
-                        value={deliveryProvince}
-                        onChange={(e) => { setDeliveryProvince(e.target.value); setProvinceChosenByBuyer(true); }}
-                        className="flex h-9 w-full rounded-md border border-border/80 bg-background/80 px-3 py-1 text-xs"
-                      >
-                        <option value="">Choose your province…</option>
-                        {DELIVERY_ZONES.map((z) => (
-                          <optgroup key={z.id} label={`${z.label} — ${formatCurrency(z.fee)}`}>
-                            {z.provinces.map((prov) => (
-                              <option key={prov} value={prov}>{prov} — {formatCurrency(z.fee)}</option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-muted-foreground">
-                      You'll collect this order at the farm yourself -- the farm will contact you when it's ready.
-                    </p>
-                  )}
+                  <p className="text-xs font-bold flex items-center gap-1.5"><Store className="w-3.5 h-3.5" /> Pick up at the farm</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    You'll collect this order at the farm yourself -- we'll notify you here once it's ready to pick up.
+                  </p>
                   <div className="space-y-1.5">
                     <Label htmlFor="order-phone" className="text-xs font-semibold">Phone number</Label>
                     <Input
@@ -458,8 +377,8 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
                       {([
                         {
                           value: 'cash' as const,
-                          label: paymentLabel('cash', fulfillmentMethod),
-                          hint: fulfillmentMethod === 'delivery' ? 'Pay the rider when it arrives' : 'Pay when you pick it up',
+                          label: paymentLabel('cash'),
+                          hint: 'Pay when you pick it up',
                           Icon: Banknote,
                         },
                         { value: 'e_wallet' as const, label: 'E-wallet', hint: 'Pay online (GCash, Maya…)', Icon: Wallet },
@@ -490,20 +409,9 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
 
                 <div className="pt-2 mt-1 border-t border-border/60 space-y-1">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(cartSubtotal)}</span>
+                    <span>Pick up at the farm</span>
+                    <span>No delivery fee</span>
                   </div>
-                  {fulfillmentMethod === 'delivery' ? (
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Delivery fee{deliveryProvince ? ` (${deliveryProvince})` : ''}</span>
-                      <span>{deliveryProvince ? formatCurrency(deliveryFee) : 'Choose province'}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Pick up at the farm</span>
-                      <span>No delivery fee</span>
-                    </div>
-                  )}
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-sm font-bold">Total</span>
                     <span className="text-sm font-bold">{formatCurrency(cartTotal)}</span>
@@ -546,28 +454,12 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
                     {o.items.map((it, i) => (
                       <p key={i} className="text-xs text-muted-foreground">{it.name} × {it.quantity} {it.unit}</p>
                     ))}
-                    {o.fulfillmentMethod ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        {o.fulfillmentMethod === 'delivery' ? `Delivery to ${o.deliveryAddress ?? ''}` : 'Pick up at the farm'}
-                        {o.paymentMethod ? ` · ${paymentLabel(o.paymentMethod, o.fulfillmentMethod)}` : ''}
-                      </p>
-                    ) : null}
-                    {o.fulfillmentMethod === 'delivery' && o.riderName && o.status !== 'cancelled' ? (
-                      <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                        <Truck className="w-3 h-3" />
-                        {o.deliveryStatus === 'out_for_delivery'
-                          ? `${o.riderName} is on the way with your order`
-                          : o.deliveryStatus === 'delivered'
-                          ? `${o.riderName} marked your order as delivered`
-                          : `${o.riderName} will deliver your order`}
-                      </p>
-                    ) : null}
-                    {o.hasDeliveryProof ? (
-                      <DeliveryProofPhoto orderId={o.orderId} takenAtLabel={o.deliveredAt ? new Date(o.deliveredAt).toLocaleString() : undefined} />
-                    ) : null}
-                    {o.deliveryFee ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        Includes {formatCurrency(o.deliveryFee)} delivery{o.deliveryProvince ? ` (${o.deliveryProvince})` : ''}
+                    <p className="text-[11px] text-muted-foreground">
+                      Pick up at the farm{o.paymentMethod ? ` · ${paymentLabel(o.paymentMethod)}` : ''}
+                    </p>
+                    {o.status === 'ready' ? (
+                      <p className="text-[11px] font-semibold text-sky-600 dark:text-sky-400 flex items-center gap-1">
+                        <Store className="w-3 h-3" /> Product is ready to pick up
                       </p>
                     ) : null}
                     <p className="text-sm font-bold pt-1">{formatCurrency(o.totalAmount)}</p>
@@ -581,7 +473,6 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
       <OrderThankYou
         open={thankYouOpen}
         buyerName={session.displayName || session.email}
-        method={thankYouMethod}
         onClose={closeThankYou}
       />
     </div>
