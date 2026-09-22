@@ -63,7 +63,12 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
   const [nameError, setNameError] = useState<string | null>(null);
 
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  // Set once a new photo is picked but not yet saved -- lets the buyer preview/change their pick
+  // before committing, instead of uploading the instant a file is chosen.
+  const [pendingPhoto, setPendingPhoto] = useState<string | null | undefined>(undefined);
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [photoSaving, setPhotoSaving] = useState(false);
+  const [photoMessage, setPhotoMessage] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
   const [newEmail, setNewEmail] = useState('');
@@ -100,6 +105,9 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
     setConfirmPassword('');
     setNameMessage(null);
     setNameError(null);
+    setPendingPhoto(undefined);
+    setPhotoMessage(null);
+    setPhotoError(null);
     setEmailMessage(null);
     setEmailError(null);
     setPasswordMessage(null);
@@ -130,27 +138,37 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
     if (!file) return;
     setPhotoLoading(true);
     setPhotoError(null);
+    setPhotoMessage(null);
     try {
       const resized = await fileToProfilePhoto(file);
-      await updateBuyerPhoto(resized);
-      setPhotoBase64(resized);
+      setPendingPhoto(resized);
     } catch (err) {
-      setPhotoError(err instanceof Error ? err.message : 'Could not update your photo.');
+      setPhotoError(err instanceof Error ? err.message : 'Could not read that photo.');
     } finally {
       setPhotoLoading(false);
     }
   };
 
-  const handleRemovePhoto = async () => {
-    setPhotoLoading(true);
+  const handleRemovePhoto = () => {
     setPhotoError(null);
+    setPhotoMessage(null);
+    setPendingPhoto(null);
+  };
+
+  const handleSavePhoto = async () => {
+    if (pendingPhoto === undefined) return;
+    setPhotoSaving(true);
+    setPhotoError(null);
+    setPhotoMessage(null);
     try {
-      await updateBuyerPhoto(null);
-      setPhotoBase64(null);
+      await updateBuyerPhoto(pendingPhoto);
+      setPhotoBase64(pendingPhoto);
+      setPendingPhoto(undefined);
+      setPhotoMessage(pendingPhoto ? 'Photo updated.' : 'Photo removed.');
     } catch (err) {
-      setPhotoError(err instanceof Error ? err.message : 'Could not remove your photo.');
+      setPhotoError(err instanceof Error ? err.message : 'Could not save your photo.');
     } finally {
-      setPhotoLoading(false);
+      setPhotoSaving(false);
     }
   };
 
@@ -205,31 +223,54 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
           {/* Photo */}
           <div className="flex items-center gap-4">
             <Avatar className="w-16 h-16">
-              <AvatarImage src={photoBase64 ?? undefined} alt={session.displayName} />
+              <AvatarImage src={(pendingPhoto !== undefined ? pendingPhoto : photoBase64) ?? undefined} alt={session.displayName} />
               <AvatarFallback>
                 <UserIcon className="w-6 h-6 text-muted-foreground" />
               </AvatarFallback>
             </Avatar>
-            <div className="space-y-1.5">
-              <div className="flex gap-2">
+            <div className="space-y-1.5 flex-1">
+              <div className="flex gap-2 flex-wrap">
                 <label
                   htmlFor="buyer-profile-photo"
                   className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border text-xs font-semibold cursor-pointer hover:bg-muted"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  {photoLoading ? 'Uploading…' : photoBase64 ? 'Change photo' : 'Upload photo'}
+                  {photoLoading ? 'Reading…' : (pendingPhoto !== undefined ? pendingPhoto : photoBase64) ? 'Change photo' : 'Upload photo'}
                 </label>
-                {photoBase64 ? (
+                {(pendingPhoto !== undefined ? pendingPhoto : photoBase64) ? (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={photoLoading}
-                    onClick={() => void handleRemovePhoto()}
+                    disabled={photoLoading || photoSaving}
+                    onClick={handleRemovePhoto}
                     className="h-8 text-xs"
                   >
                     <X className="w-3.5 h-3.5 mr-1" /> Remove
                   </Button>
+                ) : null}
+                {pendingPhoto !== undefined ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={photoSaving}
+                      onClick={() => void handleSavePhoto()}
+                      className="h-8 text-xs"
+                    >
+                      {photoSaving ? 'Saving…' : 'Save'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={photoSaving}
+                      onClick={() => setPendingPhoto(undefined)}
+                      className="h-8 text-xs"
+                    >
+                      Cancel
+                    </Button>
+                  </>
                 ) : null}
               </div>
               <Input
@@ -239,6 +280,7 @@ export function BuyerProfileDialog({ open, onOpenChange }: { open: boolean; onOp
                 onChange={(e) => void handlePhotoChange(e)}
                 className="sr-only w-px h-px"
               />
+              {photoMessage ? <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">{photoMessage}</p> : null}
               {photoError ? <p className="text-[11px] text-rose-500 font-medium">{photoError}</p> : null}
             </div>
           </div>
