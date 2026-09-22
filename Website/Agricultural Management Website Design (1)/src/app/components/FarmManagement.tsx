@@ -977,7 +977,7 @@ export function FarmManagement() {
                     label="Status"
                     value={coffeeForm.status}
                     onChange={(val) => setCoffeeForm({ ...coffeeForm, status: val })}
-                    options={['excellent', 'healthy', 'monitoring', 'critical']}
+                    options={['excellent', 'healthy']}
                     selectClassName={SELECT_CLASS}
                     otherPlaceholder="Type custom status..."
                   />
