@@ -70,7 +70,6 @@ import { sanitizePhoneInput, workerRecordToUi } from '../lib/workerUi';
 import {
   emptyCoffeeField,
   emptyIrrigationSystem,
-  emptyPestControlLog,
   newFarmEntityId,
 } from '../lib/farmOpsDefaults';
 import type {
@@ -152,14 +151,11 @@ export function FarmManagement() {
   const [sprinklerAddSection, setSprinklerAddSection] = useState('');
   const [sprinklerAddCount, setSprinklerAddCount] = useState(0);
   const [sprinklerAddCoverage, setSprinklerAddCoverage] = useState('100%');
-  const [pestDialogOpen, setPestDialogOpen] = useState(false);
-  const [pestEditIndex, setPestEditIndex] = useState<number | null>(null);
   const [previewPestPhoto, setPreviewPestPhoto] = useState<string | null>(null);
   const [pestSearchQuery, setPestSearchQuery] = useState('');
   const [pestStatusFilter, setPestStatusFilter] = useState<'All' | 'Pending' | 'Under Treatment' | 'Resolved'>('All');
   const [coffeeForm, setCoffeeForm] = useState<CoffeeFieldRecord | null>(null);
   const [irrigationForm, setIrrigationForm] = useState<IrrigationSystemRecord | null>(null);
-  const [pestForm, setPestForm] = useState<PestControlRecord | null>(null);
 
   const filteredPestControlLogs = useMemo(() => {
     let list = [...(state.pestControlLogs || [])].sort((a, b) => {
@@ -475,7 +471,6 @@ export function FarmManagement() {
 
   const isAddingCoffee = coffeeDialogOpen && coffeeEditIndex === null;
   const isAddingIrrigation = irrigationDialogOpen && irrigationEditIndex === null;
-  const isAddingPest = pestDialogOpen && pestEditIndex === null;
 
   const pendingTasks = state.tasks.filter(
     (t) => t.status === 'pending' || t.status === 'in-progress',
@@ -694,65 +689,6 @@ export function FarmManagement() {
       );
       if (ok) setDeleteSprinklerTarget(null);
     }
-  };
-
-  const closePestDialog = () => {
-    setPestDialogOpen(false);
-    setPestEditIndex(null);
-    setPestForm(null);
-  };
-
-  const handlePestPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (pestForm) {
-        setPestForm({ ...pestForm, photoUrl: String(reader.result) });
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const openAddPest = () => {
-    setPestEditIndex(null);
-    setPestForm(emptyPestControlLog());
-    setPestDialogOpen(true);
-  };
-
-  const openEditPest = (index: number) => {
-    const record = pestControlLogs[index];
-    if (!record) return;
-    setPestEditIndex(index);
-    setPestForm({ ...record });
-    setPestDialogOpen(true);
-  };
-
-  const savePestLog = async () => {
-    if (!pestForm?.issue.trim()) {
-      showSaveError('Issue type is required.');
-      return;
-    }
-    if (!pestForm?.field.trim()) {
-      showSaveError('Farm zone selection is required.');
-      return;
-    }
-
-    const record = {
-      ...pestForm,
-      issue: pestForm.issue.trim(),
-      field: pestForm.field.trim(),
-    };
-    const ok = await runSave('Pest control log', () =>
-      updateState((prev) => ({
-        ...prev,
-        pestControlLogs:
-          pestEditIndex === null
-            ? [...prev.pestControlLogs, record]
-            : prev.pestControlLogs.map((p, i) => (i === pestEditIndex ? record : p)),
-      })),
-    );
-    if (ok) closePestDialog();
   };
 
   const removePestLog = async (index: number) => {
@@ -1269,91 +1205,6 @@ export function FarmManagement() {
             >
               <AlertTriangle className="w-4 h-4" />
               {saving ? 'Submitting…' : 'Submit Worker Report'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={pestDialogOpen} onOpenChange={(o) => { if (!o) closePestDialog(); else setPestDialogOpen(true); }}>
-        <DialogContent className="sm:max-w-lg bg-card border-border/70">
-          <DialogHeader>
-            <DialogTitle>Assign Pest Treatment & Review</DialogTitle>
-            <DialogDescription>
-              Review the worker's photographic report and assign a treatment prescription.
-            </DialogDescription>
-          </DialogHeader>
-          {pestForm ? (
-            <div className="grid gap-3 py-2">
-              <div className="bg-muted/40 rounded-xl p-3.5 space-y-2 border border-border/60">
-                <div className="flex items-center justify-between text-xs font-bold text-foreground">
-                  <span>Worker: {pestForm.reportedBy || 'Field Worker'}</span>
-                  <span className="font-mono text-muted-foreground">{pestForm.date} {pestForm.time ? `· ${pestForm.time}` : ''}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="col-span-2"><span className="text-muted-foreground">Section:</span> <strong className="text-foreground">{pestForm.field || '—'}</strong></div>
-                  <div className="col-span-2"><span className="text-muted-foreground">Diagnosed Issue:</span> <strong className="text-rose-500">{pestForm.issue || '—'}</strong></div>
-                </div>
-
-                {pestForm.notes && (
-                  <p className="text-xs text-muted-foreground bg-background/60 p-2.5 rounded-lg border border-border/50">
-                    <strong>Worker observations:</strong> {pestForm.notes}
-                  </p>
-                )}
-
-                {(pestForm.photoUrl || pestForm.photoBase64) && (
-                  <div className="mt-2 flex items-center gap-3">
-                    <img
-                      src={pestForm.photoUrl || pestForm.photoBase64}
-                      alt={pestForm.issue}
-                      className="w-20 h-20 rounded-xl object-cover border border-border/70 shadow-xs cursor-pointer"
-                      onClick={() => setPreviewPestPhoto(pestForm.photoUrl || pestForm.photoBase64 || null)}
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      <p className="font-semibold text-foreground">Tree Photo Attached</p>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewPestPhoto(pestForm.photoUrl || pestForm.photoBase64 || null)}
-                        className="text-amber-500 underline text-[11px] cursor-pointer"
-                      >
-                        Click to view full image
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="pest-treatment-plan" className="text-xs font-bold text-foreground">
-                  Treatment / Action Prescription
-                </Label>
-                <Input
-                  id="pest-treatment-plan"
-                  value={pestForm.treatment || ''}
-                  onChange={(e) => setPestForm({ ...pestForm, treatment: e.target.value })}
-                  placeholder="e.g., Spray Organic Neem Oil extract or Copper-based fungicide..."
-                  className="bg-background border-border/80 h-10 rounded-xl text-xs"
-                />
-              </div>
-
-              <SelectWithOther
-                label="Treatment Status"
-                value={pestForm.status}
-                onChange={(val) => setPestForm({ ...pestForm, status: val })}
-                options={[
-                  { value: 'Pending', label: 'Pending Review' },
-                  { value: 'Under Treatment', label: 'Under Treatment' },
-                  { value: 'Monitoring', label: 'Monitoring' },
-                  { value: 'Resolved', label: 'Resolved' },
-                ]}
-                selectClassName={SELECT_CLASS}
-                otherPlaceholder="Type custom status..."
-              />
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={closePestDialog}>Cancel</Button>
-            <Button className="bg-[#2d5016] text-white" disabled={saving} onClick={() => void savePestLog()}>
-              {saving ? 'Saving…' : 'Save Prescription'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2165,14 +2016,6 @@ export function FarmManagement() {
                         <div className="flex flex-wrap items-center justify-between text-[10px] text-muted-foreground font-mono pt-2 border-t border-border/40 gap-2">
                           <span>Reported: {record.date}{record.time ? ` · ${record.time}` : ''}{record.reportedBy ? ` • Worker: ${record.reportedBy}` : ''}</span>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              type="button"
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-accent/15 text-accent text-[10px] font-bold hover:bg-accent/25 transition-colors cursor-pointer"
-                              onClick={() => openEditPest(originalIndex >= 0 ? originalIndex : 0)}
-                            >
-                              <Edit2 className="w-3 h-3" />
-                              {record.treatment ? 'Update Treatment' : 'Assign Treatment'}
-                            </button>
                             {!isResolved && (
                               <button
                                 type="button"
