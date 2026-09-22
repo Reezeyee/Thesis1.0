@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, Banknote, CheckCircle2, Receipt, Smartphone, Wallet } from 'lucide-react';
-import type { PayrollPaymentMethod } from '../types/appState';
+import { AlertCircle, CheckCircle2, MinusCircle, Plus, Smartphone, Wallet } from 'lucide-react';
+import type { PayrollDeductionLine, PayrollPaymentMethod } from '../types/appState';
 import { payrollPaymentMethodLabel } from '../lib/profitUi';
 import { formatCurrency } from '../lib/currencyFormat';
 import {
@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { Button } from './ui/button';
+import { Input } from './ui/input';
 
 export type PayrollPayTarget = {
   workerId: number;
@@ -40,7 +41,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   saving?: boolean;
-  onComplete: (method: PayrollPaymentMethod) => Promise<{ slipRef: string } | null>;
+  onComplete: (method: PayrollPaymentMethod, deductions: PayrollDeductionLine[]) => Promise<{ slipRef: string } | null>;
 };
 
 const stepMotion = {
@@ -55,6 +56,9 @@ export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = fals
   const [method, setMethod] = useState<PayrollPaymentMethod>('cash');
   const [slipRef, setSlipRef] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
+  const [deductions, setDeductions] = useState<PayrollDeductionLine[]>([]);
+  const [draftReason, setDraftReason] = useState('');
+  const [draftAmount, setDraftAmount] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -62,16 +66,34 @@ export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = fals
       setMethod('cash');
       setSlipRef('');
       setSubmitting(false);
+      setDeductions([]);
+      setDraftReason('');
+      setDraftAmount('');
     }
   }, [open, target]);
 
   const busy = saving || submitting;
 
+  const deductionsTotal = deductions.reduce((sum, d) => sum + d.amount, 0);
+  const netAmount = target ? Math.max(0, target.amount - deductionsTotal) : 0;
+
+  const addDeduction = () => {
+    const amount = Number.parseFloat(draftAmount.replace(/[₱,\s]/g, ''));
+    if (!draftReason.trim() || !Number.isFinite(amount) || amount <= 0) return;
+    setDeductions((prev) => [...prev, { reason: draftReason.trim(), amount }]);
+    setDraftReason('');
+    setDraftAmount('');
+  };
+
+  const removeDeduction = (index: number) => {
+    setDeductions((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const submitPayment = async (selected: PayrollPaymentMethod) => {
     if (!target || busy) return;
     setMethod(selected);
     setSubmitting(true);
-    const result = await onComplete(selected);
+    const result = await onComplete(selected, deductions);
     setSubmitting(false);
     if (!result) return;
     setSlipRef(result.slipRef);
@@ -117,8 +139,73 @@ export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = fals
                     <p className="font-bold text-foreground font-heading">{target.name}</p>
                   </div>
                   <p className="text-xl font-bold font-mono text-emerald-500">
-                    {formatCurrency(target.amount)}
+                    {formatCurrency(netAmount)}
                   </p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-foreground">Deductions (optional)</p>
+                  <p className="text-[11px] text-muted-foreground -mt-1.5">
+                    Docked from this paycheck -- e.g. broken equipment, a cash advance.
+                  </p>
+                  {deductions.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {deductions.map((d, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-1.5"
+                        >
+                          <span className="text-xs text-foreground truncate">{d.reason}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs font-mono font-semibold text-rose-500">
+                              -{formatCurrency(d.amount)}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => removeDeduction(i)}
+                              className="text-muted-foreground hover:text-rose-500 disabled:opacity-50 cursor-pointer"
+                            >
+                              <MinusCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="flex gap-2">
+                    <Input
+                      value={draftReason}
+                      onChange={(e) => setDraftReason(e.target.value)}
+                      placeholder="Reason, e.g. Broke irrigation valve"
+                      disabled={busy}
+                      className="h-8 text-xs flex-1"
+                    />
+                    <Input
+                      value={draftAmount}
+                      onChange={(e) => setDraftAmount(e.target.value)}
+                      placeholder="₱"
+                      inputMode="decimal"
+                      disabled={busy}
+                      className="h-8 text-xs w-20"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || !draftReason.trim() || !draftAmount.trim()}
+                      onClick={addDeduction}
+                      className="h-8 px-2 shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                  {deductions.length > 0 ? (
+                    <div className="flex justify-between text-xs pt-1 border-t border-border/50">
+                      <span className="text-muted-foreground">Gross {formatCurrency(target.amount)} - Deductions {formatCurrency(deductionsTotal)}</span>
+                      <span className="font-semibold text-foreground">Net {formatCurrency(netAmount)}</span>
+                    </div>
+                  ) : null}
                 </div>
               </motion.div>
             ) : null}
@@ -158,7 +245,7 @@ export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = fals
                 </div>
                 <div>
                   <p className="text-base font-bold font-heading text-foreground">
-                    {formatCurrency(target.amount)} paid
+                    {formatCurrency(netAmount)} paid
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {target.name} · {target.periodLabel}
@@ -177,6 +264,18 @@ export function PayrollPayFlowDialog({ target, open, onOpenChange, saving = fals
                     <span className="text-muted-foreground">Paycheck Date:</span>
                     <span className="font-medium text-foreground">{target.paycheckDateLabel}</span>
                   </div>
+                  {deductions.length > 0 ? (
+                    <>
+                      <div className="flex justify-between pt-1 border-t border-border/50">
+                        <span className="text-muted-foreground">Gross:</span>
+                        <span className="font-medium text-foreground">{formatCurrency(target.amount)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Deductions:</span>
+                        <span className="font-medium text-rose-500">-{formatCurrency(deductionsTotal)}</span>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </motion.div>
             ) : null}

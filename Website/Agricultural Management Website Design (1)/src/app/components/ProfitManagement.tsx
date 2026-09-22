@@ -70,7 +70,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { LUZON_BBOX } from '../data/luzonAddressCatalog';
 import { PayrollPayFlowDialog, type PayrollPayTarget } from './PayrollPayFlowDialog';
-import type { PayrollPaymentMethod } from '../types/appState';
+import type { PayrollPaymentMethod, PayrollDeductionLine } from '../types/appState';
 import { payrollPaymentMethodLabel } from '../lib/profitUi';
 
 /**
@@ -223,14 +223,16 @@ export function ProfitManagement() {
   ).length;
 
   const slipForWorker = (workerName: string) => {
-    const row = state.payroll.find(
+    const paidRows = state.payroll.filter(
       (p) => p.workerName === workerName && p.period === currentPeriod && p.paid,
     );
+    const row = paidRows[0];
     if (!row) return null;
     return {
       slipRef: row.receiptNumber?.trim() || row.workerId?.trim() || `PAY-${workerName.replace(/\s+/g, '-')}`,
       recordedAtLabel: row.date ?? '—',
       paymentMethod: row.paymentMethod ?? null,
+      deductions: paidRows.flatMap((p) => p.deductions ?? []),
     };
   };
 
@@ -249,7 +251,7 @@ export function ProfitManagement() {
     setPayFlowOpen(true);
   };
 
-  const completePayWithMethod = async (method: PayrollPaymentMethod) => {
+  const completePayWithMethod = async (method: PayrollPaymentMethod, deductions: PayrollDeductionLine[] = []) => {
     if (!currentDue || !payFlowTarget || !payrollUnlocked) return null;
     const row = payrollRoster.find((w) => w.id === payFlowTarget.workerId);
     if (!row || isWorkerPaidForPeriod(state.payroll, row.name, currentPeriod)) return null;
@@ -270,9 +272,13 @@ export function ProfitManagement() {
         let nextAttendance = [...prev.attendance];
 
         if (unpaidRecords.length > 0) {
-          // 1. Mark existing unpaid records as paid
+          // 1. Mark existing unpaid records as paid -- any deductions go on the first line touched
+          // (a flat one-time charge like a broken tool, not something to split per line).
+          let deductionsAssigned = false;
           nextPayroll = nextPayroll.map((p) => {
             if (p.workerName === worker.name && p.period === currentPeriod && !p.paid) {
+              const lineDeductions = !deductionsAssigned && deductions.length > 0 ? deductions : undefined;
+              deductionsAssigned = deductionsAssigned || deductions.length > 0;
               return {
                 ...p,
                 paid: true,
@@ -280,6 +286,7 @@ export function ProfitManagement() {
                 paymentMethod: method,
                 workerId: worker.workerId?.trim() || '',
                 receiptNumber: slipRef,
+                ...(lineDeductions ? { deductions: lineDeductions } : {}),
               };
             }
             return p;
@@ -306,7 +313,7 @@ export function ProfitManagement() {
           );
 
           if (unlinkedAttendance.length > 0) {
-            const newPayrollLines = unlinkedAttendance.map((a) => {
+            const newPayrollLines = unlinkedAttendance.map((a, idx) => {
               const rate = hourlyRateForWorkerRole(worker.roleRate);
               const hoursWorked = a.hoursWorked ?? 0;
               return {
@@ -323,6 +330,8 @@ export function ProfitManagement() {
                 dailyRate: 0,
                 linkedAttendanceId: a.attendanceId || '',
                 paymentMethod: method,
+                // Any deductions go on the first new line -- a flat one-time charge, not split per line.
+                ...(idx === 0 && deductions.length > 0 ? { deductions } : {}),
               };
             });
 
@@ -347,7 +356,7 @@ export function ProfitManagement() {
               slipRef,
               method
             );
-            nextPayroll = [...nextPayroll, fallbackRecord];
+            nextPayroll = [...nextPayroll, { ...fallbackRecord, ...(deductions.length > 0 ? { deductions } : {}) }];
           }
         }
 
@@ -714,6 +723,15 @@ export function ProfitManagement() {
                           </p>
                         ) : null}
                         <p>Recorded {slip.recordedAtLabel}</p>
+                        {slip.deductions.length > 0 ? (
+                          <div className="pt-1 mt-1 border-t border-border/50 space-y-0.5">
+                            {slip.deductions.map((d, i) => (
+                              <p key={i} className="text-rose-500">
+                                -{formatCurrency(d.amount)} {d.reason}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     ) : row.status === 'inactive' ? (
                       <p className="text-xs text-muted-foreground">Inactive employee — no current payment required.</p>

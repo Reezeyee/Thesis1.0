@@ -337,6 +337,14 @@ export interface PayrollRecord {
    */
   regularHours?: number | null;
   overtimeHours?: number | null;
+  /** Reasons pay was docked for this line (e.g. broken equipment, a cash advance) -- see payrollLineAmount, which subtracts these from gross. Added at payment time in ProfitManagement's Pay flow. */
+  deductions?: PayrollDeductionLine[];
+}
+
+/** A single reason + amount docked from a worker's payroll line (e.g. "Broke irrigation valve" -- ₱500). */
+export interface PayrollDeductionLine {
+  reason: string;
+  amount: number;
 }
 
 export interface CoffeeFieldRecord {

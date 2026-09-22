@@ -381,7 +381,15 @@ data class PayrollRecord(
      * (or rows entered manually without a split), which keep the flat hourlyRate x hoursWorked amount.
      */
     val regularHours: Double? = null,
-    val overtimeHours: Double? = null
+    val overtimeHours: Double? = null,
+    /** Set by the website's Pay flow (e.g. broken equipment charged against pay); pass-through only -- see [FarmFinance.payrollLineAmount], which subtracts these from gross. */
+    val deductions: List<PayrollDeductionLine>? = null
+)
+
+/** A single reason + amount docked from a worker's payroll line (e.g. "Broke irrigation valve" -- ₱500). Mirrors the website's PayrollDeductionLine in types/appState.ts. */
+data class PayrollDeductionLine(
+    val reason: String = "",
+    val amount: Int = 0
 )
 
 data class CoffeeFieldRecord(

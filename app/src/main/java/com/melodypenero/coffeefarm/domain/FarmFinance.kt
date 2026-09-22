@@ -53,28 +53,31 @@ object FarmFinance {
         return (numeric.toDoubleOrNull() ?: 0.0).roundToInt()
     }
 
+    /** Sum of every deduction line on a payroll record (e.g. broken equipment charged against pay). */
+    fun payrollDeductionsTotal(p: PayrollRecord): Int = p.deductions?.sumOf { it.amount } ?: 0
+
     /**
      * Line total for display; for expenses only [payrollAmountIfPaid] is used.
      * When [PayrollRecord.regularHours] / [PayrollRecord.overtimeHours] are present, overtime
      * hours are paid at hourlyRate x [OVERTIME_MULTIPLIER]; older rows without a split fall back
-     * to the flat hourlyRate x hoursWorked (or dailyRate x daysWorked) behavior unchanged.
+     * to the flat hourlyRate x hoursWorked (or dailyRate x daysWorked) behavior unchanged. Any
+     * deduction lines (see [payrollDeductionsTotal]) are then subtracted, floored at 0.
      */
     fun payrollLineAmount(p: PayrollRecord): Int {
         val regular = p.regularHours
         val overtime = p.overtimeHours
         val hasSplit = (regular != null && regular > 0.0) || (overtime != null && overtime > 0.0)
-        if (p.hourlyRate > 0.0 && hasSplit) {
-            val reg = regular ?: 0.0
-            val ot = overtime ?: 0.0
-            return (p.hourlyRate * reg + p.hourlyRate * OVERTIME_MULTIPLIER * ot).roundToInt()
+        val gross = when {
+            p.hourlyRate > 0.0 && hasSplit -> {
+                val reg = regular ?: 0.0
+                val ot = overtime ?: 0.0
+                (p.hourlyRate * reg + p.hourlyRate * OVERTIME_MULTIPLIER * ot).roundToInt()
+            }
+            p.hourlyRate > 0.0 && p.hoursWorked > 0.0 -> (p.hourlyRate * p.hoursWorked).roundToInt()
+            p.dailyRate > 0.0 && p.daysWorked > 0 -> (p.dailyRate * p.daysWorked).roundToInt()
+            else -> p.amount
         }
-        if (p.hourlyRate > 0.0 && p.hoursWorked > 0.0) {
-            return (p.hourlyRate * p.hoursWorked).roundToInt()
-        }
-        if (p.dailyRate > 0.0 && p.daysWorked > 0) {
-            return (p.dailyRate * p.daysWorked).roundToInt()
-        }
-        return p.amount
+        return (gross - payrollDeductionsTotal(p)).coerceAtLeast(0)
     }
 
     /** True for the Maintenance role. Maintenance workers get the repair-jobs screens in the app. */

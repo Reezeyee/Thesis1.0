@@ -88,25 +88,34 @@ export function formatHoursBreakdownFromTotal(totalHours: number | null | undefi
   return formatHoursBreakdown(split.regularHours, split.overtimeHours);
 }
 
+/** Sum of every deduction line on a payroll record (e.g. broken equipment charged against pay). */
+export function payrollDeductionsTotal(p: PayrollRecord): number {
+  return (p.deductions ?? []).reduce((sum, d) => sum + (d.amount || 0), 0);
+}
+
 /**
  * When PayrollRecord.regularHours / overtimeHours are present, overtime hours are paid at
  * hourlyRate x OVERTIME_MULTIPLIER; older rows without a split fall back to the flat
- * hourlyRate x hoursWorked (or dailyRate x daysWorked) behavior unchanged.
+ * hourlyRate x hoursWorked (or dailyRate x daysWorked) behavior unchanged. Any deduction lines
+ * (see payrollDeductionsTotal) are then subtracted, floored at 0 -- this is the actual net amount
+ * disbursed and is what appears everywhere payroll cost is shown (roster, Transaction history,
+ * accrual totals).
  */
 export function payrollLineAmount(p: PayrollRecord): number {
   const regular = p.regularHours;
   const overtime = p.overtimeHours;
   const hasSplit = (regular ?? 0) > 0 || (overtime ?? 0) > 0;
+  let gross: number;
   if ((p.hourlyRate ?? 0) > 0 && hasSplit) {
-    return Math.round((p.hourlyRate ?? 0) * (regular ?? 0) + (p.hourlyRate ?? 0) * OVERTIME_MULTIPLIER * (overtime ?? 0));
+    gross = Math.round((p.hourlyRate ?? 0) * (regular ?? 0) + (p.hourlyRate ?? 0) * OVERTIME_MULTIPLIER * (overtime ?? 0));
+  } else if ((p.hourlyRate ?? 0) > 0 && (p.hoursWorked ?? 0) > 0) {
+    gross = Math.round((p.hourlyRate ?? 0) * (p.hoursWorked ?? 0));
+  } else if ((p.dailyRate ?? 0) > 0 && (p.daysWorked ?? 0) > 0) {
+    gross = Math.round((p.dailyRate ?? 0) * (p.daysWorked ?? 0));
+  } else {
+    gross = p.amount;
   }
-  if ((p.hourlyRate ?? 0) > 0 && (p.hoursWorked ?? 0) > 0) {
-    return Math.round((p.hourlyRate ?? 0) * (p.hoursWorked ?? 0));
-  }
-  if ((p.dailyRate ?? 0) > 0 && (p.daysWorked ?? 0) > 0) {
-    return Math.round((p.dailyRate ?? 0) * (p.daysWorked ?? 0));
-  }
-  return p.amount;
+  return Math.max(0, gross - payrollDeductionsTotal(p));
 }
 
 export function totalPayrollExpenses(payroll: PayrollRecord[]): number {
