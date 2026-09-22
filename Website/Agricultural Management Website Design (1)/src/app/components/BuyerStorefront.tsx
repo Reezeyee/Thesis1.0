@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShoppingCart, LogOut, Coffee, Package, Clock, CheckCircle2, XCircle, Store, Loader2, Banknote, Wallet } from 'lucide-react';
+import { ShoppingCart, LogOut, Coffee, Package, Clock, CheckCircle2, XCircle, Store, Loader2, Banknote, Wallet, UserCircle } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { COLLECTIONS } from '../firebase/collections';
@@ -16,6 +16,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { OrderThankYou } from './OrderThankYou';
+import { BuyerProfileDialog } from './BuyerProfileDialog';
 
 /** "Cash at pickup", paid when the buyer collects the order at the farm. */
 function paymentLabel(payment: BuyerPaymentMethod): string {
@@ -39,6 +40,7 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
   // Set when an order goes through; drives the thank-you popup (see OrderThankYou).
   const [thankYouOpen, setThankYouOpen] = useState(false);
   const closeThankYou = useCallback(() => setThankYouOpen(false), []);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<BuyerPaymentMethod>('cash');
   const [phone, setPhone] = useState('');
   // Phone already saved on the buyer's profile, so checkout only writes it back when it changed
@@ -272,11 +274,16 @@ export function BuyerStorefront({ session, onSignOut }: { session: AuthSession; 
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground hidden sm:inline">{session.displayName || session.email}</span>
+          <Button onClick={() => setProfileOpen(true)} variant="outline" className="h-9 rounded-xl text-xs font-semibold cursor-pointer">
+            <UserCircle className="w-4 h-4 mr-1.5" /> My Profile
+          </Button>
           <Button onClick={onSignOut} variant="outline" className="h-9 rounded-xl text-xs font-semibold cursor-pointer">
             <LogOut className="w-4 h-4 mr-1.5" /> Sign Out
           </Button>
         </div>
       </header>
+
+      <BuyerProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
 
       <main className="p-4 sm:p-8 max-w-5xl mx-auto space-y-8">
         <section>

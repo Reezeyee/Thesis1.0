@@ -54,6 +54,8 @@ export function authErrorMessage(err: unknown, fallback: string): string {
       return 'An account with this email already exists. Try signing in instead.';
     case 'auth/weak-password':
       return 'Password is too weak. Use at least 6 characters.';
+    case 'auth/requires-recent-login':
+      return 'For your security, re-enter your current password to confirm this change.';
     case 'auth/api-key-not-valid.-please-pass-a-valid-api-key.':
     case 'auth/invalid-api-key':
       return 'The site is misconfigured (invalid Firebase API key). Please contact the administrator.';

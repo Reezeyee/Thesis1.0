@@ -10,12 +10,16 @@ import {
 } from 'react';
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
+  updatePassword,
   updateProfile,
+  verifyBeforeUpdateEmail,
   type User,
 } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -79,6 +83,19 @@ type AuthContextValue = {
   resendVerificationEmail: () => Promise<void>;
   /** Firebase doesn't push emailVerified changes live -- re-fetches the user record and updates the session. */
   refreshEmailVerified: () => Promise<void>;
+  /** Buyer self-service profile editing (name/email/password/photo) -- see BuyerProfileDialog. */
+  updateDisplayName: (displayName: string) => Promise<void>;
+  /** Stores a resized photo as a base64 string on the buyer's own users/{uid} doc (no Firebase Storage in this project -- see AttendanceRecord.faceSnapshotBase64 for the same pattern). Pass null to remove it. */
+  updateBuyerPhoto: (photoBase64: string | null) => Promise<void>;
+  /**
+   * Sends a confirmation link to `newEmail`; the Auth email only actually changes once the buyer
+   * clicks it (verifyBeforeUpdateEmail), so `session.email` won't update immediately. Requires the
+   * buyer's current password to reauthenticate first -- Firebase rejects email/password changes
+   * otherwise unless the sign-in was very recent (auth/requires-recent-login).
+   */
+  changeEmail: (newEmail: string, currentPassword: string) => Promise<void>;
+  /** Requires the buyer's current password to reauthenticate first, same as changeEmail. */
+  changePassword: (newPassword: string, currentPassword: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -244,6 +261,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession((prev) => (prev ? { ...prev, emailVerified: refreshed.emailVerified } : prev));
   }, []);
 
+  const updateDisplayName = useCallback(async (displayName: string) => {
+    setError(null);
+    const current = auth.currentUser;
+    if (!current) throw new Error('You must be signed in.');
+    const trimmed = normalizeName(displayName);
+    if (!isValidPersonName(trimmed)) {
+      setError(NAME_ERROR_MESSAGE);
+      throw new Error(NAME_ERROR_MESSAGE);
+    }
+    try {
+      await updateProfile(current, { displayName: trimmed });
+      await setDoc(doc(db, COLLECTIONS.USERS, current.uid), { displayName: trimmed }, { merge: true });
+      setSession((prev) => (prev ? { ...prev, displayName: trimmed } : prev));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update your name.');
+      throw err;
+    }
+  }, []);
+
+  const updateBuyerPhoto = useCallback(async (photoBase64: string | null) => {
+    setError(null);
+    const current = auth.currentUser;
+    if (!current) throw new Error('You must be signed in.');
+    try {
+      await setDoc(doc(db, COLLECTIONS.USERS, current.uid), { photoBase64 }, { merge: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update your photo.');
+      throw err;
+    }
+  }, []);
+
+  const changeEmail = useCallback(async (newEmail: string, currentPassword: string) => {
+    setError(null);
+    const current = auth.currentUser;
+    if (!current || !current.email) throw new Error('You must be signed in.');
+    const trimmed = newEmail.trim().toLowerCase();
+    if (!trimmed.includes('@')) {
+      setError('Enter a valid email address.');
+      throw new Error('Enter a valid email address.');
+    }
+    try {
+      await reauthenticateWithCredential(current, EmailAuthProvider.credential(current.email, currentPassword));
+      await verifyBeforeUpdateEmail(current, trimmed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update your email.');
+      throw err;
+    }
+  }, []);
+
+  const changePassword = useCallback(async (newPassword: string, currentPassword: string) => {
+    setError(null);
+    const current = auth.currentUser;
+    if (!current || !current.email) throw new Error('You must be signed in.');
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters.');
+      throw new Error('Password must be at least 6 characters.');
+    }
+    try {
+      await reauthenticateWithCredential(current, EmailAuthProvider.credential(current.email, currentPassword));
+      await updatePassword(current, newPassword);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update your password.');
+      throw err;
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
     setSession(null);
@@ -261,6 +344,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resendVerificationEmail,
       refreshEmailVerified,
       resetPassword,
+      updateDisplayName,
+      updateBuyerPhoto,
+      changeEmail,
+      changePassword,
     }),
     [
       user,
@@ -273,6 +360,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resendVerificationEmail,
       refreshEmailVerified,
       resetPassword,
+      updateDisplayName,
+      updateBuyerPhoto,
+      changeEmail,
+      changePassword,
     ],
   );
 
