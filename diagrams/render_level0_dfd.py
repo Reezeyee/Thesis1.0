@@ -1,176 +1,178 @@
-"""Generates the Level 0 DFD (Figure 3) as SVG. Run: python3 diagrams/render_level0_dfd.py"""
+"""Generates the Level 0 DFD (Figure 3) as SVG, styled like the thesis draft figure.
+Run: python3 diagrams/render_level0_dfd.py"""
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 OUT = Path(__file__).with_name("level0_dfd_system_modules.svg")
+FONT = "Inter, Arial, Helvetica, sans-serif"
 
-# External entities (left side, each with its own vertical line and color)
-ENT = {
-    "A": ("Administrator\n(Web Portal)", "#1f5fa8"),
-    "W": ("Farm Worker /\nMaintenance\n(Mobile App)", "#2e7d32"),
-    "O": ("Farm Owner\n(Web, read-only)", "#7b3fa0"),
-    "B": ("Buyer\n(Web / Mobile)", "#c25400"),
-}
-ENT_ORDER = ["A", "W", "O", "B"]
+# Vertical line (bus) x-position of each external entity
+BUS = {"A": 55, "O": 95, "W": 150, "B": 215}
 
-# Each process: (id, name, left flows [(entity, direction, label)], right side objects)
-# direction ">" = entity to process, "<" = process to entity
-# right side: (kind, code, name, in_label, out_label); kind "store" or "entity"
+# (id, name, left flows [(entity, ">" into process | "<" out of process, label)], right objects)
+# right object: (kind, code, name, label to object, label back to process)
 P = [
-    ("1.0", "Registration and\nAccount Management", [
-        ("A", ">", "Worker accounts, roles, reset approvals"),
-        ("A", "<", "User list, attendance, leave & reset requests"),
-        ("W", ">", "Login credentials, clock in/out, leave"),
-        ("W", "<", "Account access, attendance records"),
+    ("1.0", "Registration\nand Account\nManagement", [
+        ("A", ">", "User accounts, roles"),
+        ("A", "<", "User list, reset requests"),
+        ("W", ">", "Login credentials, attendance"),
+        ("W", "<", "Account access"),
         ("O", ">", "Login credentials"),
         ("O", "<", "Account access"),
-        ("B", ">", "Registration details, location, login"),
-        ("B", "<", "Email verification, account status"),
-    ], [("store", "D1", "Users", "User profile, role, attendance", "Account status, profile data")]),
+        ("B", ">", "Registration, login details"),
+        ("B", "<", "Account status"),
+    ], [("store", "D1", "Users", "User information", "Account status, profile data")]),
     ("2.0", "Image Classification\n(Ripeness and Bean)", [
-        ("W", ">", "Cherry images, tree / section"),
-        ("W", "<", "Ripeness & bean classification result"),
+        ("W", ">", "Cherry images"),
+        ("W", "<", "Classification result"),
         ("A", ">", "Batch details"),
-        ("A", "<", "Scan history, batch & grade summaries"),
-    ], [("store", "D2", "Classification\nRecords", "Scan & grade results", "Classification history"),
-        ("entity", "", "Roboflow\nDetection API", "Cherry image", "Ripeness detections")]),
+        ("A", "<", "Scan and grade summaries"),
+    ], [("store", "D2", "Classification\nDataset", "Image data", "Classification result"),
+        ("entity", "", "Roboflow API", "Cherry image", "Ripeness detections")]),
     ("3.0", "Farm Management", [
-        ("A", ">", "Sections, trees, harvest schedules, tasks"),
-        ("A", "<", "Farm records, field reports"),
-        ("W", ">", "Harvest readiness, pest/disease, irrigation reports"),
-        ("W", "<", "Farm sections, schedules, report status"),
+        ("A", ">", "Farm layout, trees, schedules, tasks"),
+        ("A", "<", "Farm records"),
+        ("W", ">", "Harvest, pest, disease, irrigation reports"),
+        ("W", "<", "Farm schedules, report status"),
     ], [("store", "D3", "Farm Records", "Farm management data", "Farm details")]),
     ("4.0", "Inventory and\nEquipment Management", [
-        ("A", ">", "Equipment, supplies, repair job assignment"),
-        ("A", "<", "Inventory status, condition & damage reports"),
-        ("W", ">", "Borrow/return, supply use, condition, repair progress"),
-        ("W", "<", "Equipment & supply status, assigned repair jobs"),
-    ], [("store", "D4", "Inventory &\nEquipment", "Inventory & repair data", "Equipment status")]),
+        ("A", ">", "Equipment, supplies, repair assignment"),
+        ("A", "<", "Inventory status, damage reports"),
+        ("W", ">", "Equipment usage, repair progress"),
+        ("W", "<", "Equipment status, repair jobs"),
+    ], [("store", "D4", "Inventory &\nEquipment", "Inventory data", "Equipment status")]),
     ("5.0", "Buyers' Map", [
-        ("B", ">", "Buyer location, address"),
-        ("A", "<", "Nearby buyers map, distance, purchase totals"),
-    ], [("store", "D5", "Buyers", "Buyer location data", "Buyer details")]),
+        ("B", ">", "Buyer information, location"),
+        ("A", "<", "Nearby buyers list"),
+    ], [("store", "D5", "Buyers", "Buyer data", "Buyer details")]),
     ("6.0", "Profit and Sales\nManagement", [
-        ("A", ">", "Sales, expenses, payroll"),
-        ("A", "<", "Profit reports, financial dashboard"),
-        ("O", "<", "Profit & revenue reports (read-only)"),
+        ("A", ">", "Sales data, expenses, payroll"),
+        ("A", "<", "Profit reports"),
+        ("O", "<", "Profit and revenue reports"),
     ], [("store", "D6", "Profit Data", "Transaction data", "Sales and profit summary")]),
-    ("7.0", "Maintenance\n(Buyer Records & Orders)", [
-        ("B", ">", "Product orders (cart, checkout)"),
-        ("B", "<", "Product listings, order status, pickup"),
-        ("A", ">", "Buyer records, order status updates"),
-        ("A", "<", "Buyer records, purchase history, orders"),
-    ], [("store", "D7", "Buyer Orders", "Order & stock-hold data", "Updated records")]),
-    ("8.0", "Communication\n(SMS and Messages)", [
-        ("A", ">", "SMS broadcasts, message to owner"),
-        ("A", "<", "Worker replies, owner messages"),
+    ("7.0", "Maintenance", [
+        ("B", ">", "Product orders"),
+        ("B", "<", "Order status, pickup details"),
+        ("A", ">", "Buyer records, order updates"),
+        ("A", "<", "Buyer records, purchase history"),
+    ], [("store", "D7", "Maintenance", "Maintenance data", "Updated records")]),
+    ("8.0", "Communication", [
+        ("A", ">", "SMS broadcasts, messages"),
+        ("A", "<", "Worker and owner messages"),
         ("W", ">", "SMS messages"),
         ("W", "<", "Admin broadcasts"),
         ("O", ">", "Message to admin"),
         ("O", "<", "Admin messages"),
     ], [("store", "D8", "Messages", "Message data", "Message history")]),
     ("9.0", "Data and Sync", [
-        ("W", ">", "Offline records (queued)"),
+        ("W", ">", "Sync request, offline data"),
         ("W", "<", "Sync status"),
-        ("A", "<", "Database & sync health"),
+        ("A", "<", "Database and sync status"),
     ], [("store", "D9", "Local Data", "Offline data", "Synced data")]),
 ]
 
-# ---- geometry ----
-FONT = "Arial, Helvetica, sans-serif"
-BUS_X = {"A": 75, "W": 195, "O": 315, "B": 435}
-ENT_W, ENT_H, ENT_TOP = 116, 64, 20
-LABEL_X = 470
-PX, PW = 820, 250            # process box
-SX = 1380                    # store / right entity box x
-SW = 250
-ROW_GAP = 34
-FLOW_DY = 24
-width = SX + SW + 30
+LBL_L, PX, PW = 235, 560, 230      # label zone start, process box x / width
+SX, SW = 1010, 240                 # right column (stores / external entity)
+FLOW_DY, ROW_GAP, TOP = 28, 36, 150
+W_BOX = (102, 198)                 # worker box x-range (bus at 150)
 
 svg = []
-def text(x, y, s, size=13, anchor="start", weight="normal", fill="#111", style=""):
+def text(x, y, s, size=15, anchor="middle", weight="normal", italic=False):
     lines = s.split("\n")
+    st = ' font-style="italic"' if italic else ""
     for i, ln in enumerate(lines):
-        dy = (i - (len(lines) - 1) / 2) * (size * 1.2)
-        svg.append(f'<text x="{x}" y="{y + dy + size * 0.35:.1f}" font-family="{FONT}" font-size="{size}" '
-                   f'text-anchor="{anchor}" font-weight="{weight}" fill="{fill}" {style}>{escape(ln)}</text>')
+        dy = (i - (len(lines) - 1) / 2) * size * 1.2
+        svg.append(f'<text x="{x:.1f}" y="{y + dy + size * 0.35:.1f}" font-family="{FONT}" font-size="{size}" '
+                   f'text-anchor="{anchor}" font-weight="{weight}"{st}>{escape(ln)}</text>')
 
-def arrow(x1, y1, x2, y2, color="#111"):
-    svg.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" stroke-width="1.6" '
-               f'marker-end="url(#ah-{color[1:]})"/>')
+def line(x1, y1, x2, y2, arrow=False):
+    m = ' marker-end="url(#ah)"' if arrow else ""
+    svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#111" stroke-width="1.8"{m}/>')
 
-colors = {c for _, c in ENT.values()} | {"#111111"}
-defs = "".join(
-    f'<marker id="ah-{c[1:]}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" '
-    f'orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="{c}"/></marker>' for c in colors)
+def box(x, y, w, h, rx=0, sw=2.2):
+    svg.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="{rx}" fill="#fff" stroke="#111" stroke-width="{sw}"/>')
 
-y = ENT_TOP + ENT_H + 50
-bus_end = {}
+y = TOP
+span = {}                            # entity -> [min y, max y] of its flows
+rows = []
 for pid, name, flows, right in P:
-    n_left = len(flows)
-    n_right = sum(2 for _ in right)
-    h = max(n_left * FLOW_DY + 40, len(right) * 110 - 20, 110)
-    top = y
-    # process box (rounded, with id header like Gane-Sarson)
-    svg.append(f'<rect x="{PX}" y="{top}" width="{PW}" height="{h}" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>')
-    svg.append(f'<line x1="{PX}" y1="{top + 30}" x2="{PX + PW}" y2="{top + 30}" stroke="#111" stroke-width="2"/>')
-    text(PX + PW / 2, top + 15, pid, 15, "middle", "bold")
-    text(PX + PW / 2, top + 30 + (h - 30) / 2, name, 16, "middle")
-    # left flows
-    fy0 = top + 30 + (h - 30 - (n_left - 1) * FLOW_DY) / 2
+    h = max(len(flows) * FLOW_DY + 44, len(right) * 100, 118)
+    rows.append((pid, name, flows, right, y, h))
+    y += h + ROW_GAP
+height = y + 170
+
+# Worker box sits beside process 2.0, like the draft figure
+r2_top, r2_h = rows[1][4], rows[1][5]
+w_box_y = r2_top - 5
+
+# flows: collect y positions first so buses can be drawn underneath
+flow_ys = []
+for pid, name, flows, right, top, h in rows:
+    y0 = top + 34 + (h - 34 - (len(flows) - 1) * FLOW_DY) / 2
     for i, (e, d, lbl) in enumerate(flows):
-        fy = fy0 + i * FLOW_DY
-        c = ENT[e][1]
-        bx = BUS_X[e]
-        if d == ">":
-            arrow(bx, fy, PX, fy, c)
-        else:
-            arrow(PX, fy, bx + 1, fy, c)
-        svg.append(f'<circle cx="{bx}" cy="{fy}" r="3" fill="{c}"/>')
-        text(LABEL_X, fy - 8, lbl, 12, fill=c)
-        bus_end[e] = max(bus_end.get(e, 0), fy)
-    # right side objects
+        fy = y0 + i * FLOW_DY
+        if pid == "2.0":  # worker flows leave the worker box; admin flows pass below it
+            fy = [top + 22, top + 50, top + 120, top + 148][i]
+        flow_ys.append((e, d, lbl, fy))
+        lo, hi = span.get(e, (fy, fy))
+        span[e] = (min(lo, fy), max(hi, fy))
+
+A_BOX = (20, 30, 230, 70)                         # Administrator box, top-left
+BOT_Y = height - 150                              # Farm Owner / Buyer boxes, bottom-left
+O_BOX = (31, BOT_Y, 128, 66)
+B_BOX = (160, BOT_Y, 110, 66)
+# buses
+line(BUS["A"], A_BOX[1] + A_BOX[3], BUS["A"], span["A"][1])
+line(BUS["O"], span["O"][0], BUS["O"], BOT_Y)
+line(BUS["B"], span["B"][0], BUS["B"], BOT_Y)
+line(BUS["W"], span["W"][0], BUS["W"], span["W"][1])
+
+for e, d, lbl, fy in flow_ys:
+    bx = BUS[e]
+    if e == "W" and w_box_y <= fy <= w_box_y + 70:
+        bx = W_BOX[1]
+    if d == ">":
+        line(bx, fy, PX, fy, True)
+    else:
+        line(PX, fy, bx, fy, True)
+    text((LBL_L + PX) / 2, fy - 10, lbl, 13.5)
+
+# entity boxes
+box(*A_BOX); text(A_BOX[0] + A_BOX[2] / 2, A_BOX[1] + A_BOX[3] / 2, "Administrator", 18)
+box(W_BOX[0], w_box_y, W_BOX[1] - W_BOX[0], 70); text(sum(W_BOX) / 2, w_box_y + 35, "Farm Worker\n(Mobile App)", 14.5)
+box(*O_BOX); text(O_BOX[0] + O_BOX[2] / 2, BOT_Y + 33, "Farm Owner", 18)
+box(*B_BOX); text(B_BOX[0] + B_BOX[2] / 2, BOT_Y + 33, "Buyer", 18)
+
+# processes and right-hand objects
+for pid, name, flows, right, top, h in rows:
+    box(PX, top, PW, h, rx=16)
+    line(PX, top + 34, PX + PW, top + 34)
+    text(PX + PW / 2, top + 17, pid, 18)
+    text(PX + PW / 2, top + 34 + (h - 34) / 2, name, 17)
     slot = h / len(right)
     for j, (kind, code, sname, lin, lout) in enumerate(right):
         cy = top + slot * j + slot / 2
-        bh = 64
-        by = cy - bh / 2
+        box(SX, cy - 26, SW, 52, sw=1.8)
         if kind == "store":
-            svg.append(f'<path d="M{SX + SW},{by} H{SX} V{by + bh} H{SX + SW}" fill="#fff" stroke="#111" stroke-width="2"/>')
-            svg.append(f'<rect x="{SX}" y="{by}" width="{SW}" height="{bh}" fill="#fff" stroke="none"/>')
-            svg.append(f'<path d="M{SX + SW},{by} H{SX} V{by + bh} H{SX + SW}" fill="none" stroke="#111" stroke-width="2"/>')
-            svg.append(f'<line x1="{SX + 60}" y1="{by}" x2="{SX + 60}" y2="{by + bh}" stroke="#111" stroke-width="2"/>')
-            text(SX + 30, cy, code, 15, "middle", "bold")
-            text(SX + 72, cy, sname, 15)
+            line(SX + 60, cy - 26, SX + 60, cy + 26)
+            text(SX + 30, cy, code, 16, weight="bold")
+            text(SX + 76, cy, sname, 16, anchor="start")
         else:
-            svg.append(f'<rect x="{SX}" y="{by}" width="{SW}" height="{bh}" fill="#fff" stroke="#111" stroke-width="2"/>')
-            text(SX + SW / 2, cy, sname + "\n(external)", 14, "middle", "bold")
-        arrow(PX + PW, cy - 12, SX, cy - 12, "#111111")
-        arrow(SX, cy + 14, PX + PW, cy + 14, "#111111")
-        text((PX + PW + SX) / 2, cy - 20, lin, 12, "middle")
-        text((PX + PW + SX) / 2, cy + 6, lout, 12, "middle")
-    y = top + h + ROW_GAP
+            text(SX + SW / 2, cy, sname, 17)
+        line(PX + PW, cy - 12, SX, cy - 12, True)
+        line(SX, cy + 14, PX + PW, cy + 14, True)
+        mid = (PX + PW + SX) / 2
+        text(mid, cy - 22, lin, 13.5)
+        text(mid, cy + (4 if "\n" not in lout else -4), lout, 13.5)
 
-height = y + 70
-# entity boxes and their vertical lines (drawn first so boxes sit on top)
-head = []
-for e in ENT_ORDER:
-    name, c = ENT[e]
-    bx = BUS_X[e]
-    head.append(f'<line x1="{bx}" y1="{ENT_TOP + ENT_H}" x2="{bx}" y2="{bus_end[e]}" stroke="{c}" stroke-width="1.8"/>')
-    head.append(f'<rect x="{bx - ENT_W / 2}" y="{ENT_TOP}" width="{ENT_W}" height="{ENT_H}" fill="#fff" stroke="{c}" stroke-width="2.2"/>')
-body = svg
-svg = []
-for e in ENT_ORDER:
-    text(BUS_X[e], ENT_TOP + ENT_H / 2, ENT[e][0], 12, "middle", "bold", ENT[e][1])
-labels = svg
-svg = []
-text(width / 2, height - 30, "Figure 3. Level 0 Diagram", 22, "middle", "bold", style='font-style="italic"')
-footer = svg
+width = SX + SW + 25
+svg.append(f'<text x="{width / 2:.1f}" y="{height - 30}" font-family="{FONT}" font-size="26" text-anchor="middle">'
+           '<tspan font-weight="bold" font-style="italic">Figure 3.</tspan>'
+           '<tspan font-style="italic"> Level 0</tspan><tspan> Diagram</tspan></text>')
 
 out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
-       f'<defs>{defs}</defs>', f'<rect width="100%" height="100%" fill="#fff"/>',
-       *head, *body, *labels, *footer, '</svg>']
+       '<defs><marker id="ah" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto">'
+       '<path d="M0,0 L10,5 L0,10 z" fill="#111"/></marker></defs>',
+       '<rect width="100%" height="100%" fill="#fbfbfb"/>', *svg, '</svg>']
 OUT.write_text("\n".join(out))
 print(OUT, width, height)
