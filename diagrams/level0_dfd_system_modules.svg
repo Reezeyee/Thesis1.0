@@ -1,0 +1,278 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1660" height="1868" viewBox="0 0 1660 1868">
+<defs><marker id="ah-111111" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#111111"/></marker><marker id="ah-2e7d32" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/></marker><marker id="ah-1f5fa8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f5fa8"/></marker><marker id="ah-7b3fa0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7b3fa0"/></marker><marker id="ah-c25400" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c25400"/></marker></defs>
+<rect width="100%" height="100%" fill="#fff"/>
+<line x1="75" y1="84" x2="75" y2="1747.0" stroke="#1f5fa8" stroke-width="1.8"/>
+<rect x="17.0" y="20" width="116" height="64" fill="#fff" stroke="#1f5fa8" stroke-width="2.2"/>
+<line x1="195" y1="84" x2="195" y2="1723.0" stroke="#2e7d32" stroke-width="1.8"/>
+<rect x="137.0" y="20" width="116" height="64" fill="#fff" stroke="#2e7d32" stroke-width="2.2"/>
+<line x1="315" y1="84" x2="315" y2="1601.0" stroke="#7b3fa0" stroke-width="1.8"/>
+<rect x="257.0" y="20" width="116" height="64" fill="#fff" stroke="#7b3fa0" stroke-width="2.2"/>
+<line x1="435" y1="84" x2="435" y2="1335.0" stroke="#c25400" stroke-width="1.8"/>
+<rect x="377.0" y="20" width="116" height="64" fill="#fff" stroke="#c25400" stroke-width="2.2"/>
+<rect x="820" y="134" width="250" height="232" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="164" x2="1070" y2="164" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="154.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >1.0</text>
+<text x="945.0" y="261.0" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Registration and</text>
+<text x="945.0" y="280.2" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Account Management</text>
+<line x1="75" y1="181.0" x2="820" y2="181.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="181.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="177.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Worker accounts, roles, reset approvals</text>
+<line x1="820" y1="205.0" x2="76" y2="205.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="205.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="201.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >User list, attendance, leave &amp; reset requests</text>
+<line x1="195" y1="229.0" x2="820" y2="229.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="229.0" r="3" fill="#2e7d32"/>
+<text x="470" y="225.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Login credentials, clock in/out, leave</text>
+<line x1="820" y1="253.0" x2="196" y2="253.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="253.0" r="3" fill="#2e7d32"/>
+<text x="470" y="249.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Account access, attendance records</text>
+<line x1="315" y1="277.0" x2="820" y2="277.0" stroke="#7b3fa0" stroke-width="1.6" marker-end="url(#ah-7b3fa0)"/>
+<circle cx="315" cy="277.0" r="3" fill="#7b3fa0"/>
+<text x="470" y="273.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#7b3fa0" >Login credentials</text>
+<line x1="820" y1="301.0" x2="316" y2="301.0" stroke="#7b3fa0" stroke-width="1.6" marker-end="url(#ah-7b3fa0)"/>
+<circle cx="315" cy="301.0" r="3" fill="#7b3fa0"/>
+<text x="470" y="297.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#7b3fa0" >Account access</text>
+<line x1="435" y1="325.0" x2="820" y2="325.0" stroke="#c25400" stroke-width="1.6" marker-end="url(#ah-c25400)"/>
+<circle cx="435" cy="325.0" r="3" fill="#c25400"/>
+<text x="470" y="321.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#c25400" >Registration details, location, login</text>
+<line x1="820" y1="349.0" x2="436" y2="349.0" stroke="#c25400" stroke-width="1.6" marker-end="url(#ah-c25400)"/>
+<circle cx="435" cy="349.0" r="3" fill="#c25400"/>
+<text x="470" y="345.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#c25400" >Email verification, account status</text>
+<path d="M1630,218.0 H1380 V282.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="218.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,218.0 H1380 V282.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="218.0" x2="1440" y2="282.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="255.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D1</text>
+<text x="1452" y="255.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Users</text>
+<line x1="1070" y1="238.0" x2="1380" y2="238.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="264.0" x2="1070" y2="264.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="234.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >User profile, role, attendance</text>
+<text x="1225.0" y="260.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Account status, profile data</text>
+<rect x="820" y="400" width="250" height="200" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="430" x2="1070" y2="430" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="420.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >2.0</text>
+<text x="945.0" y="511.0" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Image Classification</text>
+<text x="945.0" y="530.2" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >(Ripeness and Bean)</text>
+<line x1="195" y1="479.0" x2="820" y2="479.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="479.0" r="3" fill="#2e7d32"/>
+<text x="470" y="475.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Cherry images, tree / section</text>
+<line x1="820" y1="503.0" x2="196" y2="503.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="503.0" r="3" fill="#2e7d32"/>
+<text x="470" y="499.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Ripeness &amp; bean classification result</text>
+<line x1="75" y1="527.0" x2="820" y2="527.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="527.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="523.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Batch details</text>
+<line x1="820" y1="551.0" x2="76" y2="551.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="551.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="547.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Scan history, batch &amp; grade summaries</text>
+<path d="M1630,418.0 H1380 V482.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="418.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,418.0 H1380 V482.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="418.0" x2="1440" y2="482.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="455.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D2</text>
+<text x="1452" y="446.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Classification</text>
+<text x="1452" y="464.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Records</text>
+<line x1="1070" y1="438.0" x2="1380" y2="438.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="464.0" x2="1070" y2="464.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="434.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Scan &amp; grade results</text>
+<text x="1225.0" y="460.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Classification history</text>
+<rect x="1380" y="518.0" width="250" height="64" fill="#fff" stroke="#111" stroke-width="2"/>
+<text x="1505.0" y="538.1" font-family="Arial, Helvetica, sans-serif" font-size="14" text-anchor="middle" font-weight="bold" fill="#111" >Roboflow</text>
+<text x="1505.0" y="554.9" font-family="Arial, Helvetica, sans-serif" font-size="14" text-anchor="middle" font-weight="bold" fill="#111" >Detection API</text>
+<text x="1505.0" y="571.7" font-family="Arial, Helvetica, sans-serif" font-size="14" text-anchor="middle" font-weight="bold" fill="#111" >(external)</text>
+<line x1="1070" y1="538.0" x2="1380" y2="538.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="564.0" x2="1070" y2="564.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="534.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Cherry image</text>
+<text x="1225.0" y="560.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Ripeness detections</text>
+<rect x="820" y="634" width="250" height="136" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="664" x2="1070" y2="664" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="654.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >3.0</text>
+<text x="945.0" y="722.6" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Farm Management</text>
+<line x1="75" y1="681.0" x2="820" y2="681.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="681.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="677.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Sections, trees, harvest schedules, tasks</text>
+<line x1="820" y1="705.0" x2="76" y2="705.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="705.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="701.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Farm records, field reports</text>
+<line x1="195" y1="729.0" x2="820" y2="729.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="729.0" r="3" fill="#2e7d32"/>
+<text x="470" y="725.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Harvest readiness, pest/disease, irrigation reports</text>
+<line x1="820" y1="753.0" x2="196" y2="753.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="753.0" r="3" fill="#2e7d32"/>
+<text x="470" y="749.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Farm sections, schedules, report status</text>
+<path d="M1630,670.0 H1380 V734.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="670.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,670.0 H1380 V734.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="670.0" x2="1440" y2="734.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="707.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D3</text>
+<text x="1452" y="707.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Farm Records</text>
+<line x1="1070" y1="690.0" x2="1380" y2="690.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="716.0" x2="1070" y2="716.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="686.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Farm management data</text>
+<text x="1225.0" y="712.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Farm details</text>
+<rect x="820" y="804" width="250" height="136" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="834" x2="1070" y2="834" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="824.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >4.0</text>
+<text x="945.0" y="883.0" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Inventory and</text>
+<text x="945.0" y="902.2" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Equipment Management</text>
+<line x1="75" y1="851.0" x2="820" y2="851.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="851.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="847.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Equipment, supplies, repair job assignment</text>
+<line x1="820" y1="875.0" x2="76" y2="875.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="875.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="871.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Inventory status, condition &amp; damage reports</text>
+<line x1="195" y1="899.0" x2="820" y2="899.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="899.0" r="3" fill="#2e7d32"/>
+<text x="470" y="895.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Borrow/return, supply use, condition, repair progress</text>
+<line x1="820" y1="923.0" x2="196" y2="923.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="923.0" r="3" fill="#2e7d32"/>
+<text x="470" y="919.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Equipment &amp; supply status, assigned repair jobs</text>
+<path d="M1630,840.0 H1380 V904.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="840.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,840.0 H1380 V904.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="840.0" x2="1440" y2="904.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="877.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D4</text>
+<text x="1452" y="868.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Inventory &amp;</text>
+<text x="1452" y="886.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Equipment</text>
+<line x1="1070" y1="860.0" x2="1380" y2="860.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="886.0" x2="1070" y2="886.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="856.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Inventory &amp; repair data</text>
+<text x="1225.0" y="882.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Equipment status</text>
+<rect x="820" y="974" width="250" height="110" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="1004" x2="1070" y2="1004" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="994.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >5.0</text>
+<text x="945.0" y="1049.6" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Buyers' Map</text>
+<line x1="435" y1="1032.0" x2="820" y2="1032.0" stroke="#c25400" stroke-width="1.6" marker-end="url(#ah-c25400)"/>
+<circle cx="435" cy="1032.0" r="3" fill="#c25400"/>
+<text x="470" y="1028.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#c25400" >Buyer location, address</text>
+<line x1="820" y1="1056.0" x2="76" y2="1056.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="1056.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="1052.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Nearby buyers map, distance, purchase totals</text>
+<path d="M1630,997.0 H1380 V1061.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="997.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,997.0 H1380 V1061.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="997.0" x2="1440" y2="1061.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="1034.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D5</text>
+<text x="1452" y="1034.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Buyers</text>
+<line x1="1070" y1="1017.0" x2="1380" y2="1017.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="1043.0" x2="1070" y2="1043.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="1013.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Buyer location data</text>
+<text x="1225.0" y="1039.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Buyer details</text>
+<rect x="820" y="1118" width="250" height="112" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="1148" x2="1070" y2="1148" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="1138.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >6.0</text>
+<text x="945.0" y="1185.0" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Profit and Sales</text>
+<text x="945.0" y="1204.2" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Management</text>
+<line x1="75" y1="1165.0" x2="820" y2="1165.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="1165.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="1161.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Sales, expenses, payroll</text>
+<line x1="820" y1="1189.0" x2="76" y2="1189.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="1189.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="1185.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Profit reports, financial dashboard</text>
+<line x1="820" y1="1213.0" x2="316" y2="1213.0" stroke="#7b3fa0" stroke-width="1.6" marker-end="url(#ah-7b3fa0)"/>
+<circle cx="315" cy="1213.0" r="3" fill="#7b3fa0"/>
+<text x="470" y="1209.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#7b3fa0" >Profit &amp; revenue reports (read-only)</text>
+<path d="M1630,1142.0 H1380 V1206.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="1142.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,1142.0 H1380 V1206.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="1142.0" x2="1440" y2="1206.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="1179.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D6</text>
+<text x="1452" y="1179.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Profit Data</text>
+<line x1="1070" y1="1162.0" x2="1380" y2="1162.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="1188.0" x2="1070" y2="1188.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="1158.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Transaction data</text>
+<text x="1225.0" y="1184.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Sales and profit summary</text>
+<rect x="820" y="1264" width="250" height="136" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="1294" x2="1070" y2="1294" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="1284.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >7.0</text>
+<text x="945.0" y="1343.0" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Maintenance</text>
+<text x="945.0" y="1362.2" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >(Buyer Records &amp; Orders)</text>
+<line x1="435" y1="1311.0" x2="820" y2="1311.0" stroke="#c25400" stroke-width="1.6" marker-end="url(#ah-c25400)"/>
+<circle cx="435" cy="1311.0" r="3" fill="#c25400"/>
+<text x="470" y="1307.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#c25400" >Product orders (cart, checkout)</text>
+<line x1="820" y1="1335.0" x2="436" y2="1335.0" stroke="#c25400" stroke-width="1.6" marker-end="url(#ah-c25400)"/>
+<circle cx="435" cy="1335.0" r="3" fill="#c25400"/>
+<text x="470" y="1331.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#c25400" >Product listings, order status, pickup</text>
+<line x1="75" y1="1359.0" x2="820" y2="1359.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="1359.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="1355.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Buyer records, order status updates</text>
+<line x1="820" y1="1383.0" x2="76" y2="1383.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="1383.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="1379.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Buyer records, purchase history, orders</text>
+<path d="M1630,1300.0 H1380 V1364.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="1300.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,1300.0 H1380 V1364.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="1300.0" x2="1440" y2="1364.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="1337.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D7</text>
+<text x="1452" y="1337.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Buyer Orders</text>
+<line x1="1070" y1="1320.0" x2="1380" y2="1320.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="1346.0" x2="1070" y2="1346.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="1316.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Order &amp; stock-hold data</text>
+<text x="1225.0" y="1342.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Updated records</text>
+<rect x="820" y="1434" width="250" height="184" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="1464" x2="1070" y2="1464" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="1454.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >8.0</text>
+<text x="945.0" y="1537.0" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Communication</text>
+<text x="945.0" y="1556.2" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >(SMS and Messages)</text>
+<line x1="75" y1="1481.0" x2="820" y2="1481.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="1481.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="1477.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >SMS broadcasts, message to owner</text>
+<line x1="820" y1="1505.0" x2="76" y2="1505.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="1505.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="1501.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Worker replies, owner messages</text>
+<line x1="195" y1="1529.0" x2="820" y2="1529.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="1529.0" r="3" fill="#2e7d32"/>
+<text x="470" y="1525.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >SMS messages</text>
+<line x1="820" y1="1553.0" x2="196" y2="1553.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="1553.0" r="3" fill="#2e7d32"/>
+<text x="470" y="1549.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Admin broadcasts</text>
+<line x1="315" y1="1577.0" x2="820" y2="1577.0" stroke="#7b3fa0" stroke-width="1.6" marker-end="url(#ah-7b3fa0)"/>
+<circle cx="315" cy="1577.0" r="3" fill="#7b3fa0"/>
+<text x="470" y="1573.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#7b3fa0" >Message to admin</text>
+<line x1="820" y1="1601.0" x2="316" y2="1601.0" stroke="#7b3fa0" stroke-width="1.6" marker-end="url(#ah-7b3fa0)"/>
+<circle cx="315" cy="1601.0" r="3" fill="#7b3fa0"/>
+<text x="470" y="1597.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#7b3fa0" >Admin messages</text>
+<path d="M1630,1494.0 H1380 V1558.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="1494.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,1494.0 H1380 V1558.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="1494.0" x2="1440" y2="1558.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="1531.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D8</text>
+<text x="1452" y="1531.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Messages</text>
+<line x1="1070" y1="1514.0" x2="1380" y2="1514.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="1540.0" x2="1070" y2="1540.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="1510.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Message data</text>
+<text x="1225.0" y="1536.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Message history</text>
+<rect x="820" y="1652" width="250" height="112" rx="14" fill="#fff" stroke="#111" stroke-width="2"/>
+<line x1="820" y1="1682" x2="1070" y2="1682" stroke="#111" stroke-width="2"/>
+<text x="945.0" y="1672.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >9.0</text>
+<text x="945.0" y="1728.6" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#111" >Data and Sync</text>
+<line x1="195" y1="1699.0" x2="820" y2="1699.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="1699.0" r="3" fill="#2e7d32"/>
+<text x="470" y="1695.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Offline records (queued)</text>
+<line x1="820" y1="1723.0" x2="196" y2="1723.0" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#ah-2e7d32)"/>
+<circle cx="195" cy="1723.0" r="3" fill="#2e7d32"/>
+<text x="470" y="1719.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#2e7d32" >Sync status</text>
+<line x1="820" y1="1747.0" x2="76" y2="1747.0" stroke="#1f5fa8" stroke-width="1.6" marker-end="url(#ah-1f5fa8)"/>
+<circle cx="75" cy="1747.0" r="3" fill="#1f5fa8"/>
+<text x="470" y="1743.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="start" font-weight="normal" fill="#1f5fa8" >Database &amp; sync health</text>
+<path d="M1630,1676.0 H1380 V1740.0 H1630" fill="#fff" stroke="#111" stroke-width="2"/>
+<rect x="1380" y="1676.0" width="250" height="64" fill="#fff" stroke="none"/>
+<path d="M1630,1676.0 H1380 V1740.0 H1630" fill="none" stroke="#111" stroke-width="2"/>
+<line x1="1440" y1="1676.0" x2="1440" y2="1740.0" stroke="#111" stroke-width="2"/>
+<text x="1410" y="1713.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="middle" font-weight="bold" fill="#111" >D9</text>
+<text x="1452" y="1713.2" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#111" >Local Data</text>
+<line x1="1070" y1="1696.0" x2="1380" y2="1696.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<line x1="1380" y1="1722.0" x2="1070" y2="1722.0" stroke="#111111" stroke-width="1.6" marker-end="url(#ah-111111)"/>
+<text x="1225.0" y="1692.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Offline data</text>
+<text x="1225.0" y="1718.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="normal" fill="#111" >Synced data</text>
+<text x="75" y="49.0" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f5fa8" >Administrator</text>
+<text x="75" y="63.4" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#1f5fa8" >(Web Portal)</text>
+<text x="195" y="41.8" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#2e7d32" >Farm Worker /</text>
+<text x="195" y="56.2" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#2e7d32" >Maintenance</text>
+<text x="195" y="70.6" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#2e7d32" >(Mobile App)</text>
+<text x="315" y="49.0" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#7b3fa0" >Farm Owner</text>
+<text x="315" y="63.4" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#7b3fa0" >(Web, read-only)</text>
+<text x="435" y="49.0" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#c25400" >Buyer</text>
+<text x="435" y="63.4" font-family="Arial, Helvetica, sans-serif" font-size="12" text-anchor="middle" font-weight="bold" fill="#c25400" >(Web / Mobile)</text>
+<text x="830.0" y="1845.7" font-family="Arial, Helvetica, sans-serif" font-size="22" text-anchor="middle" font-weight="bold" fill="#111" font-style="italic">Figure 3. Level 0 Diagram</text>
+</svg>
